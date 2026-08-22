@@ -2476,6 +2476,29 @@ async function proposeSolution(){
   if(state.gameVariant==='lost'){openLostSolutionModal();return;}
   if(state.pieces.some(piece=>!piece.center)) return;
   const correct=evaluateGuess();
+  // Le laboratoire ne possède ni compte ni classement en ligne. Son défi du
+  // jour doit donc se conclure entièrement en local, sans passer par le
+  // dialogue d'identité ni les protections Supabase de la production.
+  if(LAB_MODE&&state.isDaily){
+    if(!correct) state.soloAttempts++;
+    state.soloOver=true;
+    state.soloResult=correct?'win':'lose';
+    const elapsedMs=state.firstActionTime?(Date.now()-state.firstActionTime):0;
+    state.finalTimeMs=elapsedMs;
+    const daily=recordDailyScore('Testeur labo',state.dailyDate,correct,elapsedMs);
+    lastScoreResult={
+      key:'Défi du jour',
+      entry:{...daily.entry,gridId:null,isDaily:true,dailyDate:state.dailyDate},
+      rank:daily.rank,
+      madeList:true
+    };
+    saveDailyAttempt({date:state.dailyDate,result:state.soloResult,accountId:dailyAttemptAccountKey()});
+    saveDailyFinalSnapshot();
+    saveState();
+    renderAll();
+    setTimeout(()=>openVictoryModal(),60);
+    return;
+  }
   if(correct){
     state.soloOver=true; state.soloResult='win';
     const elapsedMs=state.firstActionTime?(Date.now()-state.firstActionTime):0; state.finalTimeMs=elapsedMs;
