@@ -1667,16 +1667,14 @@ function seededShuffle(arr, rngFn){
 
 function tryRandomLayout(rngFn,requestedTypes){
   rngFn = rngFn || Math.random;
-  const types = seededShuffle(requestedTypes||allTypes(), rngFn);
-  const placed = [];
-  for(const type of types){
-    let ok = false;
-    for(let tries=0; tries<250 && !ok; tries++){
+  return window.OrapaEngine.generateLayout({
+    types:requestedTypes||allTypes(),attempts:1,triesPerPiece:250,rng:rngFn,
+    candidateFor(type,random){
       const rotation = ROTATIONS[Math.floor(rngFn()*4)];
       const flipped = rngFn() < 0.5;
       const probe = { id:'r_'+type, type, center:{x:COLS/2,y:ROWS/2}, rotation, flipped };
       const {hw,hh} = boundingHalfExtents(probe);
-      if(hw*2>COLS || hh*2>ROWS) break; // ne rentre pas, inutile d'insister sur cette rotation
+      if(hw*2>COLS || hh*2>ROWS) return null;
       const bounds=pieceLocalBounds(probe);
       const polygonBounds=state.gameVariant==='space'||isEarthSky();
       const half=isEarthSky()?earthSkyHalfBounds(probe):{minY:0,maxY:ROWS};
@@ -1684,23 +1682,16 @@ function tryRandomLayout(rngFn,requestedTypes){
       const minY=polygonBounds?half.minY-bounds.minY:hh,maxY=polygonBounds?half.maxY-bounds.maxY:ROWS-hh;
       const rawX=minX+rngFn()*(maxX-minX),rawY=minY+rngFn()*(maxY-minY);
       const {x:cx,y:cy}=snapPieceCenterWithinBounds(rawX,rawY,probe);
-      const candidate = { id:'r_'+type, type, center:{x:cx,y:cy}, rotation, flipped };
-      if(placementValid(candidate, null, placed)){
-        placed.push(candidate);
-        ok = true;
-      }
-    }
-    if(!ok) return null;
-  }
-  if(unreachablePieces(placed).length > 0) return null;
-  return placed.map(p=> ({ id:'p'+(pieceIdSeq++), type:p.type, center:p.center, rotation:p.rotation, flipped:p.flipped }));
+      return { id:'r_'+type, type, center:{x:cx,y:cy}, rotation, flipped };
+    },
+    placementValid:(candidate,placed)=>placementValid(candidate,null,placed),
+    layoutValid:placed=>unreachablePieces(placed).length===0,
+    finalize:p=>({id:'p'+(pieceIdSeq++),type:p.type,center:p.center,rotation:p.rotation,flipped:p.flipped})
+  });
 }
 function generateRandomLayout(maxAttempts,requestedTypes){
   maxAttempts = maxAttempts || 60;
-  for(let attempt=0; attempt<maxAttempts; attempt++){
-    const layout = tryRandomLayout(null,requestedTypes);
-    if(layout) return layout;
-  }
+  for(let attempt=0;attempt<maxAttempts;attempt++){const layout=tryRandomLayout(Math.random,requestedTypes);if(layout)return layout;}
   return null;
 }
 // ---------------------------------------------------------------------
@@ -1718,6 +1709,27 @@ function dailyTypesForFlags(gray,onyx,sapphire){
   if(onyx) t.push('onyx');
   if(sapphire) t.push('sapphire');
   return t;
+}
+function dailyPlacementValid(candidate,placed){
+  if(window.OrapaEngine)return window.OrapaEngine.validatePlacement({
+    candidate,
+    pieces:placed,
+    bounds:{minX:0,minY:0,maxX:COLS,maxY:ROWS},
+    polygonsFor:piece=>[pieceVertices(piece)]
+  });
+  const {hw,hh}=boundingHalfExtents(candidate);
+  if(candidate.center.x-hw < -1e-6 || candidate.center.x+hw > COLS+1e-6 || candidate.center.y-hh < -1e-6 || candidate.center.y+hh > ROWS+1e-6)return false;
+  return !placed.some(other=>touchesBySide(pieceVertices(candidate),pieceVertices(other)));
+}
+function dailyUnreachablePieces(pieces){
+  if(window.OrapaEngine){
+    const ids=new Set(window.OrapaEngine.unreachablePieceIds({pieces,width:COLS,height:ROWS,edgesFor:beamEdges,minHitsFor:piece=>CONFIG.PIECES[piece.type]?.minHits||1}));
+    return pieces.filter(piece=>ids.has(piece.id));
+  }
+  const previousVariant=state.gameVariant;
+  state.gameVariant='classic';
+  try{return unreachablePieces(pieces);}
+  finally{state.gameVariant=previousVariant;}
 }
 // Cherche une position qui colle EXCEPTIONNELLEMENT la pièce contre un voisin par un côté.
 function findForcedSideTouch(type, placed, rngFn){
@@ -1808,14 +1820,14 @@ function tryDailyLayout(rngFn){
       cx = Math.min(COLS-hw, Math.max(hw,cx));
       cy = Math.min(ROWS-hh, Math.max(hh,cy));
       const candidate = { id:'r_'+type, type, center:{x:cx,y:cy}, rotation, flipped };
-      if(placementValid(candidate, null, placed)){
+      if(dailyPlacementValid(candidate,placed)){
         placed.push(candidate);
         ok = true;
       }
     }
     if(!ok) return null;
   }
-  if(unreachablePieces(placed).length > 0) return null;
+  if(dailyUnreachablePieces(placed).length > 0) return null;
   return {
     pieces: placed.map(p=> ({ id:'p'+(pieceIdSeq++), type:p.type, center:p.center, rotation:p.rotation, flipped:p.flipped })),
     flags, exceptionRule, exceptionType
@@ -1834,7 +1846,7 @@ function placeDailyRegularPiece(type, placed, rngFn){
     cx=Math.min(COLS-hw,Math.max(hw,cx));
     cy=Math.min(ROWS-hh,Math.max(hh,cy));
     const candidate={id:'r_'+type,type,center:{x:cx,y:cy},rotation,flipped};
-    if(placementValid(candidate,null,placed)) return candidate;
+    if(dailyPlacementValid(candidate,placed)) return candidate;
   }
   return null;
 }
@@ -1928,7 +1940,7 @@ function tryDailyLayoutV2(rngFn,useUniqueTemporaryIds=false,fixedPlan=null){
     const expected=touchTypes.slice().sort().join('|');
     if(touches.length!==1||touches[0].slice().sort().join('|')!==expected) return null;
   }else if(needsTouch ? touches.length<1 : touches.length!==0) return null;
-  if(unreachablePieces(placed).length>0) return null;
+  if(dailyUnreachablePieces(placed).length>0) return null;
   return {
     pieces:placed.map(p=>({id:'p'+(pieceIdSeq++),type:p.type,center:p.center,rotation:p.rotation,flipped:p.flipped})),
     flags,exceptionRule,exceptionType:partialType,touchTypes
@@ -1950,9 +1962,66 @@ function generateDailyLayout(dateKey){
   return null;
 }
 
+// Audit laboratoire sans effet sur le tirage : les signatures ignorent les
+// identifiants temporaires, dont l'incrémentation ne participe pas au hasard.
+// Il permet de vérifier en une passe la stabilité du défi et ses exceptions.
+window.runDailyGeneratorAudit=function(startDate='2026-07-30',days=180){
+  const failures=[],knownIssues=[],counts={partialOut:0,sideTouch:0,both:0,bothIndependent:0};
+  const signature=layout=>JSON.stringify({
+    flags:layout?.flags||null,
+    exceptionRule:layout?.exceptionRule||null,
+    exceptionType:layout?.exceptionType||null,
+    touchTypes:(layout?.touchTypes||[]).slice(),
+    pieces:(layout?.pieces||[]).map(piece=>({type:piece.type,center:piece.center,rotation:piece.rotation,flipped:piece.flipped}))
+  });
+  const date=new Date(`${startDate}T12:00:00Z`);
+  for(let offset=0;offset<days;offset++){
+    const dateKey=date.toISOString().slice(0,10);
+    const first=generateDailyLayout(dateKey),second=generateDailyLayout(dateKey);
+    if(!first){failures.push({dateKey,reason:'generation'});date.setUTCDate(date.getUTCDate()+1);continue;}
+    if(signature(first)!==signature(second))failures.push({dateKey,reason:'non-deterministe'});
+    const partial=first.pieces.filter(pieceIsPartiallyOutside);
+    const touches=sideTouchPairs(first.pieces);
+    let overlaps=0;
+    for(let i=0;i<first.pieces.length;i++)for(let j=i+1;j<first.pieces.length;j++){
+      if(edgeContactKind(pieceVertices(first.pieces[i]),pieceVertices(first.pieces[j]))==='overlap')overlaps++;
+    }
+    const rule=first.exceptionRule;
+    counts[rule]=(counts[rule]||0)+1;
+    const expectsPartial=rule==='partialOut'||rule==='both';
+    const expectsTouch=rule==='sideTouch'||rule==='both';
+    if(partial.length!==(expectsPartial?1:0))failures.push({dateKey,reason:'depassement',rule,count:partial.length});
+    if(expectsTouch?touches.length<1:touches.length!==0)failures.push({dateKey,reason:'contact',rule,count:touches.length});
+    if(overlaps)failures.push({dateKey,reason:'chevauchement',count:overlaps});
+    if(dailyUnreachablePieces(first.pieces).length){
+      const issue={dateKey,reason:'inaccessible'};
+      // Défi historique volontairement conservé : il a donné lieu au succès
+      // « Deux ondes de retard » et ne doit pas être régénéré différemment.
+      (dateKey==='2026-08-05'?knownIssues:failures).push(issue);
+    }
+    if(rule==='both'&&partial.length&&touches.some(pair=>!pair.includes(partial[0].type)))counts.bothIndependent++;
+    date.setUTCDate(date.getUTCDate()+1);
+  }
+  if(counts.both&&!counts.bothIndependent)failures.push({reason:'aucun-cas-double-independant'});
+  return {ok:failures.length===0,checked:days,counts,knownIssues,failures};
+};
+if(new URLSearchParams(location.search).get('labAudit')==='daily'){
+  setTimeout(()=>{
+    const result=window.runDailyGeneratorAudit('2026-07-30',240);
+    const output=document.createElement('pre');
+    output.id='lab-audit-output';
+    output.dataset.status=result.ok?'passed':'failed';
+    output.textContent=JSON.stringify(result,null,2);
+    document.body.replaceChildren(output);
+  },0);
+}
+
 function randomizePlacement(){
   if(isEarthSky())state.earthSkyMineOnTop=Math.random()<.5;
-  const requestedTypes=state.gameVariant==='lost'?(state.pieces.length===8?TYPE_ORDER.filter(type=>type!==TYPE_ORDER[Math.floor(Math.random()*TYPE_ORDER.length)]):state.pieces.map(piece=>piece.type)):null;
+  // Une génération Gemme perdue repart toujours des huit types de référence.
+  // Elle ne dépend jamais du contenu mutable de la réserve précédente.
+  const generatedMissingType=state.gameVariant==='lost'?TYPE_ORDER[Math.floor(Math.random()*TYPE_ORDER.length)]:null;
+  const requestedTypes=generatedMissingType?TYPE_ORDER.filter(type=>type!==generatedMissingType):null;
   const layout = generateRandomLayout(isEarthSky()?500:60,requestedTypes);
   if(layout){
     state.history = [];
@@ -1966,7 +2035,7 @@ function randomizePlacement(){
     state.traces = [];
     state.emptyMarks = [];
     state.coordDots = [];
-    state.pieces = state.gameVariant==='lost'?[...layout,newPiece(TYPE_ORDER.find(type=>!layout.some(piece=>piece.type===type)))]:layout;
+    state.pieces = state.gameVariant==='lost'?[...layout,newPiece(generatedMissingType)]:layout;
     if(state.gameVariant==='lost')state.missingType=state.pieces.find(piece=>!piece.center)?.type||null;
     saveState();
     renderAll();
@@ -2324,6 +2393,7 @@ function polygonVertexSetsMatch(vA,vB,tol=1e-3){
   return true;
 }
 function polygonsMatch(pA,pB,tol=1e-3){
+  if(window.OrapaEngine)return window.OrapaEngine.polygonsMatch(pieceVertices(pA),pieceVertices(pB),tol);
   return polygonVertexSetsMatch(pieceVertices(pA),pieceVertices(pB),tol);
 }
 function normalizedClippedPieceVertices(piece,tol=1e-7){
@@ -2491,16 +2561,7 @@ async function finalizeLostSolution(){
 // GEOMETRY — transform & rendering helpers
 // ---------------------------------------------------------------------
 function transformVertex(v, flipped, rotation, center){
-  let x=v[0], y=v[1];
-  if(flipped) x=-x;
-  let rx,ry;
-  switch(rotation){
-    case 90:  rx=-y; ry=x; break;
-    case 180: rx=-x; ry=-y; break;
-    case 270: rx=y;  ry=-x; break;
-    default:  rx=x;  ry=y;
-  }
-  return { x: center.x+rx, y: center.y+ry };
+  return window.OrapaEngine.transformVertex(v,flipped,rotation,center);
 }
 function pieceVertices(piece){
   const shape = SHAPES[piece.type];
@@ -2614,56 +2675,22 @@ function pieceAtCoordinateCell(row,col,piecesList){
 // GEOMETRY — collision : les pièces ne peuvent se toucher que par un coin
 // ---------------------------------------------------------------------
 function ensureCCW(poly){
-  let area=0;
-  for(let i=0;i<poly.length;i++){ const p=poly[i], q=poly[(i+1)%poly.length]; area += p.x*q.y - q.x*p.y; }
-  return area < 0 ? poly.slice().reverse() : poly;
-}
-function cross2(A,B,P){ return (B.x-A.x)*(P.y-A.y)-(B.y-A.y)*(P.x-A.x); }
-function segIntersect(A,B,P,Q){
-  const a1=B.y-A.y,b1=A.x-B.x,c1=a1*A.x+b1*A.y;
-  const a2=Q.y-P.y,b2=P.x-Q.x,c2=a2*P.x+b2*P.y;
-  const det=a1*b2-a2*b1;
-  if(Math.abs(det)<1e-12) return P;
-  return { x:(b2*c1-b1*c2)/det, y:(a1*c2-a2*c1)/det };
+  return window.OrapaEngine.ensureCCW(poly);
 }
 function clipPolygon(subject, clip){
-  let output = subject;
-  for(let i=0;i<clip.length;i++){
-    const A=clip[i], B=clip[(i+1)%clip.length];
-    const input = output; output=[];
-    if(input.length===0) break;
-    for(let j=0;j<input.length;j++){
-      const P=input[j], Q=input[(j+1)%input.length];
-      const sideP = cross2(A,B,P), sideQ = cross2(A,B,Q);
-      if(sideP >= -1e-9) output.push(P);
-      if((sideP>1e-9 && sideQ<-1e-9) || (sideP<-1e-9 && sideQ>1e-9)) output.push(segIntersect(A,B,P,Q));
-    }
-  }
-  return output;
+  return window.OrapaEngine.clipPolygon(subject,clip);
 }
 function polyArea(poly){
-  let a=0; for(let i=0;i<poly.length;i++){ const p=poly[i],q=poly[(i+1)%poly.length]; a+=p.x*q.y-q.x*p.y; } return Math.abs(a)/2;
+  return window.OrapaEngine.polygonArea(poly);
 }
 function maxExtent(poly){
-  let m=0;
-  for(let i=0;i<poly.length;i++) for(let j=i+1;j<poly.length;j++) m=Math.max(m, Math.hypot(poly[i].x-poly[j].x, poly[i].y-poly[j].y));
-  return m;
+  return window.OrapaEngine.maxExtent(poly);
 }
 function touchesBySide(polyA, polyB){
-  const A = ensureCCW(polyA), B = ensureCCW(polyB);
-  const inter = clipPolygon(A, B);
-  if(inter.length===0) return false;
-  if(polyArea(inter) > 1e-4) return true;   // chevauchement réel
-  if(maxExtent(inter) > 1e-3) return true;  // contact le long d'une arête
-  return false;                              // simple contact ponctuel (coin) -> autorisé
+  return window.OrapaEngine.polygonsConflict(polyA,polyB);
 }
 function edgeContactKind(polyA, polyB){
-  const A = ensureCCW(polyA), B = ensureCCW(polyB);
-  const inter = clipPolygon(A, B);
-  if(inter.length===0) return 'none';
-  if(polyArea(inter) > 1e-4) return 'overlap';
-  if(maxExtent(inter) > 1e-3) return 'sideTouch';
-  return 'corner';
+  return window.OrapaEngine.contactKind(polyA,polyB);
 }
 function pieceCollisionPolygons(piece){
   if(piece.type!=='spaceRing')return [pieceVertices(piece)];
@@ -2703,6 +2730,7 @@ function spaceRingVisualParts(){
 }
 function spacePiecesOverlap(pieceA,pieceB){
   return piecePlacementPolygons(pieceA).some(polyA=>piecePlacementPolygons(pieceB).some(polyB=>{
+    if(window.OrapaEngine)return window.OrapaEngine.polygonsConflict(polyA,polyB);
     const intersection=clipPolygon(ensureCCW(polyA),ensureCCW(polyB));
     if(intersection.length===0)return false;
     // Comme dans Orapa Mine, un simple contact par une pointe reste permis,
@@ -2744,38 +2772,12 @@ function placementValid(candidate, excludeId, piecesList){
 // (un tir direct depuis un bord qui l'atteint avant toute autre pièce).
 function firstHitPieceId(side, index, piecesList){
   piecesList = piecesList || state.pieces;
-  let pos, dir;
-  if(side==='top'){ pos={x:index+0.5,y:0}; dir={dx:0,dy:1}; }
-  else if(side==='bottom'){ pos={x:index+0.5,y:activeRows()}; dir={dx:0,dy:-1}; }
-  else if(side==='left'){ pos={x:0,y:index+0.5}; dir={dx:1,dy:0}; }
-  else { pos={x:COLS,y:index+0.5}; dir={dx:-1,dy:0}; }
-  let best = { ...intersectBoundary(pos,dir), kind:'boundary' };
-  for(const piece of piecesList){
-    if(!piece.center) continue;
-    for(const [A,B] of beamEdges(piece)){
-      const hit = intersectRaySegment(pos,dir,A,B);
-      if(hit && hit.t < best.t - EPS) best = { t:hit.t, kind:'edge', pieceId:piece.id };
-    }
-  }
-  return best.kind==='edge' ? best.pieceId : null;
+  return window.OrapaEngine.firstDirectHit({side,index,pieces:piecesList,width:COLS,height:activeRows(),edgesFor:beamEdges});
 }
 function unreachablePieces(piecesList){
   piecesList = piecesList || state.pieces;
-  const hitCounts = {};
-  function bump(id){ if(id) hitCounts[id] = (hitCounts[id]||0) + 1; }
-  for(let i=0;i<COLS;i++){
-    bump(firstHitPieceId('top',i,piecesList));
-    bump(firstHitPieceId('bottom',i,piecesList));
-  }
-  for(let i=0;i<activeRows();i++){
-    bump(firstHitPieceId('left',i,piecesList));
-    bump(firstHitPieceId('right',i,piecesList));
-  }
-  return piecesList.filter(p=>{
-    if(!p.center) return false;
-    const need = (CONFIG.PIECES[p.type].minHits) || 1;
-    return (hitCounts[p.id]||0) < need;
-  });
+  const ids=new Set(window.OrapaEngine.unreachablePieceIds({pieces:piecesList,width:COLS,height:activeRows(),edgesFor:beamEdges,minHitsFor:piece=>CONFIG.PIECES[piece.type]?.minHits||1}));
+  return piecesList.filter(piece=>ids.has(piece.id));
 }
 
 // Calcule l'ensemble des pièces en conflit (contact par un côté / chevauchement / hors
@@ -2809,50 +2811,6 @@ function computeInvalidPieceIds(piecesList){
 // ---------------------------------------------------------------------
 // GEOMETRY — tracé de l’onde
 // ---------------------------------------------------------------------
-const EPS = 1e-6;
-function intersectRaySegment(pos, dir, A, B){
-  if(dir.dx !== 0){
-    if(Math.abs(A.y-B.y) < EPS) return null;
-    const s = (pos.y - A.y) / (B.y - A.y);
-    if(s < -EPS || s > 1+EPS) return null;
-    const x = A.x + s*(B.x-A.x);
-    const t = (x - pos.x) / dir.dx;
-    if(t < -EPS) return null;
-    return { t, point:{x, y:pos.y} };
-  } else {
-    if(Math.abs(A.x-B.x) < EPS) return null;
-    const s = (pos.x - A.x) / (B.x - A.x);
-    if(s < -EPS || s > 1+EPS) return null;
-    const y = A.y + s*(B.y-A.y);
-    const t = (y - pos.y) / dir.dy;
-    if(t < -EPS) return null;
-    return { t, point:{x:pos.x, y} };
-  }
-}
-function edgeKind(A,B){
-  if(Math.abs(A.x-B.x) < EPS || Math.abs(A.y-B.y) < EPS) return 'wall';
-  const slope = (B.y-A.y)/(B.x-A.x);
-  return slope > 0 ? 'back' : 'fwd';
-}
-function reflect(dir, kind){
-  const {dx,dy} = dir;
-  if(kind==='back'){
-    if(dx=== 1) return {dx:0,dy:1};
-    if(dx===-1) return {dx:0,dy:-1};
-    if(dy===-1) return {dx:-1,dy:0};
-    if(dy=== 1) return {dx:1,dy:0};
-  } else {
-    if(dx=== 1) return {dx:0,dy:-1};
-    if(dx===-1) return {dx:0,dy:1};
-    if(dy===-1) return {dx:1,dy:0};
-    if(dy=== 1) return {dx:-1,dy:0};
-  }
-  return dir;
-}
-function intersectBoundary(pos,dir){
-  if(dir.dx!==0){ const x = dir.dx>0?COLS:0; return { t:(x-pos.x)/dir.dx, point:{x,y:pos.y} }; }
-  const y = dir.dy>0?activeRows():0; return { t:(y-pos.y)/dir.dy, point:{x:pos.x,y} };
-}
 function colorKeyOf(set){ return [...set].sort().join('+'); }
 function resolveColor(set){
   if(set.size===0) return CONFIG.NONE;
@@ -2860,104 +2818,12 @@ function resolveColor(set){
 }
 
 function simulateBeam(side,index,piecesList){
-  let pos, dir;
-  if(side==='top'){ pos={x:index+0.5,y:0}; dir={dx:0,dy:1}; }
-  else if(side==='bottom'){ pos={x:index+0.5,y:activeRows()}; dir={dx:0,dy:-1}; }
-  else if(side==='left'){ pos={x:0,y:index+0.5}; dir={dx:1,dy:0}; }
-  else { pos={x:COLS,y:index+0.5}; dir={dx:-1,dy:0}; }
-
-  const placed = (piecesList || state.pieces).filter(p=>p.center);
-  const colorsHit = new Set();
-  const points = [pos], hitPieceIds=[];
-  let guard=0, absorbed=false, exitSide=null, exitIndex=null,blackHoleBent=false;
-  let skipPieceId=null, skipEdgeIdx=null, passThroughPieceId=null;
-  // Lorsqu'une planète réfléchit l'onde dans la même case qu'une attraction
-  // de trou noir, cette attraction précise est annulée. Une autre case
-  // adjacente au trou noir pourra toutefois encore provoquer une réfraction.
-  const cancelledGravityCells=new Set();
-
-  while(true){
-    guard++;
-    if(guard>400){ absorbed='loop'; break; }
-    let best = { ...intersectBoundary(pos,dir), kind:'boundary' };
-    const gravityCandidates=[];
-    for(const piece of placed){
-      if(piece.id===passThroughPieceId) continue;
-      const edges = beamEdges(piece);
-      let directBlackHoleHit=null;
-      for(let ei=0; ei<edges.length; ei++){
-        if(piece.id===skipPieceId && ei===skipEdgeIdx) continue;
-        const [A,B] = edges[ei];
-        const hit = intersectRaySegment(pos,dir,A,B);
-        if(hit&&CONFIG.PIECES[piece.type]?.isBlackHole&&(!directBlackHoleHit||hit.t<directBlackHoleHit.t))directBlackHoleHit=hit;
-        // À distance égale, un rebond sur une planète est prioritaire sur la
-        // réfraction du trou noir calculée dans cette même case.
-        if(hit && (hit.t < best.t - EPS || (best.kind==='gravity'&&Math.abs(hit.t-best.t)<=EPS))) best = { t:hit.t, point:hit.point, kind:'edge', piece, edgeType:edgeKind(A,B), edgeIdx:ei };
-      }
-      if(CONFIG.PIECES[piece.type]?.isBlackHole&&!blackHoleBent&&!directBlackHoleHit){
-        const c=piece.center;
-        let gravityPoint=null;
-        // L’onde est attirée uniquement en traversant la case située
-        // orthogonalement à côté du trou noir. Elle dévie sur le bord de
-        // sortie de cette case, donc après l’avoir entièrement parcourue.
-        if(dir.dx!==0&&Math.abs(Math.abs(pos.y-c.y)-1)<EPS){
-          const x=c.x+dir.dx,t=(x-pos.x)/dir.dx;
-          if(t>EPS)gravityPoint={t,point:{x,y:pos.y}};
-        }else if(dir.dy!==0&&Math.abs(Math.abs(pos.x-c.x)-1)<EPS){
-          const y=c.y+dir.dy,t=(y-pos.y)/dir.dy;
-          if(t>EPS)gravityPoint={t,point:{x:pos.x,y}};
-        }
-        if(gravityPoint){
-          const before={x:gravityPoint.point.x-dir.dx*EPS*100,y:gravityPoint.point.y-dir.dy*EPS*100};
-          const cellKey=`${piece.id}:${Math.floor(before.x+EPS)}:${Math.floor(before.y+EPS)}`;
-          const candidate={...gravityPoint,kind:'gravity',piece,cellKey};
-          gravityCandidates.push(candidate);
-          if(!cancelledGravityCells.has(cellKey)&&gravityPoint.t<best.t-EPS)best=candidate;
-        }
-      }
-    }
-    if(best.kind==='edge'){
-      // Le point d'attraction se situe à la sortie de la case adjacente au
-      // trou noir. Si une réflexion est rencontrée dans cette même case,
-      // elle est prioritaire et la réfraction de cette case est neutralisée.
-      gravityCandidates.forEach(candidate=>{
-        if(candidate.t+EPS>=best.t&&candidate.t-best.t<=1+EPS)cancelledGravityCells.add(candidate.cellKey);
-      });
-    }
-    if(best.kind==='boundary'){
-      points.push(best.point);
-      const p = best.point;
-      if(Math.abs(p.x)<EPS){ exitSide='left'; exitIndex=Math.floor(p.y); }
-      else if(Math.abs(p.x-COLS)<EPS){ exitSide='right'; exitIndex=Math.floor(p.y); }
-      else if(Math.abs(p.y)<EPS){ exitSide='top'; exitIndex=Math.floor(p.x); }
-      else { exitSide='bottom'; exitIndex=Math.floor(p.x); }
-      break;
-    }
-    passThroughPieceId=null;
-    if(best.kind==='gravity'){
-      points.push(best.point);blackHoleBent=true;
-      const center=best.piece.center;
-      if(dir.dy!==0)dir={dx:Math.sign(center.x-best.point.x),dy:0};
-      else dir={dx:0,dy:Math.sign(center.y-best.point.y)};
-      if(dir.dx===0&&dir.dy===0){absorbed='disappeared';break;}
-      pos={x:best.point.x+dir.dx*EPS*20,y:best.point.y+dir.dy*EPS*20};
-      skipPieceId=null;skipEdgeIdx=null;continue;
-    }
-    const def = CONFIG.PIECES[best.piece.type];
-    hitPieceIds.push(best.piece.id);
-    points.push(best.point);
-    if(def.isOnyx){ absorbed=true; break; }
-    if(def.isBlackHole){absorbed='disappeared';break;}
-    if(def.colorKey) colorsHit.add(def.colorKey);
-    if(def.colorKeys) def.colorKeys.forEach(k=> colorsHit.add(k));
-    // La planète annulaire suit la géométrie de ses contours, comme les
-    // autres planètes : diagonale = déviation à 90°, côté droit = retour.
-    dir = best.edgeType==='wall' ? {dx:-dir.dx,dy:-dir.dy} : reflect(dir, best.edgeType);
-    pos = best.point;
-    skipPieceId = best.piece.id; skipEdgeIdx = best.edgeIdx;
-  }
-  const color = absorbed==='loop' ? CONFIG.TRAPPED : (absorbed==='disappeared'?CONFIG.DISAPPEARED:(absorbed ? CONFIG.ABSORBED : resolveColor(colorsHit)));
-  return { entrySide:side, entryIndex:index, exitSide, exitIndex, absorbed, color, points, hitPieceIds };
+  return window.OrapaEngine.simulateBeam({
+    side,index,pieces:piecesList||state.pieces,width:COLS,height:activeRows(),
+    edgesFor:beamEdges,
+    definitionFor:type=>CONFIG.PIECES[type],
+    resolveColor:(colors,absorbed)=>absorbed==='loop'?CONFIG.TRAPPED:(absorbed==='disappeared'?CONFIG.DISAPPEARED:(absorbed?CONFIG.ABSORBED:resolveColor(colors)))
+  });
 }
 function labelText(side,index){
   if(side==='top') return TOP_LABELS[index];
@@ -3441,6 +3307,51 @@ function renderPalette(){
   }else inPalette.forEach(piece=>appendPiece(piece,paletteEl));
 }
 
+// Mise à jour locale d'une pièce. Les rotations et miroirs n'ont plus à
+// reconstruire la grille, la réserve et leurs écouteurs au complet.
+function updatePalettePieceGeometry(piece){
+  const svg=document.querySelector(`.palette-tile[data-id="${piece.id}"]`);
+  if(!svg)return false;
+  const shape=SHAPES[piece.type],def=CONFIG.PIECES[piece.type];
+  const pts=shape.pts.map(vertex=>transformVertex(vertex,piece.flipped,piece.rotation,{x:0,y:0}));
+  const xs=pts.map(point=>point.x),ys=pts.map(point=>point.y);
+  const cx=(Math.min(...xs)+Math.max(...xs))/2,cy=(Math.min(...ys)+Math.max(...ys))/2;
+  const viewBox=svg.viewBox.baseVal;
+  if(viewBox&&viewBox.width)svg.setAttribute('viewBox',`${cx-viewBox.width/2} ${cy-viewBox.height/2} ${viewBox.width} ${viewBox.height}`);
+  svg.replaceChildren();
+  if(def.isBlackHole){
+    const circle=document.createElementNS(SVGNS,'circle');circle.setAttribute('cx',cx);circle.setAttribute('cy',cy);circle.setAttribute('r',Math.max(Math.max(...xs)-Math.min(...xs),Math.max(...ys)-Math.min(...ys))*.45);circle.setAttribute('fill','#020204');circle.setAttribute('stroke','#7d67a8');circle.setAttribute('stroke-width','.07');svg.appendChild(circle);
+  }else if(def.isRing){
+    spaceRingVisualParts().forEach(part=>{const poly=document.createElementNS(SVGNS,'polygon');poly.setAttribute('points',polyPointsAttr(part.map(vertex=>transformVertex(vertex,piece.flipped,piece.rotation,{x:0,y:0}))));poly.setAttribute('fill',def.hex);poly.setAttribute('stroke',def.hex);poly.setAttribute('stroke-width','.01');svg.appendChild(poly);});
+  }else{
+    const poly=document.createElementNS(SVGNS,'polygon');poly.setAttribute('points',polyPointsAttr(pts));poly.setAttribute('fill',def.isDiamond?'rgba(207,216,220,0.55)':def.hex);poly.setAttribute('stroke',def.isOnyx?'#cfd8dc':'rgba(0,0,0,.4)');poly.setAttribute('stroke-width','.05');poly.setAttribute('vector-effect','non-scaling-stroke');svg.appendChild(poly);
+  }
+  return true;
+}
+function updatePlacedPieceGeometry(piece){
+  const existing=pieceSvg.querySelector(`[data-id="${piece.id}"]`);
+  if(!piece.center){if(existing)existing.remove();return true;}
+  const invalid=(state.mode==='gm'&&!state.started)&&computeInvalidPieceIds(state.pieces).has(piece.id);
+  const replacement=svgPolyForPiece(piece,{invalid});
+  if(piecesEditable())attachPieceInteraction(replacement,piece);
+  if(existing)existing.replaceWith(replacement);else pieceSvg.appendChild(replacement);
+  return true;
+}
+function refreshPieceIncrementally(piece,{paletteMembershipChanged=false}={}){
+  if(piece.center)updatePlacedPieceGeometry(piece);else if(!updatePalettePieceGeometry(piece))paletteMembershipChanged=true;
+  if(paletteMembershipChanged)renderPalette();
+  // Un déplacement peut aussi changer l'état de conflit des voisines, sans
+  // nécessiter de recréer celles qui n'ont pas changé.
+  if(state.mode==='gm'&&!state.started){
+    const invalidIds=computeInvalidPieceIds(state.pieces);
+    state.pieces.filter(candidate=>candidate.center&&candidate.id!==piece.id).forEach(candidate=>{
+      const node=pieceSvg.querySelector(`[data-id="${candidate.id}"]`),isInvalid=node?.classList.contains('piece-invalid');
+      if(!!isInvalid!==invalidIds.has(candidate.id))updatePlacedPieceGeometry(candidate);
+    });
+  }
+  renderControls();
+}
+
 function renderTraces(){
   let html = state.traces.map(t=>{
     const d = t.points.map((p,i)=> (i===0?'M':'L')+p.x+','+p.y).join(' ');
@@ -3731,9 +3642,6 @@ function showToast(msg,duration=1600,tone='neutral'){
   toastTimer = setTimeout(()=> toast.classList.remove('show'), duration);
 }
 function showErrorToast(msg,duration=1600){showToast(msg,duration,'error');}
-function currentViewportScroll(){
-  return {x:window.scrollX||0,y:window.scrollY||0};
-}
 function lockViewportAnchoringForPieceGesture(){
   if(!isFirefox())return ()=>{};
   const root=document.documentElement,body=document.body;
@@ -3745,12 +3653,6 @@ function lockViewportAnchoringForPieceGesture(){
     root.style.overflowAnchor=previousRoot;
     body.style.overflowAnchor=previousBody;
   };
-}
-function restoreViewportAfterPieceDrop(position){
-  if(!position||!isFirefox())return;
-  // Une seule stabilisation au prochain rendu suffit. Les rappels successifs,
-  // notamment celui qui était retardé, pouvaient eux-mêmes provoquer un saut.
-  requestAnimationFrame(()=>window.scrollTo({left:position.x,top:position.y,behavior:'auto'}));
 }
 function revealEarthSkyReserveMove(previousAssignment){
   if(!isEarthSky()||state.mode!=='gm'||state.started)return false;
@@ -3778,7 +3680,7 @@ function onPieceDown(ev, piece, el){
   ev.preventDefault();
   try{ el.setPointerCapture(ev.pointerId); }catch(e){}
   const startX=ev.clientX, startY=ev.clientY;
-  const startViewportScroll=currentViewportScroll();
+  const startedPlaced=!!piece.center;
   const unlockViewportAnchoring=lockViewportAnchoringForPieceGesture();
   let viewportAnchoringLocked=true;
   const releaseViewportAnchoring=()=>{
@@ -3801,8 +3703,7 @@ function onPieceDown(ev, piece, el){
       el.classList.add('flip-pulse');
       setTimeout(()=>el.classList.remove('flip-pulse'),350);
       if(navigator.vibrate) navigator.vibrate(15);
-      renderPalette(); renderPieces(); renderControls();
-      restoreViewportAfterPieceDrop(startViewportScroll);
+      refreshPieceIncrementally(piece);
       tutorialAfterPieceAction(piece);
     }
   }, 480);
@@ -3889,20 +3790,15 @@ function onPieceDown(ev, piece, el){
       ghost.remove();
       el.classList.remove('dragging');
       saveState();
-      renderPalette();
-      renderPieces();
-      renderControls();
-      if(!revealEarthSkyReserveMove(previousEarthSkyAssignment)&&!tutorialActive)restoreViewportAfterPieceDrop(startViewportScroll);
+      const reserveMoved=revealEarthSkyReserveMove(previousEarthSkyAssignment);
+      refreshPieceIncrementally(piece,{paletteMembershipChanged:startedPlaced!==!!piece.center||reserveMoved});
       releaseViewportAnchoring();
       tutorialAfterPiecePlacement(piece);
     } else if(!longPressed){
       piece.rotation = (piece.rotation + 90) % 360;
       resnapAfterTransform(piece);
       saveState();
-      renderPalette();
-      renderPieces();
-      renderControls();
-      restoreViewportAfterPieceDrop(startViewportScroll);
+      refreshPieceIncrementally(piece);
       releaseViewportAnchoring();
       tutorialAfterPieceAction(piece);
     } else {
@@ -3915,9 +3811,6 @@ function onPieceDown(ev, piece, el){
     clearTimeout(longPressTimer);
     if(ghost?.isConnected) ghost.remove();
     el.classList.remove('dragging');
-    renderPalette();
-    renderPieces();
-    renderControls();
     releaseViewportAnchoring();
   }
   window.addEventListener('pointermove', onMove);
