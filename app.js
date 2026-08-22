@@ -3338,7 +3338,12 @@ function updatePlacedPieceGeometry(piece){
   return true;
 }
 function refreshPieceIncrementally(piece,{paletteMembershipChanged=false}={}){
-  if(piece.center)updatePlacedPieceGeometry(piece);else if(!updatePalettePieceGeometry(piece))paletteMembershipChanged=true;
+  // Toujours synchroniser la grille, y compris lorsqu'une pièce vient d'en
+  // sortir. Dans ce dernier cas `updatePlacedPieceGeometry` retire son ancien
+  // nœud SVG ; ne faire que redessiner la réserve laissait un résidu cliquable
+  // sur le plateau.
+  updatePlacedPieceGeometry(piece);
+  if(!piece.center&&!updatePalettePieceGeometry(piece))paletteMembershipChanged=true;
   if(paletteMembershipChanged)renderPalette();
   // Un déplacement peut aussi changer l'état de conflit des voisines, sans
   // nécessiter de recréer celles qui n'ont pas changé.
