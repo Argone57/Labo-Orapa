@@ -2396,6 +2396,9 @@ function polygonsMatch(pA,pB,tol=1e-3){
   if(window.OrapaEngine)return window.OrapaEngine.polygonsMatch(pieceVertices(pA),pieceVertices(pB),tol);
   return polygonVertexSetsMatch(pieceVertices(pA),pieceVertices(pB),tol);
 }
+function cross2(a,b,c){
+  return (b.x-a.x)*(c.y-a.y)-(b.y-a.y)*(c.x-a.x);
+}
 function normalizedClippedPieceVertices(piece,tol=1e-7){
   const board=ensureCCW([{x:0,y:0},{x:COLS,y:0},{x:COLS,y:ROWS},{x:0,y:ROWS}]);
   let vertices=clipPolygon(ensureCCW(pieceVertices(piece)),board);
