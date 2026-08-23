@@ -2195,25 +2195,31 @@ async function startEarthSkySoloGame(explicitId=null,creatorRetry=0){
 }
 
 async function startLostGame(explicitId=null,creatorRetry=0){
+  // La génération et la validation doivent toujours s'effectuer dans le contexte
+  // Gemme perdue : après Terre et Ciel, conserver le mode précédent donnait
+  // à tort une hauteur de 16 lignes aux coordonnées encodées.
+  const previous={variant:state.gameVariant,includeGray:state.includeGray,includeOnyx:state.includeOnyx,includeSapphire:state.includeSapphire};
+  Object.assign(state,{gameVariant:'lost',includeGray:true,includeOnyx:true,includeSapphire:true});
+  const restorePrevious=()=>Object.assign(state,{gameVariant:previous.variant,includeGray:previous.includeGray,includeOnyx:previous.includeOnyx,includeSapphire:previous.includeSapphire});
   let decoded=null,secret=null,gridId=null,missingType=null;
   if(explicitId){
     decoded=decodeGridId(explicitId);
-    if(!decoded||decoded.variant!=='lost'){showErrorToast('Cet identifiant ne correspond pas à une grille Gemme perdue.');return;}
+    if(!decoded||decoded.variant!=='lost'){restorePrevious();showErrorToast('Cet identifiant ne correspond pas à une grille Gemme perdue.');return;}
     secret=decoded.pieces.map(p=>({id:'p'+(pieceIdSeq++),type:p.type,center:{...p.center},rotation:p.rotation,flipped:p.flipped}));
     missingType=decoded.missingType;gridId=decoded.id;
   }else{
     missingType=TYPE_ORDER[Math.floor(Math.random()*TYPE_ORDER.length)];
     secret=generateRandomLayout(100,TYPE_ORDER.filter(type=>type!==missingType));
-    if(!secret){showErrorToast('Impossible de générer cette grille. Réessaie.');return;}
+    if(!secret){restorePrevious();showErrorToast('Impossible de générer cette grille. Réessaie.');return;}
     gridId=encodeLostGridId(secret,missingType);
   }
-  if(computeInvalidPieceIds(secret).size>0){showErrorToast('Cet identifiant ne correspond à aucune grille valide.');return;}
+  if(computeInvalidPieceIds(secret).size>0){restorePrevious();showErrorToast('Cet identifiant ne correspond à aucune grille valide.');return;}
   let gridStatus={};
   if(!LAB_MODE)try{gridStatus=await supabaseRpc('orapa_get_lost_grid_status',{p_grid_id:gridId,p_session_token:currentPlayerAccount?.session_token||''});}
-  catch(error){console.warn('Statut Gemme perdue indisponible',error);if(explicitId){showErrorToast('Impossible de vérifier cette grille.');return;}}
+  catch(error){console.warn('Statut Gemme perdue indisponible',error);if(explicitId){restorePrevious();showErrorToast('Impossible de vérifier cette grille.');return;}}
   if(gridStatus?.is_creator){
     if(!explicitId&&creatorRetry<24)return startLostGame(null,creatorRetry+1);
-    openCreatorGridBlockedModal(gridId);return;
+    restorePrevious();openCreatorGridBlockedModal(gridId);return;
   }
   const gridAlias=await ensureGridAlias(gridId,'lost');
   setHintMode(false);
@@ -3510,7 +3516,9 @@ function renderControls(){
   $('#btnStart').disabled = state.started || !!startBlockReason;
   $('#btnShareGrid').disabled = !gmPreStart || !!startBlockReason;
   $('#startBlockMsg').textContent = startBlockReason;
-  $('#startBlockMsg').style.display = startBlockReason ? 'block' : 'none';
+  // Hauteur réservée dans tous les modes de création : l'apparition d'un
+  // conflit ne déplace plus les réserves ni le plateau.
+  $('#startBlockMsg').style.display = gmPreStart ? 'block' : 'none';
   $('#btnPropose').style.display = (state.mode==='solo' && !state.soloOver) ? '' : 'none';
   const proposeBlocked=state.mode==='solo'&&!state.soloOver&&state.gameVariant!=='lost'&&state.pieces.some(piece=>!piece.center);
   $('#btnPropose').disabled=proposeBlocked;

@@ -58,6 +58,7 @@ button:disabled{opacity:.35;cursor:not-allowed;}
 .setup-options{display:flex;gap:16px;justify-content:center;flex-wrap:wrap;margin:12px 0 4px;font-size:.8rem;color:var(--text-dim);}
 .setup-options label{display:flex;align-items:center;gap:6px;cursor:pointer;}
 .setup-options input[type=checkbox]{width:16px;height:16px;accent-color:var(--gold);}
+#startBlockMsg{display:none;min-height:1.35em;margin:0;color:#f5b8ae;font-size:.78rem;line-height:1.35;text-align:center;}
 .section-title{display:flex;align-items:center;gap:8px;margin:22px 0 10px;color:var(--gold);font-size:.72rem;text-transform:uppercase;letter-spacing:.12em;}
 .section-title::after{content:'';flex:1;height:1px;background:linear-gradient(90deg,var(--vein),transparent);}
 .palette{display:flex;gap:calc(5px + 9px * var(--palette-scale,1));flex-wrap:wrap;align-items:center;padding:calc(5px + 7px * var(--palette-scale,1));border-radius:var(--radius);background:var(--panel);border:1px solid var(--vein);min-height:calc(34px + 42px * var(--palette-scale,1));position:relative;overflow-anchor:none;}
@@ -352,15 +353,15 @@ body.app-loading .app,body.app-loading .account-fab,body.app-loading .rankings-f
       <button id="btnEndGame" class="danger" style="display:none;">🏁 Fin de partie</button>
       <button id="btnShareGrid" class="ghost">📤 Partager la grille</button>
       <button id="btnHome" class="ghost">← Retour à l'accueil</button>
+      <button id="btnReset" class="danger">Recommencer</button>
     </div>
-    <div id="startBlockMsg" style="display:none;color:#f5b8ae;font-size:.78rem;margin-top:8px;text-align:center;"></div>
+    <div id="startBlockMsg" aria-live="polite"></div>
     <div class="controls">
       <button id="btnHint" class="ghost" style="display:none;">🔍 Demander un indice</button>
       <button id="btnPropose" class="primary" style="display:none;">✅ Proposer une solution</button>
       <button id="btnToggleGuess" class="ghost" style="display:none;">👁 Mes gemmes</button>
       <button id="btnToggleSecret" class="ghost" style="display:none;">👁 Gemmes à trouver</button>
       <button id="btnReplayVictory" class="ghost" style="display:none;">📋 Afficher le résultat</button>
-      <button id="btnReset" class="danger">Recommencer</button>
       <button id="btnBackToGM" class="ghost" style="display:none;">← Retour à l'accueil</button>
     </div>
   </header>
@@ -812,7 +813,7 @@ body.app-loading .app,body.app-loading .account-fab,body.app-loading .rankings-f
   </div>
 </div>
 
-<script src="engine-core.js?v=labo-20260823-0003"></script>
-<script src="app.js?v=labo-20260823-0003"></script>
+<script src="engine-core.js?v=labo-20260823-0005"></script>
+<script src="app.js?v=labo-20260823-0005"></script>
 </body>
 </html>
