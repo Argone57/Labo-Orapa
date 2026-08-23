@@ -1361,6 +1361,9 @@ function earthSkyHalfBounds(piece){
 }
 function freshPieceSet(){ return allTypes().map(t=> newPiece(t)); }
 function newPiece(type){ return { id:'p'+(pieceIdSeq++), type, center:null, rotation:0, flipped:false }; }
+function isKnownPiece(piece){
+  return !!(piece && typeof piece.type==='string' && SHAPES[piece.type] && CONFIG.PIECES[piece.type]);
+}
 
 function saveState(){
   try{
@@ -1373,6 +1376,15 @@ function loadState(){
     if(!raw) return false;
     const s = JSON.parse(raw);
     if(!s || !Array.isArray(s.pieces)) return false;
+    // Une ancienne version peut avoir enregistré un type de pièce qui n'existe
+    // plus (ou une pièce incomplète après un chargement interrompu). Cette
+    // sauvegarde ne peut pas être reprise de manière fiable : on la laisse de
+    // côté et on repart d'un état propre plutôt que de bloquer tout le rendu.
+    if(!s.pieces.every(isKnownPiece) || (Array.isArray(s.secretPieces) && !s.secretPieces.every(isKnownPiece))){
+      console.warn('Sauvegarde locale incompatible ignorée.');
+      localStorage.removeItem('orapaMineStateV3');
+      return false;
+    }
     lastScoreResult = s.savedScoreResult || null;
     delete s.savedScoreResult;
     state = s;
@@ -3280,6 +3292,11 @@ function renderPalette(){
   paletteEl.style.setProperty('--palette-scale',String(reserveScale));
   const appendPiece=(piece,target)=>{
     const shape = SHAPES[piece.type];
+    const def = CONFIG.PIECES[piece.type];
+    if(!shape||!def){
+      console.warn('Pièce ignorée dans la réserve : type inconnu.',piece?.type);
+      return;
+    }
     // Encombrement maximal possible (à rotation 0, une rotation de 90° ne fait qu'échanger
     // largeur/hauteur donc le plus grand côté reste identique) -> taille de conteneur FIXE,
     // pour que la tuile ne change jamais de taille/position dans la palette en tournant.
@@ -3297,7 +3314,6 @@ function renderPalette(){
     svg.style.width = (boxSize*cs*reserveScale)+'px';
     svg.style.height = (boxSize*cs*reserveScale)+'px';
     svg.classList.add('palette-tile');
-    const def = CONFIG.PIECES[piece.type];
     if(def.isBlackHole){
       const circle=document.createElementNS(SVGNS,'circle');circle.setAttribute('cx',cx);circle.setAttribute('cy',cy);circle.setAttribute('r',Math.max(baseW,baseH)*.45);circle.setAttribute('fill','#020204');circle.setAttribute('stroke','#7d67a8');circle.setAttribute('stroke-width','.07');svg.appendChild(circle);
     }else if(def.isRing){
