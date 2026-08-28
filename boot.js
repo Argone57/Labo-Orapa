@@ -1,5 +1,5 @@
 /*
- * Chargeur de version de la préproduction.
+ * Chargeur de version d'Orapa Mine.
  *
  * La page peut rester brièvement en cache chez GitHub Pages alors que
  * version.json a déjà changé. On charge donc toujours le moteur et
@@ -8,7 +8,7 @@
  */
 (function(){
   'use strict';
-  const FALLBACK_VERSION='preprod-20260828-0001';
+  const FALLBACK_VERSION='20260828-0002';
 
   function scriptUrl(file,version){
     return `${file}?v=${encodeURIComponent(version)}`;

@@ -1,16 +1,16 @@
-// Orapa Mine — préproduction complète.
-// Les services en ligne sont actifs, mais les données locales sont isolées
-// de celles du site publié sur /Orapa-Mine/.
-const LAB_MODE = false;
-const LOCAL_STORAGE_PREFIX = 'orapaPreprod';
+// Le même code est publié sur le laboratoire et sur le site principal.
+// Seules les données locales sont séparées afin qu'une partie de préproduction
+// ne puisse jamais écraser une partie ou un compte mémorisé en production.
+const IS_PREPRODUCTION = /\/Labo-Orapa(?:\/|$)/i.test(window.location.pathname);
+const LOCAL_STORAGE_PREFIX = IS_PREPRODUCTION ? 'orapaPreprod' : 'orapaMine';
 // La version du code chargé vient directement du paramètre du script dans
 // index.html. Cela évite qu'une version dupliquée ici soit oubliée lors d'une
 // publication et provoque une demande de mise à jour en boucle.
 const APP_VERSION = (()=>{
   try{
-    return new URL(document.currentScript?.src || '',window.location.href).searchParams.get('v') || 'preprod-20260828-0001';
+    return new URL(document.currentScript?.src || '',window.location.href).searchParams.get('v') || '20260828-0002';
   }catch(_error){
-    return 'preprod-20260828-0001';
+    return '20260828-0002';
   }
 })();
 let publishedAppVersion = null;
@@ -389,7 +389,6 @@ function updateAccountFab(){
   btn.classList.toggle('connected',!!currentPlayerAccount);
 }
 async function rawSupabaseRpc(fn,params={}){
-  if(LAB_MODE) throw new Error(`Fonction en ligne désactivée dans le laboratoire (${fn})`);
   const response=await fetch(`${SUPABASE_URL}/rest/v1/rpc/${fn}`,{
     method:'POST',headers:supabaseHeaders({'Content-Type':'application/json'}),body:JSON.stringify(params)
   });
@@ -1123,7 +1122,6 @@ function renderScoreInlineLogin(resolve,create=false,switching=false){
   };
 }
 async function requestScoreIdentity(title='Enregistrer le score'){
-  if(LAB_MODE)return {saveGlobal:false,name:'Testeur labo',pin:'',sessionToken:''};
   return new Promise(resolve=>{
     scoreIdentityResolver=resolve;
     const heading=$('#scoreIdentityModal h2');
@@ -1613,7 +1611,6 @@ async function preloadGridAliases(payload){
 }
 async function ensureGridAlias(gridId,variant){
   if(!gridId)return null;
-  if(LAB_MODE)return null;
   const known=gridAliasByCanonical.get(String(gridId).toUpperCase());if(known)return known;
   try{
     const alias=await rawSupabaseRpc('orapa_ensure_grid_alias',{p_grid_id:gridId,p_game_variant:variant});
@@ -1623,7 +1620,6 @@ async function ensureGridAlias(gridId,variant){
 }
 async function resolveGridReference(input){
   const direct=decodeGridId(input);if(direct)return direct;
-  if(LAB_MODE)return null;
   if(!looksLikeGridAlias(input))return null;
   const cached=gridCanonicalByAlias.get(normalizeGridAlias(input));
   if(cached)return decodeGridId(cached);
@@ -1976,7 +1972,7 @@ function generateDailyLayout(dateKey){
   return null;
 }
 
-// Audit laboratoire sans effet sur le tirage : les signatures ignorent les
+// Audit de génération sans effet sur le tirage : les signatures ignorent les
 // identifiants temporaires, dont l'incrémentation ne participe pas au hasard.
 // Il permet de vérifier en une passe la stabilité du défi et ses exceptions.
 window.runDailyGeneratorAudit=function(startDate='2026-07-30',days=180){
@@ -2093,7 +2089,7 @@ async function startSoloGame(explicitId,creatorRetry=0){
     ranked = true;
   }
   let gridStatus={};
-  if(!LAB_MODE)try{
+  try{
     gridStatus=await supabaseRpc('orapa_get_grid_status',{p_grid_id:gridId,p_session_token:currentPlayerAccount.session_token});
   }catch(e){
     console.warn('Statut de grille indisponible',e);
@@ -2165,7 +2161,7 @@ async function startSpaceSoloGame(explicitId,creatorRetry=0){
     gridId=encodeSpaceGridId(secret,state.includeBlackHole);
   }
   let status={};
-  if(!LAB_MODE)try{status=await supabaseRpc('orapa_get_space_grid_status',{p_grid_id:gridId,p_session_token:currentPlayerAccount?.session_token||''});}
+  try{status=await supabaseRpc('orapa_get_space_grid_status',{p_grid_id:gridId,p_session_token:currentPlayerAccount?.session_token||''});}
   catch(error){console.warn('Statut Orapa Space indisponible',error);state.gameVariant=previousVariant;state.includeBlackHole=previousBlackHole;showErrorToast('Impossible de vérifier cette grille. Vérifie ta connexion puis réessaie.');return;}
   if(status?.is_creator){
     if(!explicitId&&creatorRetry<20)return startSpaceSoloGame(null,creatorRetry+1);
@@ -2195,7 +2191,7 @@ async function startEarthSkySoloGame(explicitId=null,creatorRetry=0){
   }
   if(computeInvalidPieceIds(secret).size){Object.assign(state,{gameVariant:previous.variant,earthSkyMineOnTop:previous.mineOnTop});showErrorToast('Cette double grille n’est pas valide.');return;}
   let status={};
-  if(!LAB_MODE)try{status=await supabaseRpc('orapa_get_earth_sky_grid_status',{p_grid_id:gridId,p_session_token:currentPlayerAccount?.session_token||''});}
+  try{status=await supabaseRpc('orapa_get_earth_sky_grid_status',{p_grid_id:gridId,p_session_token:currentPlayerAccount?.session_token||''});}
   catch(error){console.warn('Statut Terre et Ciel indisponible',error);Object.assign(state,{gameVariant:previous.variant,earthSkyMineOnTop:previous.mineOnTop});showErrorToast('Impossible de vérifier cette grille. Vérifie ta connexion puis réessaie.');return;}
   if(status?.is_creator){
     if(!explicitId&&creatorRetry<20)return startEarthSkySoloGame(null,creatorRetry+1);
@@ -2229,7 +2225,7 @@ async function startLostGame(explicitId=null,creatorRetry=0){
   }
   if(computeInvalidPieceIds(secret).size>0){restorePrevious();showErrorToast('Cet identifiant ne correspond à aucune grille valide.');return;}
   let gridStatus={};
-  if(!LAB_MODE)try{gridStatus=await supabaseRpc('orapa_get_lost_grid_status',{p_grid_id:gridId,p_session_token:currentPlayerAccount?.session_token||''});}
+  try{gridStatus=await supabaseRpc('orapa_get_lost_grid_status',{p_grid_id:gridId,p_session_token:currentPlayerAccount?.session_token||''});}
   catch(error){console.warn('Statut Gemme perdue indisponible',error);if(explicitId){restorePrevious();showErrorToast('Impossible de vérifier cette grille.');return;}}
   if(gridStatus?.is_creator){
     if(!explicitId&&creatorRetry<24)return startLostGame(null,creatorRetry+1);
@@ -2319,7 +2315,6 @@ async function browserEnvironmentFingerprint(){
   }catch(e){ return JSON.stringify(fallback); }
 }
 async function acquireDailyChallengeLock(dateKey){
-  if(LAB_MODE)return {accepted:true};
   if(!currentPlayerAccount?.session_token) return {accepted:false,reason:'account_required'};
   const fingerprint=await browserEnvironmentFingerprint();
   return supabaseRpc('orapa_acquire_daily_lock',{
@@ -2329,7 +2324,6 @@ async function acquireDailyChallengeLock(dateKey){
   });
 }
 async function releaseDailyChallengeLock(identity,dateKey){
-  if(LAB_MODE)return;
   if(!identity?.sessionToken||!dateKey) return;
   try{await supabaseRpc('orapa_release_daily_lock',{p_session_token:identity.sessionToken,p_daily_date:dateKey});}
   catch(error){console.warn('Libération du verrou du défi impossible :',error);}
@@ -2499,29 +2493,6 @@ async function proposeSolution(){
   if(state.gameVariant==='lost'){openLostSolutionModal();return;}
   if(state.pieces.some(piece=>!piece.center)) return;
   const correct=evaluateGuess();
-  // Le laboratoire ne possède ni compte ni classement en ligne. Son défi du
-  // jour doit donc se conclure entièrement en local, sans passer par le
-  // dialogue d'identité ni les protections Supabase de la production.
-  if(LAB_MODE&&state.isDaily){
-    if(!correct) state.soloAttempts++;
-    state.soloOver=true;
-    state.soloResult=correct?'win':'lose';
-    const elapsedMs=state.firstActionTime?(Date.now()-state.firstActionTime):0;
-    state.finalTimeMs=elapsedMs;
-    const daily=recordDailyScore('Testeur labo',state.dailyDate,correct,elapsedMs);
-    lastScoreResult={
-      key:'Défi du jour',
-      entry:{...daily.entry,gridId:null,isDaily:true,dailyDate:state.dailyDate},
-      rank:daily.rank,
-      madeList:true
-    };
-    saveDailyAttempt({date:state.dailyDate,result:state.soloResult,accountId:dailyAttemptAccountKey()});
-    saveDailyFinalSnapshot();
-    saveState();
-    renderAll();
-    setTimeout(()=>openVictoryModal(),60);
-    return;
-  }
   if(correct){
     state.soloOver=true; state.soloResult='win';
     const elapsedMs=state.firstActionTime?(Date.now()-state.firstActionTime):0; state.finalTimeMs=elapsedMs;
@@ -3980,7 +3951,7 @@ function showGame(){
   setTimeout(()=>{ computeCellSize(); renderAll(); },0);
 }
 async function enterSolo(){
-  if(!LAB_MODE&&!currentPlayerAccount){
+  if(!currentPlayerAccount){
     $('#soloAccountPromptModal').classList.add('open');
     return;
   }
@@ -4470,15 +4441,6 @@ $('#btnEndGame').addEventListener('click',async()=>{
 });
 $('#btnShareGrid').addEventListener('click',async()=>{
   if(state.mode!=='gm'||state.started||$('#btnShareGrid').disabled) return;
-  if(LAB_MODE){
-    if(state.gameVariant==='lost')state.missingType=state.pieces.find(piece=>!piece.center)?.type||null;
-    const gridId=state.gameVariant==='lost'?encodeLostGridId(state.pieces,state.missingType):(state.gameVariant==='space'?encodeSpaceGridId(state.pieces,state.includeBlackHole):(isEarthSky()?encodeEarthSkyGridId(state.pieces):encodeGridId(state.pieces,state.includeGray,state.includeOnyx,state.includeSapphire)));
-    if(!gridId)return;
-    state.gridId=gridId;state.gridAlias=null;saveState();
-    await navigator.clipboard?.writeText(gridChallengeText(gridId));
-    showToast('Défi local copié avec son ID long.');
-    return;
-  }
   if(!currentPlayerAccount){
     await gameAlert('Connectez-vous pour enregistrer cette grille comme la vôtre et la partager. Aucune adresse mail n’est nécessaire.','Connexion nécessaire');
     await openAccountModal();
@@ -4548,7 +4510,7 @@ $('#btnReset').addEventListener('click', async()=>{
   }
 });
 
-let dailyTriforceState=LAB_MODE?{checked:true,unlocked:true,error:false}:{checked:false,unlocked:false,error:false};
+let dailyTriforceState={checked:false,unlocked:false,error:false};
 let prerequisiteModalContext='triforce';
 function renderDailyStatusLine(status){
   const line=$('#dailyStatusLine');
@@ -4603,7 +4565,6 @@ function openEarthSkyPrerequisiteModal(checkError=false){
 }
 function closeTriforcePrerequisiteModal(){$('#triforcePrerequisiteModal').classList.remove('open');}
 async function verifyTriforcePrerequisite(showModal=false){
-  if(LAB_MODE){dailyTriforceState={checked:true,unlocked:true,error:false};return true;}
   if(!currentPlayerAccount?.session_token){
     dailyTriforceState={checked:true,unlocked:false,error:true};
     if(showModal)openTriforcePrerequisiteModal(true);
@@ -4619,7 +4580,6 @@ async function verifyTriforcePrerequisite(showModal=false){
   return dailyTriforceState.unlocked;
 }
 async function verifySpaceStudentPrerequisite(showModal=false){
-  if(LAB_MODE)return true;
   if(!currentPlayerAccount?.session_token){
     if(showModal)openSpaceStudentPrerequisiteModal(false);
     return false;
@@ -4635,7 +4595,6 @@ async function verifySpaceStudentPrerequisite(showModal=false){
   }
 }
 async function verifyEarthSkyPrerequisites(showModal=false){
-  if(LAB_MODE)return true;
   if(!currentPlayerAccount?.session_token){if(showModal)openEarthSkyPrerequisiteModal(false);return false;}
   try{
     const catalog=await getAchievementCatalog(true);
@@ -4648,7 +4607,7 @@ async function verifyEarthSkyPrerequisites(showModal=false){
 async function openSoloChoiceModal(){
   document.body.classList.add('solo-menu-open');
   const line = $('#dailyStatusLine');
-  dailyTriforceState=LAB_MODE?{checked:true,unlocked:true,error:false}:{checked:false,unlocked:false,error:false};
+  dailyTriforceState={checked:false,unlocked:false,error:false};
   renderDailyStatusLine(dailyStatusToday());
   $('#soloChoiceModal').classList.add('open');
   document.querySelectorAll('#soloChoiceModal .earth-sky-preview').forEach(zone=>zone.hidden=!canPreviewEarthSky());
@@ -5465,6 +5424,7 @@ $('#historyToggle').addEventListener('click',toggleHistoryDisclosure);
 // INIT
 // ---------------------------------------------------------------------
 function init(){
+  document.body.classList.toggle('preproduction',IS_PREPRODUCTION);
   applyFirefoxPerformanceMode();
   updateAccountFab();
   buildMixBoard();
@@ -5484,13 +5444,6 @@ function init(){
   // s'ouvre toujours sur l'accueil : la reprise est proposée depuis « Jouer en solo ».
   showHome();
   requestAnimationFrame(()=>document.body.classList.remove('app-loading'));
-
-  if(LAB_MODE){
-    document.body.classList.add('lab-mode');
-    $('#accountFab')?.setAttribute('hidden','');
-    $('#rankingsFab')?.setAttribute('hidden','');
-    return;
-  }
 
   // Les contrôles Supabase ne doivent jamais bloquer l'affichage initial.
   // Une éventuelle grille créée par ce compte est fermée après validation.
