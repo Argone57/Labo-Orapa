@@ -1,7 +1,8 @@
 {
-  "name": "Orapa Mine — Maître du jeu",
-  "short_name": "Orapa Mine",
-  "start_url": "./index.html",
+  "id": "./?preproduction",
+  "name": "Orapa Mine — Préproduction",
+  "short_name": "Orapa préprod",
+  "start_url": "./?preproduction",
   "display": "standalone",
   "background_color": "#120e0a",
   "theme_color": "#120e0a",

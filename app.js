@@ -1,14 +1,16 @@
-// Orapa Mine — laboratoire autonome du moteur de jeu.
-// Cette copie ne doit effectuer aucun appel vers Supabase.
-const LAB_MODE = true;
+// Orapa Mine — préproduction complète.
+// Les services en ligne sont actifs, mais les données locales sont isolées
+// de celles du site publié sur /Orapa-Mine/.
+const LAB_MODE = false;
+const LOCAL_STORAGE_PREFIX = 'orapaPreprod';
 // La version du code chargé vient directement du paramètre du script dans
 // index.html. Cela évite qu'une version dupliquée ici soit oubliée lors d'une
 // publication et provoque une demande de mise à jour en boucle.
 const APP_VERSION = (()=>{
   try{
-    return new URL(document.currentScript?.src || '',window.location.href).searchParams.get('v') || '20260822-0008';
+    return new URL(document.currentScript?.src || '',window.location.href).searchParams.get('v') || 'preprod-20260828-0001';
   }catch(_error){
-    return '20260822-0008';
+    return 'preprod-20260828-0001';
   }
 })();
 let publishedAppVersion = null;
@@ -272,9 +274,9 @@ function gridChallengeText(gridId){
 // Le classement est stocké localement (voir le README pour la limite : sans
 // backend externe, il n'est pas synchronisé entre navigateurs différents).
 // ---------------------------------------------------------------------
-const DAILY_ATTEMPT_KEY = 'orapaMineDailyAttemptV1';
-const DAILY_RANKINGS_KEY = 'orapaMineDailyRankingsV1';
-const DAILY_FINAL_SNAPSHOTS_KEY = 'orapaMineDailyFinalSnapshotsV1';
+const DAILY_ATTEMPT_KEY = `${LOCAL_STORAGE_PREFIX}DailyAttemptV1`;
+const DAILY_RANKINGS_KEY = `${LOCAL_STORAGE_PREFIX}DailyRankingsV1`;
+const DAILY_FINAL_SNAPSHOTS_KEY = `${LOCAL_STORAGE_PREFIX}DailyFinalSnapshotsV1`;
 let remoteDailyStatusCache = null;
 let remoteDailyStatusPromise = null;
 function loadDailyAttempt(){
@@ -336,12 +338,12 @@ function recordDailyScore(name, dateKey, success, elapsedMsOverride){
 // ---------------------------------------------------------------------
 const SUPABASE_URL = 'https://itiegzwnjlllhtwhfnxs.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_dbom16g7Bts5GvJTq6n3nw_O0nIVvw5';
-const GLOBAL_SCORE_IDS_KEY = 'orapaMineGlobalScoreIdsV1';
+const GLOBAL_SCORE_IDS_KEY = `${LOCAL_STORAGE_PREFIX}GlobalScoreIdsV1`;
 
-const PLAYER_ACCOUNT_KEY = 'orapaMinePlayerAccountV1';
-const PLAYER_TRUST_KEY = 'orapaMinePlayerTrustV1';
-const FIREFOX_PERFORMANCE_KEY = 'orapaMineFirefoxPerformanceV1';
-const LEGACY_FIREFOX_ANDROID_PERFORMANCE_KEY = 'orapaMineFirefoxAndroidPerformanceV1';
+const PLAYER_ACCOUNT_KEY = `${LOCAL_STORAGE_PREFIX}PlayerAccountV1`;
+const PLAYER_TRUST_KEY = `${LOCAL_STORAGE_PREFIX}PlayerTrustV1`;
+const FIREFOX_PERFORMANCE_KEY = `${LOCAL_STORAGE_PREFIX}FirefoxPerformanceV1`;
+const LEGACY_FIREFOX_ANDROID_PERFORMANCE_KEY = `${LOCAL_STORAGE_PREFIX}FirefoxAndroidPerformanceV1`;
 let currentPlayerAccount = loadPlayerAccount();
 let scoreIdentityResolver = null;
 
@@ -1367,12 +1369,12 @@ function isKnownPiece(piece){
 
 function saveState(){
   try{
-    localStorage.setItem('orapaMineStateV3',JSON.stringify({...state,savedScoreResult:lastScoreResult}));
+    localStorage.setItem(`${LOCAL_STORAGE_PREFIX}StateV3`,JSON.stringify({...state,savedScoreResult:lastScoreResult}));
   }catch(e){}
 }
 function loadState(){
   try{
-    const raw = localStorage.getItem('orapaMineStateV3');
+    const raw = localStorage.getItem(`${LOCAL_STORAGE_PREFIX}StateV3`);
     if(!raw) return false;
     const s = JSON.parse(raw);
     if(!s || !Array.isArray(s.pieces)) return false;
@@ -1382,7 +1384,7 @@ function loadState(){
     // côté et on repart d'un état propre plutôt que de bloquer tout le rendu.
     if(!s.pieces.every(isKnownPiece) || (Array.isArray(s.secretPieces) && !s.secretPieces.every(isKnownPiece))){
       console.warn('Sauvegarde locale incompatible ignorée.');
-      localStorage.removeItem('orapaMineStateV3');
+      localStorage.removeItem(`${LOCAL_STORAGE_PREFIX}StateV3`);
       return false;
     }
     lastScoreResult = s.savedScoreResult || null;
@@ -4000,7 +4002,7 @@ async function activeSoloGridIsAllowed(){
     return true;
   }catch(error){showErrorToast('Vérification de la grille impossible.');return false;}
 }
-const TUTORIAL_PROGRESS_KEY='orapaTutorialProgressV1',SPACE_TUTORIAL_PROGRESS_KEY='orapaSpaceTutorialProgressV1';
+const TUTORIAL_PROGRESS_KEY=`${LOCAL_STORAGE_PREFIX}TutorialProgressV1`,SPACE_TUTORIAL_PROGRESS_KEY=`${LOCAL_STORAGE_PREFIX}SpaceTutorialProgressV1`;
 let tutorialActive=false,tutorialKind='mine',tutorialResumeKind='mine',tutorialStage=0,tutorialTargetLabel=null,tutorialTargetCell=null,tutorialWrongPieceId=null,tutorialLastResult=null,tutorialRayExamples=[],tutorialRayIndex=0,tutorialPlacementIndex=0,tutorialPlacementPieceId=null,tutorialPlacementEnds=[],tutorialStepNumber=0,tutorialStepKey='';
 function tutorialProgressKey(kind=tutorialKind){return kind==='space'?SPACE_TUTORIAL_PROGRESS_KEY:TUTORIAL_PROGRESS_KEY;}
 function tutorialProgressVersion(kind=tutorialKind){return kind==='space'?8:1;}
