@@ -701,9 +701,8 @@ function openGridDataShell(title,intro='',returnToAccount=false,returnToVictory=
 }
 function gridRankingRows(rows){
   if(!rows?.length) return '<div class="history-empty">Aucun score classé pour cette grille.</div>';
-  const myAccountName=currentPlayerAccount?.display_name?.trim().toLocaleLowerCase('fr-FR')||'';
   return rows.map(row=>{
-    const mine=!!myAccountName&&String(row.player_name||'').trim().toLocaleLowerCase('fr-FR')===myAccountName;
+    const mine=!!row.is_mine;
     return `<div class="ranking-row grid-ranking-row one-line-ranking${mine?' ranking-mine':''}"><div class="ranking-row-top">
     <span class="ranking-player-cell"><span class="ranking-rank${Number(row.rank)===1?' top1':''}">${rankingMedal(Number(row.rank)-1)}</span><span class="ranking-name">${escapeHtml(row.player_name||'Anonyme')}${row.played_by_creator?' *':''}</span>${row.success?'':'<span class="ranking-fail">Échec</span>'}</span>
     <span class="ranking-query-cell">${row.ray_count||0} 🔦 + ${row.coord_count||0} 📍${row.placement_bonus?' · 🧩':''}</span>
@@ -722,7 +721,7 @@ async function openGridRanking(gridId,returnToAccount=false,returnToVictory=fals
   await ensureGridAlias(gridId,variant||'classic');
   const lost=variant==='lost',space=variant==='space',earthSky=variant==='earthSky';
   const rankingRpc=earthSky?'orapa_earth_sky_grid_ranking':(space?'orapa_space_grid_ranking':(lost?'orapa_lost_grid_ranking':'orapa_get_grid_scores'));
-  const rankingArgs=(lost||space||earthSky)?{p_grid_id:gridId,p_session_token:currentPlayerAccount?.session_token||''}:{p_grid_id:gridId};
+  const rankingArgs={p_grid_id:gridId,p_session_token:currentPlayerAccount?.session_token||''};
   if(returnToAccount&&$('#gridDataModal').classList.contains('open')){
     $('#nestedGridRankingIntro').innerHTML=gridRankingIntro(gridId,'copyNestedRankedGridId');
     $('#nestedGridRankingContent').innerHTML='<div class="history-empty">Chargement…</div>';
@@ -1280,7 +1279,7 @@ async function shareLostGridGlobally(gridId){
 async function fetchGlobalDailyScores(dateKey, force=false){
   if(!force && globalRankingCache[dateKey]) return globalRankingCache[dateKey];
   const query = new URLSearchParams({
-    select:'id,daily_date,player_name,success,cost,ray_count,coord_count,time_ms,created_at',
+    select:'id,daily_date,player_id,player_name,success,cost,ray_count,coord_count,time_ms,created_at',
     daily_date:`eq.${dateKey}`,
     order:'success.desc,cost.asc,time_ms.asc,created_at.asc',
     limit:'100'
@@ -1298,7 +1297,7 @@ async function fetchAllGlobalScores(force=false){
   const pageSize=1000;
   for(let start=0;;start+=pageSize){
     const query=new URLSearchParams({
-      select:'id,daily_date,player_name,success,cost,ray_count,coord_count,time_ms,created_at',
+      select:'id,daily_date,player_id,player_name,success,cost,ray_count,coord_count,time_ms,created_at',
       order:'daily_date.desc,created_at.asc'
     });
     const response=await fetch(`${SUPABASE_URL}/rest/v1/daily_scores?${query}`,{
@@ -4994,7 +4993,7 @@ async function searchGridCatalog(input){
 function rankingMedal(i){ return ['🥇','🥈','🥉'][i] || `#${i+1}`; }
 function globalEntryToLocal(e){
   return {
-    id:e.id, name:e.player_name, success:e.success, cost:e.cost,
+    id:e.id, accountId:e.player_id, name:e.player_name, success:e.success, cost:e.cost,
     rayCount:e.ray_count, coordCount:e.coord_count, timeMs:e.time_ms,
     date:new Date(e.created_at).getTime(), dailyDate:e.daily_date, isDaily:true
   };
@@ -5008,8 +5007,7 @@ async function renderGlobalRanking(dateKey, force=false){
   try{
     const rows = await fetchGlobalDailyScores(dateKey, force);
     if(el.dataset.renderToken!==token || rankingView!=='global') return;
-    const myId = loadGlobalScoreIds()[dateKey];
-    const myAccountName = currentPlayerAccount?.display_name?.trim().toLocaleLowerCase('fr-FR') || '';
+    const myAccountId = currentPlayerAccount?.id;
     const layout = generateDailyLayout(dateKey);
     const gems = layout ? gemFlagsEmojiLine(layout.flags.gray, layout.flags.onyx, layout.flags.sapphire) : '';
     if(rows.length===0){
@@ -5019,7 +5017,7 @@ async function renderGlobalRanking(dateKey, force=false){
     const wins = rows.filter(r=>r.success).length;
     el.innerHTML = `<div class="global-ranking-summary daily-ranking-summary"><span class="summary-stat" title="Participants"><b>${rows.length}</b> 👥</span><span class="summary-separator">·</span><span class="summary-stat"><b>${wins}</b> réussite${wins>1?'s':''}</span><span class="summary-gems">${gems}</span></div>` + rows.map((raw,i)=>{
       const e=globalEntryToLocal(raw);
-      const mine=String(e.id)===String(myId) || (!!myAccountName && String(e.name||'').trim().toLocaleLowerCase('fr-FR')===myAccountName);
+      const mine=!!myAccountId&&String(e.accountId)===String(myAccountId);
       const failTag=e.success ? '' : '<span class="ranking-fail">Échec</span>';
       return `<div class="ranking-row global-row one-line-ranking${mine?' ranking-mine':''}" data-global-idx="${i}"><div class="ranking-row-top"><span class="ranking-player-cell"><span class="ranking-rank${i===0?' top1':''}">${rankingMedal(i)}</span><span class="ranking-name">${escapeHtml(e.name||'Anonyme')}</span>${failTag}</span><span class="ranking-query-cell">${e.rayCount} 🔦 + ${e.coordCount} 📍</span><span class="ranking-points">${e.cost} pts</span><span class="ranking-time">${formatDuration(e.timeMs)}</span></div></div>`;
     }).join('');
@@ -5045,7 +5043,16 @@ function formatStatsDate(dateKey){
 let globalStatsMode = 'daily';
 let globalStatsRows = [];
 
-function statsPlayerKey(name){ return (name||'Anonyme').trim().toLocaleLowerCase('fr-FR'); }
+// L'identité d'un joueur est son compte. Le pseudo ne sert qu'à l'affichage : il
+// peut changer au fil du temps et ne doit jamais fragmenter ses statistiques.
+function statsPlayerKey(row){
+  if(row && typeof row==='object'){
+    const accountId=row.account_id??row.player_id;
+    if(accountId!=null&&String(accountId).trim()) return `account:${String(accountId).trim()}`;
+    return `legacy:${(row.player_name||'Anonyme').trim().toLocaleLowerCase('fr-FR')}`;
+  }
+  return `legacy:${String(row||'Anonyme').trim().toLocaleLowerCase('fr-FR')}`;
+}
 function statsDateOptions(selectedDate){
   const dates=Array.from({length:7},(_,index)=>shiftDateKey(parisDateKey(),-index));
   return dates.map((dateKey,index)=>`<option value="${dateKey}"${dateKey===selectedDate?' selected':''}>${globalDateLabel(dateKey,index)}</option>`).join('');
@@ -5077,7 +5084,7 @@ function statsDetails(rows){
 function aggregatePlayers(rows){
   const map=new Map();
   rows.forEach(row=>{
-    const key=statsPlayerKey(row.player_name);
+    const key=statsPlayerKey(row);
     if(!map.has(key)) map.set(key,{key,name:(row.player_name||'Anonyme').trim()||'Anonyme',rows:[]});
     map.get(key).rows.push(row);
   });
@@ -5097,7 +5104,7 @@ function bindStatsPlayerButtons(){
 }
 function renderPlayerStats(playerKey){
   const content=$('#playerStatsContent');
-  const playerRows=globalStatsRows.filter(row=>statsPlayerKey(row.player_name)===playerKey);
+  const playerRows=globalStatsRows.filter(row=>statsPlayerKey(row)===playerKey);
   if(!playerRows.length) return;
   const name=(playerRows[0].player_name||'Anonyme').trim()||'Anonyme';
   const dates=playerRows.map(row=>row.daily_date||row.played_date).filter(Boolean).sort();
@@ -5256,7 +5263,7 @@ async function renderGlobalSoloScores(filterKey='ALL'){
 
 async function renderAchievementRanking(){
   const el=$('#rankingList');el.innerHTML='<div class="history-empty">Chargement du classement…</div>';
-  try{const rows=await supabaseRpc('orapa_achievement_leaderboard',{p_session_token:currentPlayerAccount.session_token});let previous='',displayRank=0;el.innerHTML=rows?.length?rows.map((row,index)=>{const tieKey=`${row.points}|${row.achievement_count}`;if(tieKey!==previous){displayRank=index+1;previous=tieKey;}return `<div class="achievement-ranking-row${row.is_mine?' mine':''}" data-achievement-account="${row.account_id}"><span>${rankingMedal(displayRank-1)}</span><strong>${escapeHtml(row.player_name)}</strong><b>${row.points} pts</b><small>${row.achievement_count} succès</small></div>`;}).join(''):'<div class="history-empty">Aucun succès débloqué.</div>';el.querySelectorAll('[data-achievement-account]').forEach(row=>row.onclick=()=>openPlayerAchievements(row.dataset.achievementAccount,row.querySelector('strong').textContent));}catch(e){el.innerHTML=`<div class="account-error" style="display:block">${escapeHtml(e.message)}</div>`;}
+  try{const rows=await supabaseRpc('orapa_achievement_leaderboard',{p_session_token:currentPlayerAccount.session_token});el.innerHTML=rows?.length?rows.map(row=>`<div class="achievement-ranking-row${row.is_mine?' mine':''}" data-achievement-account="${row.account_id}"><span>${rankingMedal(Number(row.rank)-1)}</span><strong>${escapeHtml(row.player_name)}</strong><b>${row.points} pts</b><small>${row.achievement_count} succès</small></div>`).join(''):'<div class="history-empty">Aucun succès débloqué.</div>';el.querySelectorAll('[data-achievement-account]').forEach(row=>row.onclick=()=>openPlayerAchievements(row.dataset.achievementAccount,row.querySelector('strong').textContent));}catch(e){el.innerHTML=`<div class="account-error" style="display:block">${escapeHtml(e.message)}</div>`;}
 }
 async function openPlayerAchievements(accountId,name){
   achievementExpanded.clear();$('#achievementDetailTitle').textContent=`🏆 Succès de ${name}`;$('#achievementDetailToolbar').innerHTML='';$('#achievementDetailContent').innerHTML='<div class="history-empty">Chargement…</div>';$('#achievementDetailModal').classList.add('open');
