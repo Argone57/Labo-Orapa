@@ -8,9 +8,9 @@ const LOCAL_STORAGE_PREFIX = IS_PREPRODUCTION ? 'orapaPreprod' : 'orapaMine';
 // publication et provoque une demande de mise à jour en boucle.
 const APP_VERSION = (()=>{
   try{
-    return new URL(document.currentScript?.src || '',window.location.href).searchParams.get('v') || '20260829-0003';
+    return new URL(document.currentScript?.src || '',window.location.href).searchParams.get('v') || '20260830-0001';
   }catch(_error){
-    return '20260829-0003';
+    return '20260830-0001';
   }
 })();
 let publishedAppVersion = null;
@@ -1183,7 +1183,7 @@ async function shareGridGlobally(gridId){
   if(!gridId) return null;
   const result=await supabaseRpc('orapa_share_grid',{
     p_grid_id:gridId,
-    p_session_token:currentPlayerAccount?.session_token||''
+    p_session_token:currentPlayerAccount.session_token
   });
   if(currentPlayerAccount?.session_token) refreshAchievements();
   return result;
@@ -2317,7 +2317,7 @@ async function acquireDailyChallengeLock(dateKey){
   if(!currentPlayerAccount?.session_token) return {accepted:false,reason:'account_required'};
   const fingerprint=await browserEnvironmentFingerprint();
   return supabaseRpc('orapa_acquire_daily_lock',{
-    p_session_token:currentPlayerAccount.session_token,
+    p_session_token:currentPlayerAccount?.session_token||'',
     p_daily_date:dateKey,
     p_browser_fingerprint:fingerprint
   });
@@ -5221,7 +5221,7 @@ async function loadNextGlobalSoloPage(){
   if(!globalSoloScoresCache) globalSoloScoresCache={rows:[],hasMore:true};
   if(!globalSoloScoresCache.hasMore) return;
   const page=await supabaseRpc('orapa_get_recent_grid_scores',{
-    p_session_token:currentPlayerAccount.session_token,
+    p_session_token:currentPlayerAccount?.session_token||'',
     p_limit:GLOBAL_SOLO_PAGE_SIZE+1,
     p_offset:globalSoloScoresCache.rows.length
   });
@@ -5232,7 +5232,6 @@ async function loadNextGlobalSoloPage(){
 async function renderGlobalSoloScores(filterKey='ALL'){
   const el=$('#rankingList');
   const savedScrollTop=el.scrollTop;
-  if(!currentPlayerAccount){ el.innerHTML='<div class="history-empty">Connectez-vous pour consulter l’historique des grilles aléatoires.</div>'; return; }
   if(!globalSoloScoresCache) el.innerHTML='<div class="history-empty">Chargement des grilles aléatoires…</div>';
   try{
     const visibleTarget=globalSoloVisibleCounts[filterKey]||GLOBAL_SOLO_PAGE_SIZE;
