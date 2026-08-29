@@ -8,9 +8,9 @@ const LOCAL_STORAGE_PREFIX = IS_PREPRODUCTION ? 'orapaPreprod' : 'orapaMine';
 // publication et provoque une demande de mise à jour en boucle.
 const APP_VERSION = (()=>{
   try{
-    return new URL(document.currentScript?.src || '',window.location.href).searchParams.get('v') || '20260829-0002';
+    return new URL(document.currentScript?.src || '',window.location.href).searchParams.get('v') || '20260829-0003';
   }catch(_error){
-    return '20260829-0002';
+    return '20260829-0003';
   }
 })();
 let publishedAppVersion = null;
@@ -5091,6 +5091,13 @@ function aggregatePlayers(rows){
   return [...map.values()].sort((a,b)=>b.rows.length-a.rows.length || b.rows.filter(r=>r.success).length-a.rows.filter(r=>r.success).length || a.name.localeCompare(b.name,'fr'));
 }
 function statsPlayerButtons(rows, daily=false){
+  if(rows.length&&rows.every(row=>row.played!=null)){
+    const players=rows.slice().sort((a,b)=>Number(b.played)-Number(a.played)||Number(b.wins)-Number(a.wins)||String(a.player_name).localeCompare(String(b.player_name),'fr'));
+    return `<div class="stats-section-title"><h3>Statistiques par pseudo</h3><small>Clique sur un pseudo</small></div><div class="stats-player-list">${players.map(row=>{
+      const rate=Number(row.played)?Math.round(Number(row.wins)*100/Number(row.played)):0;
+      return `<button class="stats-player" data-player-key="${escapeHtml(statsPlayerKey(row))}"><span>${escapeHtml((row.player_name||'Anonyme').trim()||'Anonyme')}</span><b>${row.played} partie${Number(row.played)>1?'s':''}</b><em>${rate} % de réussite</em></button>`;
+    }).join('')}</div>`;
+  }
   const players=aggregatePlayers(rows);
   if(!players.length) return '';
   return `<div class="stats-section-title"><h3>${daily?'Joueurs du défi':'Statistiques par pseudo'}</h3><small>Clique sur un pseudo</small></div><div class="stats-player-list">${players.map(player=>{
@@ -5106,6 +5113,14 @@ function renderPlayerStats(playerKey){
   const content=$('#playerStatsContent');
   const playerRows=globalStatsRows.filter(row=>statsPlayerKey(row)===playerKey);
   if(!playerRows.length) return;
+  if(playerRows[0].played!=null){
+    const row=playerRows[0],name=(row.player_name||'Anonyme').trim()||'Anonyme';
+    const played=Number(row.played)||0,wins=Number(row.wins)||0,losses=played-wins,rate=played?Math.round(wins*100/played):0;
+    const date=value=>value?new Date(value).toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'2-digit'}):'—';
+    content.innerHTML=`<div class="mode-stats-heading"><h3>${escapeHtml(name)}</h3><p class="stats-subtitle">Parties associées à ce compte.</p></div><div class="stats-grid"><div class="stats-card"><b>${played}</b><span>participation${played>1?'s':''}</span></div><div class="stats-card"><b>${wins}</b><span>réussite${wins>1?'s':''}</span></div><div class="stats-card"><b>${losses}</b><span>échec${losses>1?'s':''}</span></div><div class="stats-card"><b>${played?rate+' %':'—'}</b><span>de réussite</span></div></div><div class="mode-stats-details"><div class="mode-stat-detail"><span>Grilles différentes</span><b>${row.grid_count||0}</b></div><div class="mode-stat-detail"><span>Première participation</span><b>${date(row.first_played_at)}</b></div><div class="mode-stat-detail"><span>Dernière participation</span><b>${date(row.last_played_at)}</b></div><div class="mode-stat-detail"><span>Meilleur score réussi</span><b>${row.best_score==null?'—':row.best_score+' pts'}</b></div><div class="mode-stat-detail"><span>Temps record réussi</span><b>${row.best_time_ms==null?'—':formatDuration(Number(row.best_time_ms))}</b></div><div class="mode-stat-detail"><span>Score moyen</span><b>${row.average_score==null?'—':formatDecimal(Number(row.average_score))+' pts'}</b></div><div class="mode-stat-detail"><span>Temps moyen</span><b>${row.average_time_ms==null?'—':formatDuration(Number(row.average_time_ms))}</b></div></div>`;
+    $('#playerStatsModal').classList.add('open');
+    return;
+  }
   const name=(playerRows[0].player_name||'Anonyme').trim()||'Anonyme';
   const dates=playerRows.map(row=>row.daily_date||row.played_date).filter(Boolean).sort();
   const distinctItems=new Set(playerRows.map(row=>row.daily_date||row.grid_id).filter(Boolean)).size;
@@ -5176,7 +5191,7 @@ function renderGridModeGlobalStats(title,stats,lost=false){
 }
 async function openClassicGridGlobalStats(){
   $('#globalStatsModal').classList.add('open');$('#globalStatsToolbar').style.display='none';$('#globalStatsContent').innerHTML='<div class="history-empty">Calcul des statistiques des grilles classiques…</div>';
-  try{const [stats,rows]=await Promise.all([supabaseRpc('orapa_grid_global_stats'),supabaseRpc('orapa_grid_stats_rows_v2')]);globalStatsRows=Array.isArray(rows)?rows:[];$('#globalStatsContent').innerHTML=renderGridModeGlobalStats('🧩 Grilles classiques',stats,false)+statsPlayerButtons(globalStatsRows,false);bindStatsPlayerButtons();}catch(error){$('#globalStatsContent').innerHTML=`<div class="account-error" style="display:block">${escapeHtml(error.message)}</div>`;}
+  try{const [stats,rows]=await Promise.all([supabaseRpc('orapa_grid_global_stats'),supabaseRpc('orapa_grid_player_stats')]);globalStatsRows=Array.isArray(rows)?rows:[];$('#globalStatsContent').innerHTML=renderGridModeGlobalStats('🧩 Grilles classiques',stats,false)+statsPlayerButtons(globalStatsRows,false);bindStatsPlayerButtons();}catch(error){$('#globalStatsContent').innerHTML=`<div class="account-error" style="display:block">${escapeHtml(error.message)}</div>`;}
 }
 async function openSpaceGlobalStats(){
   $('#globalStatsModal').classList.add('open');$('#globalStatsToolbar').style.display='none';$('#globalStatsContent').innerHTML='<div class="history-empty">Calcul des statistiques Orapa Space…</div>';
