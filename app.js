@@ -8,9 +8,9 @@ const LOCAL_STORAGE_PREFIX = IS_PREPRODUCTION ? 'orapaPreprod' : 'orapaMine';
 // publication et provoque une demande de mise à jour en boucle.
 const APP_VERSION = (()=>{
   try{
-    return new URL(document.currentScript?.src || '',window.location.href).searchParams.get('v') || '20260830-0003';
+    return new URL(document.currentScript?.src || '',window.location.href).searchParams.get('v') || '20260830-0004';
   }catch(_error){
-    return '20260830-0003';
+    return '20260830-0004';
   }
 })();
 let publishedAppVersion = null;
@@ -277,6 +277,37 @@ function gridChallengeText(gridId){
 const DAILY_ATTEMPT_KEY = `${LOCAL_STORAGE_PREFIX}DailyAttemptV1`;
 const DAILY_RANKINGS_KEY = `${LOCAL_STORAGE_PREFIX}DailyRankingsV1`;
 const DAILY_FINAL_SNAPSHOTS_KEY = `${LOCAL_STORAGE_PREFIX}DailyFinalSnapshotsV1`;
+const UPDATES_READ_KEY = `${LOCAL_STORAGE_PREFIX}UpdatesReadV1`;
+const GAME_UPDATES = [
+  {id:'engine-20260901',date:'01/09/2026',title:'Nouveau moteur de jeu',featured:true},
+  {id:'earth-sky-20260821',date:'21/08/2026',title:'Mode de jeu : Terre et Ciel'},
+  {id:'short-ids-20260821',date:'21/08/2026',title:'Identifiants courts pour les grilles'},
+  {id:'first-wave-help-20260821',date:'21/08/2026',title:'Option : bulle d’aide à la première onde'},
+  {id:'space-20260820',date:'20/08/2026',title:'Mode de jeu : Orapa Space et tutoriel dédié'},
+  {id:'palette-size-20260815',date:'15/08/2026',title:'Option : taille des gemmes à placer'},
+  {id:'lost-mode-20260813',date:'13/08/2026',title:'Mode de jeu : Gemme perdue'},
+  {id:'achievements-options-20260813',date:'13/08/2026',title:'Succès avec options dédiées'},
+  {id:'firefox-performance-20260813',date:'13/08/2026',title:'Option : performance pour Firefox'},
+  {id:'tutorial-20260726',date:'26/07/2026',title:'Tutoriel'},
+  {id:'accounts-20260724',date:'24/07/2026',title:'Comptes et profils'},
+  {id:'rankings-history-20260724',date:'24/07/2026',title:'Classements et historiques'},
+  {id:'shared-grids-20260724',date:'24/07/2026',title:'Grilles partagées'},
+  {id:'daily-challenge-20260724',date:'24/07/2026',title:'Mode de jeu : Défi du jour'}
+];
+function readSeenUpdates(){try{const value=JSON.parse(localStorage.getItem(UPDATES_READ_KEY)||'[]');return new Set(Array.isArray(value)?value:[]);}catch(error){return new Set();}}
+function saveSeenUpdates(seen){try{localStorage.setItem(UPDATES_READ_KEY,JSON.stringify([...seen]));}catch(error){}}
+function unreadGameUpdates(){const seen=readSeenUpdates();return GAME_UPDATES.filter(update=>update.featured&&!seen.has(update.id));}
+function renderUpdatesButton(){const button=$('#updatesFab');if(!button)return;button.classList.toggle('has-unread',unreadGameUpdates().length>0);}
+function updatesListHtml(updates,emptyText){return updates.length?`<div class="updates-list">${updates.map(update=>`<div class="updates-row"><time datetime="${update.date.split('/').reverse().join('-')}">${update.date}</time><strong>${escapeHtml(update.title)}</strong></div>`).join('')}</div>`:`<div class="updates-empty">${emptyText}</div>`;}
+function openUpdatesModal(history=false){
+  const unread=unreadGameUpdates();
+  if(!history&&unread.length){const seen=readSeenUpdates();unread.forEach(update=>seen.add(update.id));saveSeenUpdates(seen);renderUpdatesButton();}
+  $('#updatesTitle').textContent=history?'✨ Historique des mises à jour':'✨ Nouveautés';
+  $('#updatesContent').innerHTML=history?updatesListHtml(GAME_UPDATES.filter(update=>!update.featured),'Aucune mise à jour dans l’historique.') : updatesListHtml(unread,'Vous êtes à jour.');
+  $('#updatesHistoryButton').textContent=history?'Nouveautés':'Historique';
+  $('#updatesHistoryButton').onclick=()=>openUpdatesModal(!history);
+  $('#updatesModal').classList.add('open');
+}
 let remoteDailyStatusCache = null;
 let remoteDailyStatusPromise = null;
 function loadDailyAttempt(){
@@ -4791,6 +4822,9 @@ $('#helpFab').addEventListener('click', ()=>{
   $('#helpModal').classList.add('open');
 });
 $('#closeHelp').addEventListener('click', ()=> $('#helpModal').classList.remove('open'));
+$('#updatesFab').addEventListener('click',()=>openUpdatesModal());
+$('#closeUpdates').addEventListener('click',()=>$('#updatesModal').classList.remove('open'));
+$('#updatesModal').addEventListener('click',event=>{if(event.target.id==='updatesModal')$('#updatesModal').classList.remove('open');});
 $('#closeVictory').addEventListener('click', ()=> $('#victoryModal').classList.remove('open'));
 $('#victoryModal').addEventListener('click', e=>{ if(e.target.id==='victoryModal') $('#victoryModal').classList.remove('open'); });
 $('#btnVictoryCopyId').addEventListener('click', ()=>{
@@ -5455,6 +5489,7 @@ $('#historyToggle').addEventListener('click',toggleHistoryDisclosure);
 // ---------------------------------------------------------------------
 function init(){
   document.body.classList.toggle('preproduction',IS_PREPRODUCTION);
+  renderUpdatesButton();
   applyFirefoxPerformanceMode();
   updateAccountFab();
   buildMixBoard();
