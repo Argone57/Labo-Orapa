@@ -8,9 +8,9 @@ const LOCAL_STORAGE_PREFIX = IS_PREPRODUCTION ? 'orapaPreprod' : 'orapaMine';
 // publication et provoque une demande de mise à jour en boucle.
 const APP_VERSION = (()=>{
   try{
-    return new URL(document.currentScript?.src || '',window.location.href).searchParams.get('v') || '20260830-0002';
+    return new URL(document.currentScript?.src || '',window.location.href).searchParams.get('v') || '20260830-0003';
   }catch(_error){
-    return '20260830-0002';
+    return '20260830-0003';
   }
 })();
 let publishedAppVersion = null;
@@ -3285,19 +3285,25 @@ function renderPalette(){
     svg.setAttribute('viewBox', `${cx-boxSize/2} ${cy-boxSize/2} ${boxSize} ${boxSize}`);
     svg.style.width = (boxSize*cs*reserveScale)+'px';
     svg.style.height = (boxSize*cs*reserveScale)+'px';
-    svg.classList.add('palette-tile');
+    svg.classList.add('palette-tile',`palette-piece-${piece.type}`);
     if(def.isBlackHole){
-      const circle=document.createElementNS(SVGNS,'circle');circle.setAttribute('cx',cx);circle.setAttribute('cy',cy);circle.setAttribute('r',Math.max(baseW,baseH)*.45);circle.setAttribute('fill','#020204');circle.setAttribute('stroke','#7d67a8');circle.setAttribute('stroke-width','.07');svg.appendChild(circle);
+      const radius=Math.max(baseW,baseH)*.45;
+      const outer=document.createElementNS(SVGNS,'circle');outer.setAttribute('cx',cx);outer.setAttribute('cy',cy);outer.setAttribute('r',radius);outer.setAttribute('fill','#020204');outer.setAttribute('stroke','#5c574f');outer.setAttribute('stroke-width','.13');svg.appendChild(outer);
+      const inner=document.createElementNS(SVGNS,'circle');inner.setAttribute('cx',cx);inner.setAttribute('cy',cy);inner.setAttribute('r',radius);inner.setAttribute('fill','none');inner.setAttribute('stroke','#c9a15a');inner.setAttribute('stroke-width','.045');svg.appendChild(inner);
     }else if(def.isRing){
       spaceRingVisualParts().forEach(part=>{const poly=document.createElementNS(SVGNS,'polygon');const partPts=part.map(v=>transformVertex(v,piece.flipped,piece.rotation,{x:0,y:0}));poly.setAttribute('points',polyPointsAttr(partPts));poly.setAttribute('fill',def.hex);poly.setAttribute('stroke',def.hex);poly.setAttribute('stroke-width','.01');svg.appendChild(poly);});
     }else{
       const poly = document.createElementNS(SVGNS,'polygon');
       poly.setAttribute('points', polyPointsAttr(pts));
       poly.setAttribute('fill', def.isDiamond ? 'rgba(207,216,220,0.55)' : def.hex);
-      poly.setAttribute('stroke', def.isOnyx ? '#cfd8dc' : 'rgba(0,0,0,.4)');
-      poly.setAttribute('stroke-width', 0.05);
+      poly.setAttribute('stroke', def.isOnyx ? '#5c574f' : 'rgba(230,194,122,.46)');
+      poly.setAttribute('stroke-width', def.isOnyx ? '.13' : '.055');
       poly.setAttribute('vector-effect','non-scaling-stroke');
       svg.appendChild(poly);
+      if(def.isOnyx){
+        const inner=document.createElementNS(SVGNS,'polygon');
+        inner.setAttribute('points',polyPointsAttr(pts));inner.setAttribute('fill','none');inner.setAttribute('stroke','#e6c27a');inner.setAttribute('stroke-width','.045');inner.setAttribute('vector-effect','non-scaling-stroke');svg.appendChild(inner);
+      }
     }
     svg.dataset.id = piece.id;
     target.appendChild(svg);
@@ -3340,11 +3346,14 @@ function updatePalettePieceGeometry(piece){
   if(viewBox&&viewBox.width)svg.setAttribute('viewBox',`${cx-viewBox.width/2} ${cy-viewBox.height/2} ${viewBox.width} ${viewBox.height}`);
   svg.replaceChildren();
   if(def.isBlackHole){
-    const circle=document.createElementNS(SVGNS,'circle');circle.setAttribute('cx',cx);circle.setAttribute('cy',cy);circle.setAttribute('r',Math.max(Math.max(...xs)-Math.min(...xs),Math.max(...ys)-Math.min(...ys))*.45);circle.setAttribute('fill','#020204');circle.setAttribute('stroke','#7d67a8');circle.setAttribute('stroke-width','.07');svg.appendChild(circle);
+    const radius=Math.max(Math.max(...xs)-Math.min(...xs),Math.max(...ys)-Math.min(...ys))*.45;
+    const outer=document.createElementNS(SVGNS,'circle');outer.setAttribute('cx',cx);outer.setAttribute('cy',cy);outer.setAttribute('r',radius);outer.setAttribute('fill','#020204');outer.setAttribute('stroke','#5c574f');outer.setAttribute('stroke-width','.13');svg.appendChild(outer);
+    const inner=document.createElementNS(SVGNS,'circle');inner.setAttribute('cx',cx);inner.setAttribute('cy',cy);inner.setAttribute('r',radius);inner.setAttribute('fill','none');inner.setAttribute('stroke','#c9a15a');inner.setAttribute('stroke-width','.045');svg.appendChild(inner);
   }else if(def.isRing){
     spaceRingVisualParts().forEach(part=>{const poly=document.createElementNS(SVGNS,'polygon');poly.setAttribute('points',polyPointsAttr(part.map(vertex=>transformVertex(vertex,piece.flipped,piece.rotation,{x:0,y:0}))));poly.setAttribute('fill',def.hex);poly.setAttribute('stroke',def.hex);poly.setAttribute('stroke-width','.01');svg.appendChild(poly);});
   }else{
-    const poly=document.createElementNS(SVGNS,'polygon');poly.setAttribute('points',polyPointsAttr(pts));poly.setAttribute('fill',def.isDiamond?'rgba(207,216,220,0.55)':def.hex);poly.setAttribute('stroke',def.isOnyx?'#cfd8dc':'rgba(0,0,0,.4)');poly.setAttribute('stroke-width','.05');poly.setAttribute('vector-effect','non-scaling-stroke');svg.appendChild(poly);
+    const poly=document.createElementNS(SVGNS,'polygon');poly.setAttribute('points',polyPointsAttr(pts));poly.setAttribute('fill',def.isDiamond?'rgba(207,216,220,0.55)':def.hex);poly.setAttribute('stroke',def.isOnyx?'#5c574f':'rgba(230,194,122,.46)');poly.setAttribute('stroke-width',def.isOnyx?'.13':'.055');poly.setAttribute('vector-effect','non-scaling-stroke');svg.appendChild(poly);
+    if(def.isOnyx){const inner=document.createElementNS(SVGNS,'polygon');inner.setAttribute('points',polyPointsAttr(pts));inner.setAttribute('fill','none');inner.setAttribute('stroke','#e6c27a');inner.setAttribute('stroke-width','.045');inner.setAttribute('vector-effect','non-scaling-stroke');svg.appendChild(inner);}
   }
   return true;
 }
