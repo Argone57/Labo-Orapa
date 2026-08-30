@@ -8,9 +8,9 @@ const LOCAL_STORAGE_PREFIX = IS_PREPRODUCTION ? 'orapaPreprod' : 'orapaMine';
 // publication et provoque une demande de mise à jour en boucle.
 const APP_VERSION = (()=>{
   try{
-    return new URL(document.currentScript?.src || '',window.location.href).searchParams.get('v') || '20260830-0004';
+    return new URL(document.currentScript?.src || '',window.location.href).searchParams.get('v') || '20260830-0005';
   }catch(_error){
-    return '20260830-0004';
+    return '20260830-0005';
   }
 })();
 let publishedAppVersion = null;
@@ -298,14 +298,21 @@ function readSeenUpdates(){try{const value=JSON.parse(localStorage.getItem(UPDAT
 function saveSeenUpdates(seen){try{localStorage.setItem(UPDATES_READ_KEY,JSON.stringify([...seen]));}catch(error){}}
 function unreadGameUpdates(){const seen=readSeenUpdates();return GAME_UPDATES.filter(update=>update.featured&&!seen.has(update.id));}
 function renderUpdatesButton(){const button=$('#updatesFab');if(!button)return;button.classList.toggle('has-unread',unreadGameUpdates().length>0);}
-function updatesListHtml(updates,emptyText){return updates.length?`<div class="updates-list">${updates.map(update=>`<div class="updates-row"><time datetime="${update.date.split('/').reverse().join('-')}">${update.date}</time><strong>${escapeHtml(update.title)}</strong></div>`).join('')}</div>`:`<div class="updates-empty">${emptyText}</div>`;}
+function updatesListHtml(updates,emptyText){
+  if(!updates.length)return `<div class="updates-empty">${emptyText}</div>`;
+  const groups=[];
+  updates.forEach(update=>{let group=groups.find(item=>item.date===update.date);if(!group){group={date:update.date,items:[]};groups.push(group);}group.items.push(update);});
+  return `<div class="updates-list">${groups.map(group=>`<section class="updates-date-group"><time datetime="${group.date.split('/').reverse().join('-')}">${group.date}</time><ul>${group.items.map(update=>`<li>${escapeHtml(update.title)}</li>`).join('')}</ul></section>`).join('')}</div>`;
+}
 function openUpdatesModal(history=false){
   const unread=unreadGameUpdates();
+  if(!history&&!unread.length)history=true;
   if(!history&&unread.length){const seen=readSeenUpdates();unread.forEach(update=>seen.add(update.id));saveSeenUpdates(seen);renderUpdatesButton();}
   $('#updatesTitle').textContent=history?'✨ Historique des mises à jour':'✨ Nouveautés';
-  $('#updatesContent').innerHTML=history?updatesListHtml(GAME_UPDATES.filter(update=>!update.featured),'Aucune mise à jour dans l’historique.') : updatesListHtml(unread,'Vous êtes à jour.');
-  $('#updatesHistoryButton').textContent=history?'Nouveautés':'Historique';
-  $('#updatesHistoryButton').onclick=()=>openUpdatesModal(!history);
+  $('#updatesContent').innerHTML=history?updatesListHtml(GAME_UPDATES,'Aucune mise à jour dans l’historique.') : updatesListHtml(unread,'Vous êtes à jour.');
+  $('#updatesHistoryButton').style.display=history?'none':'';
+  $('#updatesHistoryButton').textContent='Historique';
+  $('#updatesHistoryButton').onclick=()=>openUpdatesModal(true);
   $('#updatesModal').classList.add('open');
 }
 let remoteDailyStatusCache = null;
