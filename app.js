@@ -8,9 +8,9 @@ const LOCAL_STORAGE_PREFIX = IS_PREPRODUCTION ? 'orapaPreprod' : 'orapaMine';
 // publication et provoque une demande de mise à jour en boucle.
 const APP_VERSION = (()=>{
   try{
-    return new URL(document.currentScript?.src || '',window.location.href).searchParams.get('v') || '20260830-0001';
+    return new URL(document.currentScript?.src || '',window.location.href).searchParams.get('v') || '20260830-0002';
   }catch(_error){
-    return '20260830-0001';
+    return '20260830-0002';
   }
 })();
 let publishedAppVersion = null;
