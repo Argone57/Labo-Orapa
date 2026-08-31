@@ -8,9 +8,9 @@ const LOCAL_STORAGE_PREFIX = IS_PREPRODUCTION ? 'orapaPreprod' : 'orapaMine';
 // publication et provoque une demande de mise à jour en boucle.
 const APP_VERSION = (()=>{
   try{
-    return new URL(document.currentScript?.src || '',window.location.href).searchParams.get('v') || '20260831-0001';
+    return new URL(document.currentScript?.src || '',window.location.href).searchParams.get('v') || '20260831-0002';
   }catch(_error){
-    return '20260831-0001';
+    return '20260831-0002';
   }
 })();
 let publishedAppVersion = null;
@@ -280,10 +280,12 @@ function gridChallengeText(gridId){
 const DAILY_ATTEMPT_KEY = `${LOCAL_STORAGE_PREFIX}DailyAttemptV1`;
 const DAILY_RANKINGS_KEY = `${LOCAL_STORAGE_PREFIX}DailyRankingsV1`;
 const DAILY_FINAL_SNAPSHOTS_KEY = `${LOCAL_STORAGE_PREFIX}DailyFinalSnapshotsV1`;
-const UPDATES_READ_KEY = `${LOCAL_STORAGE_PREFIX}UpdatesReadV1`;
+// Instantané local des mises à jour déjà consultées. Il est volontairement
+// indépendant du compte : chaque navigateur garde sa propre dernière visite.
+const UPDATES_READ_KEY = `${LOCAL_STORAGE_PREFIX}UpdatesReadV2`;
 const GAME_UPDATES = [
-  {id:'wormhole-20260901',date:'01/09/2026',title:'Trou de ver pour Space et Terre et Ciel',featured:true},
-  {id:'engine-20260901',date:'01/09/2026',title:'Nouveau moteur de jeu',featured:true},
+  {id:'wormhole-20260901',date:'01/09/2026',title:'Trou de ver pour Space et Terre et Ciel'},
+  {id:'engine-20260901',date:'01/09/2026',title:'Nouveau moteur de jeu'},
   {id:'earth-sky-20260821',date:'21/08/2026',title:'Mode de jeu : Terre et Ciel'},
   {id:'short-ids-20260821',date:'21/08/2026',title:'Identifiants courts pour les grilles'},
   {id:'first-wave-help-20260821',date:'21/08/2026',title:'Option : bulle d’aide à la première onde'},
@@ -300,7 +302,7 @@ const GAME_UPDATES = [
 ];
 function readSeenUpdates(){try{const value=JSON.parse(localStorage.getItem(UPDATES_READ_KEY)||'[]');return new Set(Array.isArray(value)?value:[]);}catch(error){return new Set();}}
 function saveSeenUpdates(seen){try{localStorage.setItem(UPDATES_READ_KEY,JSON.stringify([...seen]));}catch(error){}}
-function unreadGameUpdates(){const seen=readSeenUpdates();return GAME_UPDATES.filter(update=>update.featured&&!seen.has(update.id));}
+function unreadGameUpdates(){const seen=readSeenUpdates();return GAME_UPDATES.filter(update=>!seen.has(update.id));}
 function renderUpdatesButton(){const button=$('#updatesFab');if(!button)return;button.classList.toggle('has-unread',unreadGameUpdates().length>0);}
 function updatesListHtml(updates,emptyText){
   if(!updates.length)return `<div class="updates-empty">${emptyText}</div>`;
