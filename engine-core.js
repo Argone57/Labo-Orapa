@@ -100,7 +100,18 @@
       if(best.kind==='edge')gravityCandidates.forEach(candidate=>{if(candidate.t+EPS>=best.t&&candidate.t-best.t<=1+EPS)cancelledGravityCells.add(candidate.cellKey);});
       if(best.kind==='boundary'){points.push(best.point);const exit=exitAt(best.point,width,height);exitSide=exit.side;exitIndex=exit.index;break;}
       passThroughPieceId=null;if(best.kind==='gravity'){points.push(best.point);refracted=true;const center=best.piece.center;direction=direction.dy!==0?{dx:Math.sign(center.x-best.point.x),dy:0}:{dx:0,dy:Math.sign(center.y-best.point.y)};if(!direction.dx&&!direction.dy){absorbed='disappeared';break;}position={x:best.point.x+direction.dx*EPS*20,y:best.point.y+direction.dy*EPS*20};skipPieceId=null;skipEdgeIndex=null;continue;}
-      const definition=definitionFor(best.piece.type)||{};hitPieceIds.push(best.piece.id);points.push(best.point);if(definition.isOnyx){absorbed=true;break;}if(definition.isBlackHole){absorbed='disappeared';break;}if(definition.colorKey)colors.add(definition.colorKey);if(definition.colorKeys)definition.colorKeys.forEach(key=>colors.add(key));direction=best.edgeType==='wall'?{dx:-direction.dx,dy:-direction.dy}:reflect(direction,best.edgeType);position=best.point;skipPieceId=best.piece.id;skipEdgeIndex=best.edgeIndex;
+      const definition=definitionFor(best.piece.type)||{};hitPieceIds.push(best.piece.id);points.push(best.point);if(definition.isOnyx){absorbed=true;break;}if(definition.isBlackHole){absorbed='disappeared';break;}
+      // Les deux trous de ver forment une paire : l'onde entre dans le premier,
+      // ressort du second dans la même direction, sans couleur ni réflexion.
+      if(definition.isWormhole){
+        const partner=placed.find(piece=>piece.id!==best.piece.id&&(definitionFor(piece.type)||{}).isWormhole);
+        if(!partner){absorbed='loop';break;}
+        points.push(clonePoint(best.piece.center));
+        points.push(clonePoint(partner.center));
+        position={x:partner.center.x+direction.dx*(.5+EPS*20),y:partner.center.y+direction.dy*(.5+EPS*20)};
+        passThroughPieceId=partner.id;skipPieceId=null;skipEdgeIndex=null;continue;
+      }
+      if(definition.colorKey)colors.add(definition.colorKey);if(definition.colorKeys)definition.colorKeys.forEach(key=>colors.add(key));direction=best.edgeType==='wall'?{dx:-direction.dx,dy:-direction.dy}:reflect(direction,best.edgeType);position=best.point;skipPieceId=best.piece.id;skipEdgeIndex=best.edgeIndex;
     }
     return{entrySide:side,entryIndex:index,exitSide,exitIndex,absorbed,color:resolveColor(colors,absorbed),points,hitPieceIds};
   }
