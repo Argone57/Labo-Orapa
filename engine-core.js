@@ -91,20 +91,83 @@
   function boundaryIntersection(position,direction,width,height){if(direction.dx!==0){const x=direction.dx>0?width:0;return{t:(x-position.x)/direction.dx,point:{x,y:position.y}};}const y=direction.dy>0?height:0;return{t:(y-position.y)/direction.dy,point:{x:position.x,y}};}
   function entryVector(side,index,width,height){if(side==='top')return{position:{x:index+.5,y:0},direction:{dx:0,dy:1}};if(side==='bottom')return{position:{x:index+.5,y:height},direction:{dx:0,dy:-1}};if(side==='left')return{position:{x:0,y:index+.5},direction:{dx:1,dy:0}};return{position:{x:width,y:index+.5},direction:{dx:-1,dy:0}};}
   function exitAt(point,width,height){if(Math.abs(point.x)<EPS)return{side:'left',index:Math.floor(point.y)};if(Math.abs(point.x-width)<EPS)return{side:'right',index:Math.floor(point.y)};if(Math.abs(point.y)<EPS)return{side:'top',index:Math.floor(point.x)};return{side:'bottom',index:Math.floor(point.x)};}
+  // Une réfraction n'est possible que si la case orthogonalement adjacente au
+  // trou noir se trouve entièrement devant l'onde. Le virage intervient au
+  // centre de la case suivante, après la traversée complète de cette case.
+  // Après un rebond dans ou au bord de la case, cette condition n'est plus
+  // remplie : la réfraction de ce passage est donc naturellement annulée.
+  function blackHoleGravityCandidate(position,direction,piece){
+    const center=piece.center;
+    if(direction.dx!==0&&Math.abs(Math.abs(position.y-center.y)-1)<EPS){
+      const entryX=center.x-direction.dx*.5;
+      if((entryX-position.x)*direction.dx<-EPS)return null;
+      const x=center.x+direction.dx,t=(x-position.x)/direction.dx;
+      return t>EPS?{t,point:{x,y:position.y}}:null;
+    }
+    if(direction.dy!==0&&Math.abs(Math.abs(position.x-center.x)-1)<EPS){
+      const entryY=center.y-direction.dy*.5;
+      if((entryY-position.y)*direction.dy<-EPS)return null;
+      const y=center.y+direction.dy,t=(y-position.y)/direction.dy;
+      return t>EPS?{t,point:{x:position.x,y}}:null;
+    }
+    return null;
+  }
   function simulateBeam(options){
-    const{side,index,pieces,width,height,edgesFor,definitionFor,resolveColor}=options,start=entryVector(side,index,width,height);let position=start.position,direction=start.direction,guard=0,absorbed=false,exitSide=null,exitIndex=null,refracted=false,skipPieceId=null,skipEdgeIndex=null,passThroughPieceId=null,firstDirectHitId=null,directPath=true;const colors=new Set(),points=[clonePoint(position)],hitPieceIds=[],cancelledGravityCells=new Set(),placed=(pieces||[]).filter(piece=>piece.center);
-    while(true){if(++guard>400){absorbed='loop';break;}let best={...boundaryIntersection(position,direction,width,height),kind:'boundary'};const gravityCandidates=[];
-      for(const piece of placed){if(piece.id===passThroughPieceId)continue;const definition=definitionFor(piece.type)||{},edges=edgesFor(piece),directHits=[];edges.forEach(([a,b],edgeIndex)=>{if(piece.id===skipPieceId&&edgeIndex===skipEdgeIndex)return;const hit=intersectRaySegment(position,direction,a,b),hitEdgeType=edgeKind(a,b);if(hit&&definition.isBlackHole)directHits.push(hit);if(hit&&(hit.t<best.t-EPS||(best.kind==='gravity'&&Math.abs(hit.t-best.t)<=EPS)||(best.kind==='edge'&&Math.abs(hit.t-best.t)<=EPS&&hitEdgeType==='wall'&&best.edgeType!=='wall')))best={...hit,kind:'edge',piece,edgeType:hitEdgeType,edgeIndex};});
-        if(definition.isBlackHole&&!refracted&&!directHits.length){const center=piece.center;let gravity=null;if(direction.dx!==0&&Math.abs(Math.abs(position.y-center.y)-1)<EPS){const x=center.x+direction.dx*.5,t=(x-position.x)/direction.dx;if(t>EPS)gravity={t,point:{x,y:position.y}};}else if(direction.dy!==0&&Math.abs(Math.abs(position.x-center.x)-1)<EPS){const y=center.y+direction.dy*.5,t=(y-position.y)/direction.dy;if(t>EPS)gravity={t,point:{x:position.x,y}};}if(gravity){const before={x:gravity.point.x-direction.dx*EPS*100,y:gravity.point.y-direction.dy*EPS*100},cellKey=`${piece.id}:${Math.floor(before.x+EPS)}:${Math.floor(before.y+EPS)}`,candidate={...gravity,kind:'gravity',piece,cellKey};gravityCandidates.push(candidate);if(!cancelledGravityCells.has(cellKey)&&gravity.t<best.t-EPS)best=candidate;}}
+    const{side,index,pieces,width,height,edgesFor,definitionFor,resolveColor}=options;
+    const start=entryVector(side,index,width,height);
+    let position=start.position,direction=start.direction,guard=0,absorbed=false;
+    let exitSide=null,exitIndex=null,refracted=false,skipPieceId=null,skipEdgeIndex=null;
+    let passThroughPieceId=null,firstDirectHitId=null,directPath=true;
+    const colors=new Set(),points=[clonePoint(position)],hitPieceIds=[];
+    const placed=(pieces||[]).filter(piece=>piece.center);
+
+    while(true){
+      if(++guard>400){absorbed='loop';break;}
+      let best={...boundaryIntersection(position,direction,width,height),kind:'boundary'};
+
+      for(const piece of placed){
+        if(piece.id===passThroughPieceId)continue;
+        const definition=definitionFor(piece.type)||{},edges=edgesFor(piece),directHits=[];
+        edges.forEach(([a,b],edgeIndex)=>{
+          if(piece.id===skipPieceId&&edgeIndex===skipEdgeIndex)return;
+          const hit=intersectRaySegment(position,direction,a,b);
+          if(hit&&definition.isBlackHole)directHits.push(hit);
+          // À distance égale, un impact réel reste prioritaire sur une
+          // réfraction : réflexion et réfraction sur la même case => réflexion.
+          if(hit&&(hit.t<best.t-EPS||(best.kind==='gravity'&&Math.abs(hit.t-best.t)<=EPS))){
+            best={...hit,kind:'edge',piece,edgeType:edgeKind(a,b),edgeIndex};
+          }
+        });
+        if(definition.isBlackHole&&!refracted&&!directHits.length){
+          const gravity=blackHoleGravityCandidate(position,direction,piece);
+          if(gravity&&gravity.t<best.t-EPS)best={...gravity,kind:'gravity',piece};
+        }
       }
-      // Le point de réfraction est calculé après la case adjacente au trou
-      // noir. Un rebond qui a lieu dans cette même case peut donc se situer
-      // jusqu'à deux unités avant ce point : il reste prioritaire et annule
-      // cette réfraction, mais pas une autre situation rencontrée plus loin.
-      if(best.kind==='edge')gravityCandidates.forEach(candidate=>{if(candidate.t+EPS>=best.t&&candidate.t-best.t<=2+EPS)cancelledGravityCells.add(candidate.cellKey);});
-      if(best.kind==='boundary'){points.push(best.point);const exit=exitAt(best.point,width,height);exitSide=exit.side;exitIndex=exit.index;break;}
-      passThroughPieceId=null;if(best.kind==='gravity'){directPath=false;points.push(best.point);refracted=true;const center=best.piece.center;direction=direction.dy!==0?{dx:Math.sign(center.x-best.point.x),dy:0}:{dx:0,dy:Math.sign(center.y-best.point.y)};if(!direction.dx&&!direction.dy){absorbed='disappeared';break;}position={x:best.point.x+direction.dx*EPS*20,y:best.point.y+direction.dy*EPS*20};skipPieceId=null;skipEdgeIndex=null;continue;}
-      const definition=definitionFor(best.piece.type)||{};if(directPath&&firstDirectHitId===null)firstDirectHitId=best.piece.id;hitPieceIds.push(best.piece.id);points.push(best.point);if(definition.isOnyx){absorbed=true;break;}if(definition.isBlackHole){absorbed='disappeared';break;}
+
+      if(best.kind==='boundary'){
+        points.push(best.point);
+        const exit=exitAt(best.point,width,height);exitSide=exit.side;exitIndex=exit.index;
+        break;
+      }
+
+      passThroughPieceId=null;
+      if(best.kind==='gravity'){
+        directPath=false;points.push(best.point);refracted=true;
+        const center=best.piece.center;
+        direction=direction.dy!==0
+          ?{dx:Math.sign(center.x-best.point.x),dy:0}
+          :{dx:0,dy:Math.sign(center.y-best.point.y)};
+        if(!direction.dx&&!direction.dy){absorbed='disappeared';break;}
+        position={x:best.point.x+direction.dx*EPS*20,y:best.point.y+direction.dy*EPS*20};
+        skipPieceId=null;skipEdgeIndex=null;
+        continue;
+      }
+
+      const definition=definitionFor(best.piece.type)||{};
+      if(directPath&&firstDirectHitId===null)firstDirectHitId=best.piece.id;
+      hitPieceIds.push(best.piece.id);points.push(best.point);
+      if(definition.isOnyx){absorbed=true;break;}
+      if(definition.isBlackHole){absorbed='disappeared';break;}
       // Les deux trous de ver forment une paire : l'onde entre dans le premier,
       // ressort du second dans la même direction, sans couleur ni réflexion.
       if(definition.isWormhole){
@@ -115,7 +178,10 @@
         position={x:partner.center.x+direction.dx*(.5+EPS*20),y:partner.center.y+direction.dy*(.5+EPS*20)};
         passThroughPieceId=partner.id;skipPieceId=null;skipEdgeIndex=null;continue;
       }
-      if(definition.colorKey)colors.add(definition.colorKey);if(definition.colorKeys)definition.colorKeys.forEach(key=>colors.add(key));direction=best.edgeType==='wall'?{dx:-direction.dx,dy:-direction.dy}:reflect(direction,best.edgeType);position=best.point;skipPieceId=best.piece.id;skipEdgeIndex=best.edgeIndex;
+      if(definition.colorKey)colors.add(definition.colorKey);
+      if(definition.colorKeys)definition.colorKeys.forEach(key=>colors.add(key));
+      direction=best.edgeType==='wall'?{dx:-direction.dx,dy:-direction.dy}:reflect(direction,best.edgeType);
+      position=best.point;skipPieceId=best.piece.id;skipEdgeIndex=best.edgeIndex;
     }
     return{entrySide:side,entryIndex:index,exitSide,exitIndex,absorbed,color:resolveColor(colors,absorbed),points,hitPieceIds,firstDirectHitId};
   }

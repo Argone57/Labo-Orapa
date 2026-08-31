@@ -8,9 +8,9 @@ const LOCAL_STORAGE_PREFIX = IS_PREPRODUCTION ? 'orapaPreprod' : 'orapaMine';
 // publication et provoque une demande de mise à jour en boucle.
 const APP_VERSION = (()=>{
   try{
-    return new URL(document.currentScript?.src || '',window.location.href).searchParams.get('v') || '20260831-0009';
+    return new URL(document.currentScript?.src || '',window.location.href).searchParams.get('v') || '20260831-0010';
   }catch(_error){
-    return '20260831-0009';
+    return '20260831-0010';
   }
 })();
 let publishedAppVersion = null;
@@ -2648,13 +2648,9 @@ function pieceVertices(piece){
 // qui entre exactement à cet endroit repart par sa propre entrée (N→N, O→O, etc.).
 function beamEdges(piece){
   if(CONFIG.PIECES[piece.type]?.isRing){
-    // Les barres de l'anneau sont des lignes, et non de minces rectangles :
-    // une onde perpendiculaire est renvoyée directement, une onde parallèle
-    // les longe sans effet. Cela évite une fausse diagonale à leur extrémité.
-    const diamond=spaceRingLocalParts()[0].map(vertex=>transformVertex(vertex,piece.flipped,piece.rotation,piece.center));
-    const bars=[[-2,0],[-1,0],[1,0],[2,0]].map(vertex=>transformVertex(vertex,piece.flipped,piece.rotation,piece.center));
-    return diamond.map((point,index)=>[point,diamond[(index+1)%diamond.length]])
-      .concat([[bars[0],bars[1]],[bars[2],bars[3]]]);
+    // Le losange et les deux parties de l'anneau suivent leur silhouette
+    // visible. Les barres parallèles à l'onde restent naturellement ignorées.
+    return pieceCollisionPolygons(piece).flatMap(poly=>poly.map((point,index)=>[point,poly[(index+1)%poly.length]]));
   }
   const boardPoly = ensureCCW([{x:0,y:0},{x:COLS,y:0},{x:COLS,y:activeRows()},{x:0,y:activeRows()}]);
   const clipped = clipPolygon(ensureCCW(pieceVertices(piece)), boardPoly);
