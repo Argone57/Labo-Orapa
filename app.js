@@ -8,9 +8,9 @@ const LOCAL_STORAGE_PREFIX = IS_PREPRODUCTION ? 'orapaPreprod' : 'orapaMine';
 // publication et provoque une demande de mise à jour en boucle.
 const APP_VERSION = (()=>{
   try{
-    return new URL(document.currentScript?.src || '',window.location.href).searchParams.get('v') || '20260831-0003';
+    return new URL(document.currentScript?.src || '',window.location.href).searchParams.get('v') || '20260831-0004';
   }catch(_error){
-    return '20260831-0003';
+    return '20260831-0004';
   }
 })();
 let publishedAppVersion = null;
@@ -1737,10 +1737,13 @@ function tryRandomLayout(rngFn,requestedTypes){
   rngFn = rngFn || Math.random;
   return window.OrapaEngine.generateLayout({
     types:requestedTypes||allTypes(),attempts:1,triesPerPiece:250,rng:rngFn,
-    candidateFor(type,random){
+    candidateFor(type,random,tries,placed){
       const rotation = ROTATIONS[Math.floor(rngFn()*4)];
       const flipped = rngFn() < 0.5;
-      const probe = { id:'r_'+type, type, center:{x:COLS/2,y:ROWS/2}, rotation, flipped };
+      // Deux trous de ver partagent un type mais restent deux pièces
+      // distinctes pour le simulateur et les contrôles de placement.
+      const generatedId='r_'+type+'_'+placed.filter(piece=>piece.type===type).length;
+      const probe = { id:generatedId, type, center:{x:COLS/2,y:ROWS/2}, rotation, flipped };
       const {hw,hh} = boundingHalfExtents(probe);
       if(hw*2>COLS || hh*2>ROWS) return null;
       const bounds=pieceLocalBounds(probe);
@@ -1750,7 +1753,7 @@ function tryRandomLayout(rngFn,requestedTypes){
       const minY=polygonBounds?half.minY-bounds.minY:hh,maxY=polygonBounds?half.maxY-bounds.maxY:ROWS-hh;
       const rawX=minX+rngFn()*(maxX-minX),rawY=minY+rngFn()*(maxY-minY);
       const {x:cx,y:cy}=snapPieceCenterWithinBounds(rawX,rawY,probe);
-      return { id:'r_'+type, type, center:{x:cx,y:cy}, rotation, flipped };
+      return { id:generatedId, type, center:{x:cx,y:cy}, rotation, flipped };
     },
     placementValid:(candidate,placed)=>placementValid(candidate,null,placed),
     layoutValid:placed=>unreachablePieces(placed).length===0,
@@ -1790,10 +1793,7 @@ function dailyPlacementValid(candidate,placed){
   return !placed.some(other=>touchesBySide(pieceVertices(candidate),pieceVertices(other)));
 }
 function dailyUnreachablePieces(pieces){
-  if(window.OrapaEngine){
-    const ids=new Set(window.OrapaEngine.unreachablePieceIds({pieces,width:COLS,height:ROWS,edgesFor:beamEdges,minHitsFor:piece=>CONFIG.PIECES[piece.type]?.minHits||1}));
-    return pieces.filter(piece=>ids.has(piece.id));
-  }
+  if(window.OrapaEngine)return actualUnreachablePieces(pieces,COLS,ROWS);
   const previousVariant=state.gameVariant;
   state.gameVariant='classic';
   try{return unreachablePieces(pieces);}
@@ -2848,12 +2848,28 @@ function placementValid(candidate, excludeId, piecesList){
 // (un tir direct depuis un bord qui l'atteint avant toute autre pièce).
 function firstHitPieceId(side, index, piecesList){
   piecesList = piecesList || state.pieces;
-  return window.OrapaEngine.firstDirectHit({side,index,pieces:piecesList,width:COLS,height:activeRows(),edgesFor:beamEdges});
+  return actualDirectHitId(side,index,piecesList,COLS,activeRows());
+}
+function actualDirectHitId(side,index,piecesList,width,height){
+  // La validité de placement suit le trajet réel : une réfraction, une
+  // absorption ou un trou de ver avant une pièce ne peut jamais compter comme
+  // une atteinte directe de cette pièce.
+  const result=window.OrapaEngine.simulateBeam({
+    side,index,pieces:piecesList,width,height,edgesFor:beamEdges,
+    definitionFor:type=>CONFIG.PIECES[type],
+    resolveColor:(colors,absorbed)=>absorbed==='loop'?CONFIG.TRAPPED:(absorbed==='disappeared'?CONFIG.DISAPPEARED:(absorbed?CONFIG.ABSORBED:resolveColor(colors)))
+  });
+  return result.firstDirectHitId;
+}
+function actualUnreachablePieces(piecesList,width,height){
+  const counts=new Map(),bump=id=>{if(id)counts.set(id,(counts.get(id)||0)+1);};
+  for(let index=0;index<COLS;index++){bump(actualDirectHitId('top',index,piecesList,width,height));bump(actualDirectHitId('bottom',index,piecesList,width,height));}
+  for(let index=0;index<height;index++){bump(actualDirectHitId('left',index,piecesList,width,height));bump(actualDirectHitId('right',index,piecesList,width,height));}
+  return piecesList.filter(piece=>piece.center&&(counts.get(piece.id)||0)<(CONFIG.PIECES[piece.type]?.minHits||1));
 }
 function unreachablePieces(piecesList){
   piecesList = piecesList || state.pieces;
-  const ids=new Set(window.OrapaEngine.unreachablePieceIds({pieces:piecesList,width:COLS,height:activeRows(),edgesFor:beamEdges,minHitsFor:piece=>CONFIG.PIECES[piece.type]?.minHits||1}));
-  return piecesList.filter(piece=>ids.has(piece.id));
+  return actualUnreachablePieces(piecesList,COLS,activeRows());
 }
 
 // Calcule l'ensemble des pièces en conflit (contact par un côté / chevauchement / hors
