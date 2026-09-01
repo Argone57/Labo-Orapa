@@ -8,9 +8,9 @@ const LOCAL_STORAGE_PREFIX = IS_PREPRODUCTION ? 'orapaPreprod' : 'orapaMine';
 // publication et provoque une demande de mise à jour en boucle.
 const APP_VERSION = (()=>{
   try{
-    return new URL(document.currentScript?.src || '',window.location.href).searchParams.get('v') || '20260901-0005';
+    return new URL(document.currentScript?.src || '',window.location.href).searchParams.get('v') || '20260901-0006';
   }catch(_error){
-    return '20260901-0005';
+    return '20260901-0006';
   }
 })();
 let publishedAppVersion = null;
@@ -273,6 +273,35 @@ function historyOptionFiltersMatch(decoded,filters){
 }
 function historyOptionFilterSignature(filters){
   return Object.keys(filters).map(key=>filters[key]===1?'1':filters[key]===-1?'0':'*').join('');
+}
+const FILTERED_HISTORY_PAGE_SIZE=10;
+function createFilteredHistoryPager(fetchPage){
+  const state={rows:[],hasMore:true,loading:null,visibleCounts:Object.create(null)};
+  state.loadNext=async()=>{
+    if(!state.hasMore)return;
+    if(state.loading)return state.loading;
+    state.loading=(async()=>{
+      const page=await fetchPage(state.rows.length,FILTERED_HISTORY_PAGE_SIZE+1);
+      const pageRows=Array.isArray(page)?page:[];
+      state.rows.push(...pageRows.slice(0,FILTERED_HISTORY_PAGE_SIZE));
+      state.hasMore=pageRows.length>FILTERED_HISTORY_PAGE_SIZE;
+    })();
+    try{await state.loading;}finally{state.loading=null;}
+  };
+  state.result=async(filters,addPage=false)=>{
+    const signature=historyOptionFilterSignature(filters);
+    const current=state.visibleCounts[signature]||FILTERED_HISTORY_PAGE_SIZE;
+    const target=current+(addPage?FILTERED_HISTORY_PAGE_SIZE:0);
+    state.visibleCounts[signature]=target;
+    if(!state.rows.length&&state.hasMore)await state.loadNext();
+    let matching=state.rows.filter(row=>historyOptionFiltersMatch(decodeGridId(row.grid_id),filters));
+    while(matching.length<target+1&&state.hasMore){
+      await state.loadNext();
+      matching=state.rows.filter(row=>historyOptionFiltersMatch(decodeGridId(row.grid_id),filters));
+    }
+    return {rows:matching.slice(0,target),hasMore:matching.length>target||state.hasMore,signature,target};
+  };
+  return state;
 }
 function formatDuration(ms){
   const s = Math.max(0, Math.round(ms/1000));
@@ -778,6 +807,12 @@ async function openAccountModal(){
 
 let gridDataReturnsToAccount=false;
 let gridDataReturnsToVictory=false;
+let accountFilteredHistoryPagers={};
+let accountHistoryViewRevision=0;
+function accountFilteredHistoryPager(variant,fetchPage){
+  if(!accountFilteredHistoryPagers[variant])accountFilteredHistoryPagers[variant]=createFilteredHistoryPager(fetchPage);
+  return accountFilteredHistoryPagers[variant];
+}
 function openGridDataShell(title,intro='',returnToAccount=false,returnToVictory=false){
   achievementExpanded.clear();
   expandedScores.clear();
@@ -841,39 +876,40 @@ async function openGridRanking(gridId,returnToAccount=false,returnToVictory=fals
 }
 async function openMyGridHistory(){
   if(!currentPlayerAccount) return;
+  const viewRevision=++accountHistoryViewRevision;
+  if(!$('#gridDataModal').classList.contains('open'))accountFilteredHistoryPagers={};
   const optionFilters=newHistoryOptionFilters('classic');
   openGridDataShell('🕘 Historique des grilles',`<div class="achievement-subtabs"><button id="accountHistoryClassic" class="ghost active">Mine</button><button id="accountHistoryLost" class="ghost">Gemme perdue</button><button id="accountHistorySpace" class="ghost">Space</button><button id="accountHistoryEarthSky" class="ghost">Terre et Ciel</button></div><div class="shared-grid-toolbar">${historyOptionFilterHtml('accountHistoryOptionFilters','classic')}<select id="accountHistorySortSelect" class="ranking-select"><option value="date">Date</option><option value="points">Points</option><option value="time">Temps</option></select><button id="accountHistorySortReverse" class="ghost shared-sort-reverse" aria-label="Inverser le tri">↓</button></div>`,true);
-  const historyState={rows:[],hasMore:true,reverse:false};
-  const loadPage=async()=>{
-    const page=await supabaseRpc('orapa_my_grid_history',{p_session_token:currentPlayerAccount.session_token,p_limit:11,p_offset:historyState.rows.length});
-    const pageRows=Array.isArray(page)?page:[];
-    historyState.rows.push(...pageRows.slice(0,10));
-    historyState.hasMore=pageRows.length>10;
-  };
+  const historyState=accountFilteredHistoryPager('classic',(offset,limit)=>supabaseRpc('orapa_my_grid_history',{p_session_token:currentPlayerAccount.session_token,p_limit:limit,p_offset:offset}));
+  historyState.reverse=false;
+  let renderRevision=0;
   try{
-    await loadPage();
+    await historyState.loadNext();
     if(!historyState.rows.length){ $('#gridDataContent').innerHTML='<div class="history-empty">Aucune grille classée jouée.</div>'; return; }
-    const renderHistory=()=>{
+    const renderHistory=async(addPage=false)=>{
+      const revision=++renderRevision;
+      const pageResult=await historyState.result(optionFilters,addPage);
+      if(revision!==renderRevision||viewRevision!==accountHistoryViewRevision)return;
       const sortMode=$('#accountHistorySortSelect')?.value||'date';
-      const activeRows=historyState.rows.filter(row=>historyOptionFiltersMatch(decodeGridId(row.grid_id),optionFilters)).slice().sort((a,b)=>{let value=sortMode==='points'?Number(a.cost)-Number(b.cost):sortMode==='time'?Number(a.time_ms)-Number(b.time_ms):new Date(b.played_at)-new Date(a.played_at);if(value===0)value=String(a.grid_id).localeCompare(String(b.grid_id));return historyState.reverse?-value:value;});
+      const activeRows=pageResult.rows.slice().sort((a,b)=>{let value=sortMode==='points'?Number(a.cost)-Number(b.cost):sortMode==='time'?Number(a.time_ms)-Number(b.time_ms):new Date(b.played_at)-new Date(a.played_at);if(value===0)value=String(a.grid_id).localeCompare(String(b.grid_id));return historyState.reverse?-value:value;});
       const rowsHtml=activeRows.map((row,i)=>{
         const key=`history:${row.grid_id}`,expanded=expandedScores.has(key),decoded=decodeGridId(row.grid_id);
         const gems=decoded?gemFlagsEmojiLine(decoded.includeGray,decoded.includeOnyx,decoded.includeSapphire):'';
         const date=new Date(row.played_at).toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'2-digit'});
         return `<div class="ranking-row account-history-row account-ranked-history${expanded?' expanded':''}" data-grid-index="${i}"><div class="ranking-row-top"><span class="account-result-position"><span class="solo-result-mark ${row.success?'win':'fail'}">${row.success?'✓':'✕'}</span><b>#${row.rank}</b></span><span class="ranking-gems">${gems}</span><span class="ranking-points">${row.cost} pts</span><span class="ranking-date">${date}</span></div>${expanded?`<div class="ranking-row-detail">ID <b>${escapeHtml(publicGridId(row.grid_id))}</b> · ${row.ray_count} 🔦 + ${row.coord_count} 📍 · ${row.cost} pts · ${formatDuration(row.time_ms)}</div><div class="controls ranking-compact-actions"><button class="history-summary ghost" data-grid-index="${i}">📋 Résumé</button><button class="history-copy-id ghost" data-grid-index="${i}">📋 ID</button><button class="grid-history-ranking primary" data-grid-index="${i}">🏆 Grille</button></div>`:''}</div>`;
       }).join('');
-      const empty=!activeRows.length?'<div class="history-empty">Aucune grille de cette configuration dans les pages chargées.</div>':'';
-      const more=historyState.hasMore?'<button id="historyLoadMore" class="ghost solo-load-more">Afficher les résultats suivants</button>':'';
+      const empty=!activeRows.length?'<div class="history-empty">Aucune grille de cette configuration.</div>':'';
+      const more=pageResult.hasMore?'<button id="historyLoadMore" class="ghost solo-load-more">Afficher les résultats suivants</button>':'';
       $('#gridDataContent').innerHTML=rowsHtml+empty+more;
       $('#gridDataContent').querySelectorAll('.account-history-row').forEach(el=>el.onclick=ev=>{if(ev.target.closest('button'))return;const row=activeRows[Number(el.dataset.gridIndex)],key=`history:${row.grid_id}`;expandedScores.has(key)?expandedScores.delete(key):expandedScores.add(key);renderHistory();});
       $('#gridDataContent').querySelectorAll('.grid-history-ranking').forEach(btn=>btn.onclick=()=>openGridRanking(activeRows[Number(btn.dataset.gridIndex)].grid_id,true));
       $('#gridDataContent').querySelectorAll('.history-copy-id').forEach(btn=>btn.onclick=()=>{const id=publicGridId(activeRows[Number(btn.dataset.gridIndex)].grid_id);navigator.clipboard?.writeText(id).then(()=>showToast('Identifiant copié : '+id));});
       $('#gridDataContent').querySelectorAll('.history-summary').forEach(btn=>btn.onclick=()=>{const row=activeRows[Number(btn.dataset.gridIndex)];navigator.clipboard?.writeText(formatShareText({name:currentPlayerAccount.display_name,cost:row.cost,rayCount:row.ray_count,coordCount:row.coord_count,timeMs:row.time_ms,gridId:row.grid_id,date:new Date(row.played_at).getTime(),success:row.success})).then(()=>showToast('Résumé copié !'));});
       const loadMore=$('#historyLoadMore');
-      if(loadMore) loadMore.onclick=async()=>{loadMore.disabled=true;loadMore.textContent='Chargement…';try{await loadPage();renderHistory();}catch(e){showErrorToast(`Chargement impossible : ${e.message}`);loadMore.disabled=false;loadMore.textContent='Afficher les résultats suivants';}};
+      if(loadMore) loadMore.onclick=async()=>{loadMore.disabled=true;loadMore.textContent='Chargement…';try{await renderHistory(true);}catch(e){showErrorToast(`Chargement impossible : ${e.message}`);loadMore.disabled=false;loadMore.textContent='Afficher les résultats suivants';}};
     };
     bindHistoryOptionFilters('accountHistoryOptionFilters',optionFilters,renderHistory);
-    $('#accountHistorySortSelect').addEventListener('change',renderHistory);
+    $('#accountHistorySortSelect').addEventListener('change',()=>renderHistory());
     $('#accountHistorySortReverse').addEventListener('click',()=>{historyState.reverse=!historyState.reverse;$('#accountHistorySortReverse').textContent=historyState.reverse?'↑':'↓';renderHistory();});
     $('#accountHistoryClassic').addEventListener('click',openMyGridHistory);
     $('#accountHistoryLost').addEventListener('click',openMyLostGridHistory);
@@ -884,6 +920,8 @@ async function openMyGridHistory(){
 }
 async function openMyLostGridHistory(){
   if(!currentPlayerAccount)return;
+  ++accountHistoryViewRevision;
+  if(!$('#gridDataModal').classList.contains('open'))accountFilteredHistoryPagers={};
   openGridDataShell('🕘 Historique des grilles',`<div class="achievement-subtabs"><button id="accountHistoryClassic" class="ghost">Mine</button><button id="accountHistoryLost" class="ghost active">Gemme perdue</button><button id="accountHistorySpace" class="ghost">Space</button><button id="accountHistoryEarthSky" class="ghost">Terre et Ciel</button></div><div class="shared-grid-toolbar"><select id="accountHistoryLostFilter" class="ranking-select"><option value="ALL">Toutes les parties</option><option value="WIN">Réussites</option><option value="FAIL">Échecs</option></select><select id="accountHistoryLostSort" class="ranking-select"><option value="date">Date</option><option value="points">Points</option><option value="time">Temps</option></select><button id="accountHistoryLostReverse" class="ghost shared-sort-reverse" aria-label="Inverser le tri">↓</button></div>`,true);
   const stateRows={rows:[],hasMore:true,reverse:false};
   const load=async()=>{const page=await supabaseRpc('orapa_my_lost_grid_history_v2',{p_session_token:currentPlayerAccount.session_token,p_limit:11,p_offset:stateRows.rows.length});stateRows.rows.push(...(page||[]).slice(0,10));stateRows.hasMore=(page||[]).length>10;};
@@ -900,31 +938,52 @@ async function openMyLostGridHistory(){
 }
 async function openMySpaceGridHistory(){
   if(!currentPlayerAccount)return;
+  const viewRevision=++accountHistoryViewRevision;
+  if(!$('#gridDataModal').classList.contains('open'))accountFilteredHistoryPagers={};
   const optionFilters=newHistoryOptionFilters('space');
   openGridDataShell('🕘 Historique des grilles',`<div class="achievement-subtabs"><button id="accountHistoryClassic" class="ghost">Mine</button><button id="accountHistoryLost" class="ghost">Gemme perdue</button><button id="accountHistorySpace" class="ghost active">Space</button><button id="accountHistoryEarthSky" class="ghost">Terre et Ciel</button></div><div class="shared-grid-toolbar">${historyOptionFilterHtml('accountHistorySpaceFilters','space')}<select id="accountHistorySpaceSort" class="ranking-select"><option value="date">Date</option><option value="points">Points</option><option value="time">Temps</option></select><button id="accountHistorySpaceReverse" class="ghost shared-sort-reverse" aria-label="Inverser le tri">↓</button></div>`,true);
-  const list={rows:[],hasMore:true,reverse:false};
-  const load=async()=>{const page=await supabaseRpc('orapa_my_space_grid_history',{p_session_token:currentPlayerAccount.session_token,p_limit:11,p_offset:list.rows.length});list.rows.push(...(page||[]).slice(0,10));list.hasMore=(page||[]).length>10;};
-  const render=()=>{
+  const list=accountFilteredHistoryPager('space',(offset,limit)=>supabaseRpc('orapa_my_space_grid_history',{p_session_token:currentPlayerAccount.session_token,p_limit:limit,p_offset:offset}));
+  list.reverse=false;
+  let renderRevision=0;
+  const render=async(addPage=false)=>{
+    const revision=++renderRevision;
+    const pageResult=await list.result(optionFilters,addPage);
+    if(revision!==renderRevision||viewRevision!==accountHistoryViewRevision)return;
     const sort=$('#accountHistorySpaceSort')?.value||'date';
-    const rows=list.rows.filter(row=>historyOptionFiltersMatch(decodeGridId(row.grid_id),optionFilters)).slice().sort((a,b)=>{let value=sort==='points'?Number(a.cost)-Number(b.cost):sort==='time'?Number(a.time_ms)-Number(b.time_ms):new Date(b.played_at)-new Date(a.played_at);if(value===0)value=String(a.grid_id).localeCompare(String(b.grid_id));return list.reverse?-value:value;});
-    $('#gridDataContent').innerHTML=rows.map((row,index)=>{const key=`space-account:${row.grid_id}`,expanded=expandedScores.has(key),date=new Date(row.played_at).toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'2-digit'}),decoded=decodeGridId(row.grid_id),moves=`${row.ray_count} 🔦 + ${row.coord_count} 📍`;return `<div class="ranking-row account-history-row account-ranked-history${expanded?' expanded':''}" data-index="${index}"><div class="ranking-row-top"><span class="account-result-position"><span class="solo-result-mark ${row.success?'win':'fail'}">${row.success?'✓':'✕'}</span><b>#${row.rank}</b></span><span class="ranking-gems space-history-options">${spaceFlagsEmojiLine(decoded)}</span><span class="ranking-points">${row.cost} pts</span><span class="ranking-date">${date}</span></div>${expanded?`<div class="ranking-row-detail">ID <b>${escapeHtml(publicGridId(row.grid_id))}</b> · ${moves} · ${formatDuration(row.time_ms)}</div><div class="controls ranking-compact-actions three"><button class="space-account-summary ghost" data-index="${index}">📋 Résumé</button><button class="space-account-id ghost" data-index="${index}">📋 ID</button><button class="space-account-ranking primary" data-index="${index}">🏆 Grille</button></div>`:''}</div>`;}).join('')+(!rows.length?'<div class="history-empty">Aucune partie correspondant à ce filtre.</div>':'')+(list.hasMore?'<button id="spaceAccountMore" class="ghost solo-load-more">Afficher les résultats suivants</button>':'');
+    const rows=pageResult.rows.slice().sort((a,b)=>{let value=sort==='points'?Number(a.cost)-Number(b.cost):sort==='time'?Number(a.time_ms)-Number(b.time_ms):new Date(b.played_at)-new Date(a.played_at);if(value===0)value=String(a.grid_id).localeCompare(String(b.grid_id));return list.reverse?-value:value;});
+    $('#gridDataContent').innerHTML=rows.map((row,index)=>{const key=`space-account:${row.grid_id}`,expanded=expandedScores.has(key),date=new Date(row.played_at).toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'2-digit'}),decoded=decodeGridId(row.grid_id),moves=`${row.ray_count} 🔦 + ${row.coord_count} 📍`;return `<div class="ranking-row account-history-row account-ranked-history${expanded?' expanded':''}" data-index="${index}"><div class="ranking-row-top"><span class="account-result-position"><span class="solo-result-mark ${row.success?'win':'fail'}">${row.success?'✓':'✕'}</span><b>#${row.rank}</b></span><span class="ranking-gems space-history-options">${spaceFlagsEmojiLine(decoded)}</span><span class="ranking-points">${row.cost} pts</span><span class="ranking-date">${date}</span></div>${expanded?`<div class="ranking-row-detail">ID <b>${escapeHtml(publicGridId(row.grid_id))}</b> · ${moves} · ${formatDuration(row.time_ms)}</div><div class="controls ranking-compact-actions three"><button class="space-account-summary ghost" data-index="${index}">📋 Résumé</button><button class="space-account-id ghost" data-index="${index}">📋 ID</button><button class="space-account-ranking primary" data-index="${index}">🏆 Grille</button></div>`:''}</div>`;}).join('')+(!rows.length?'<div class="history-empty">Aucune partie correspondant à ce filtre.</div>':'')+(pageResult.hasMore?'<button id="spaceAccountMore" class="ghost solo-load-more">Afficher les résultats suivants</button>':'');
     $('#gridDataContent').querySelectorAll('.account-history-row').forEach(node=>node.onclick=e=>{if(e.target.closest('button'))return;const row=rows[Number(node.dataset.index)],key=`space-account:${row.grid_id}`;expandedScores.has(key)?expandedScores.delete(key):expandedScores.add(key);render();});
     $('#gridDataContent').querySelectorAll('.space-account-ranking').forEach(button=>button.onclick=()=>openGridRanking(rows[Number(button.dataset.index)].grid_id,true));
     $('#gridDataContent').querySelectorAll('.space-account-id').forEach(button=>button.onclick=()=>navigator.clipboard?.writeText(publicGridId(rows[Number(button.dataset.index)].grid_id)).then(()=>showToast('Identifiant copié !')));
     $('#gridDataContent').querySelectorAll('.space-account-summary').forEach(button=>button.onclick=()=>{const row=rows[Number(button.dataset.index)];navigator.clipboard?.writeText(formatShareText({gameVariant:'space',gridId:row.grid_id,name:currentPlayerAccount.display_name,success:row.success,cost:row.cost,rayCount:row.ray_count,coordCount:row.coord_count,timeMs:row.time_ms,date:new Date(row.played_at).getTime()})).then(()=>showToast('Résumé copié !'));});
-    if($('#spaceAccountMore'))$('#spaceAccountMore').onclick=async()=>{await load();render();};
+    if($('#spaceAccountMore'))$('#spaceAccountMore').onclick=async()=>{const button=$('#spaceAccountMore');button.disabled=true;button.textContent='Chargement…';try{await render(true);}catch(error){showErrorToast(`Chargement impossible : ${error.message}`);button.disabled=false;button.textContent='Afficher les résultats suivants';}};
   };
-  try{await load();$('#accountHistoryClassic').onclick=openMyGridHistory;$('#accountHistoryLost').onclick=openMyLostGridHistory;$('#accountHistorySpace').onclick=openMySpaceGridHistory;$('#accountHistoryEarthSky').onclick=openMyEarthSkyGridHistory;bindHistoryOptionFilters('accountHistorySpaceFilters',optionFilters,render);$('#accountHistorySpaceSort').onchange=render;$('#accountHistorySpaceReverse').onclick=()=>{list.reverse=!list.reverse;$('#accountHistorySpaceReverse').textContent=list.reverse?'↑':'↓';render();};if(!list.rows.length){$('#gridDataContent').innerHTML='<div class="history-empty">Aucune partie Orapa Space enregistrée.</div>';return;}render();}catch(error){$('#gridDataContent').innerHTML=`<div class="account-error" style="display:block">${escapeHtml(error.message)}</div>`;}
+  try{await list.loadNext();$('#accountHistoryClassic').onclick=openMyGridHistory;$('#accountHistoryLost').onclick=openMyLostGridHistory;$('#accountHistorySpace').onclick=openMySpaceGridHistory;$('#accountHistoryEarthSky').onclick=openMyEarthSkyGridHistory;bindHistoryOptionFilters('accountHistorySpaceFilters',optionFilters,()=>render());$('#accountHistorySpaceSort').onchange=()=>render();$('#accountHistorySpaceReverse').onclick=()=>{list.reverse=!list.reverse;$('#accountHistorySpaceReverse').textContent=list.reverse?'↑':'↓';render();};if(!list.rows.length){$('#gridDataContent').innerHTML='<div class="history-empty">Aucune partie Orapa Space enregistrée.</div>';return;}await render();}catch(error){$('#gridDataContent').innerHTML=`<div class="account-error" style="display:block">${escapeHtml(error.message)}</div>`;}
 }
 async function openMyEarthSkyGridHistory(){
   if(!currentPlayerAccount)return;
+  const viewRevision=++accountHistoryViewRevision;
+  if(!$('#gridDataModal').classList.contains('open'))accountFilteredHistoryPagers={};
   const optionFilters=newHistoryOptionFilters('earthSky');
   openGridDataShell('🕘 Historique des grilles',`<div class="achievement-subtabs"><button id="accountHistoryClassic" class="ghost">Mine</button><button id="accountHistoryLost" class="ghost">Gemme perdue</button><button id="accountHistorySpace" class="ghost">Space</button><button id="accountHistoryEarthSky" class="ghost active">Terre et Ciel</button></div><div class="shared-grid-toolbar">${historyOptionFilterHtml('accountHistoryEarthSkyFilters','earthSky')}<select id="accountHistoryEarthSkySort" class="ranking-select"><option value="date">Date</option><option value="points">Points</option><option value="time">Temps</option></select><button id="accountHistoryEarthSkyReverse" class="ghost shared-sort-reverse" aria-label="Inverser le tri">↓</button></div>`,true);
-  const list={rows:[],hasMore:true,reverse:false};
+  const list=accountFilteredHistoryPager('earthSky',(offset,limit)=>supabaseRpc('orapa_my_earth_sky_grid_history',{p_session_token:currentPlayerAccount.session_token,p_limit:limit,p_offset:offset}));
+  list.reverse=false;
+  let renderRevision=0;
   const bindTabs=()=>{$('#accountHistoryClassic').onclick=openMyGridHistory;$('#accountHistoryLost').onclick=openMyLostGridHistory;$('#accountHistorySpace').onclick=openMySpaceGridHistory;$('#accountHistoryEarthSky').onclick=openMyEarthSkyGridHistory;};
-  const load=async()=>{const page=await supabaseRpc('orapa_my_earth_sky_grid_history',{p_session_token:currentPlayerAccount.session_token,p_limit:11,p_offset:list.rows.length});list.rows.push(...(page||[]).slice(0,10));list.hasMore=(page||[]).length>10;};
-  const render=()=>{const sort=$('#accountHistoryEarthSkySort')?.value||'date';const rows=list.rows.filter(row=>historyOptionFiltersMatch(decodeGridId(row.grid_id),optionFilters)).slice().sort((a,b)=>{let value=sort==='points'?Number(a.cost)-Number(b.cost):sort==='time'?Number(a.time_ms)-Number(b.time_ms):new Date(b.played_at)-new Date(a.played_at);if(value===0)value=String(a.grid_id).localeCompare(String(b.grid_id));return list.reverse?-value:value;});$('#gridDataContent').innerHTML=(rows.length?rows.map((row,index)=>{const key=`earth-sky-account:${row.grid_id}`,expanded=expandedScores.has(key),date=new Date(row.played_at).toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'2-digit'}),decoded=decodeGridId(row.grid_id),moves=`${row.ray_count} 🔦 + ${row.coord_count} 📍`;return `<div class="ranking-row account-history-row account-ranked-history${expanded?' expanded':''}" data-index="${index}"><div class="ranking-row-top"><span class="account-result-position"><span class="solo-result-mark ${row.success?'win':'fail'}">${row.success?'✓':'✕'}</span><b>#${row.rank}</b></span><span class="ranking-gems earth-sky-history-options">${earthSkyFlagsEmojiLine(decoded)}</span><span class="ranking-points">${row.cost} pts</span><span class="ranking-date">${date}</span></div>${expanded?`<div class="ranking-row-detail">ID <b>${escapeHtml(publicGridId(row.grid_id))}</b> · ${moves} · ${formatDuration(row.time_ms)}</div><div class="controls ranking-compact-actions three"><button class="earth-sky-account-summary ghost" data-index="${index}">📋 Résumé</button><button class="earth-sky-account-id ghost" data-index="${index}">📋 ID</button><button class="earth-sky-account-ranking primary" data-index="${index}">🏆 Grille</button></div>`:''}</div>`;}).join(''):'<div class="history-empty">Aucune partie correspondant à ce filtre.</div>')+(list.hasMore?'<button id="earthSkyAccountMore" class="ghost solo-load-more">Afficher les résultats suivants</button>':'');$('#gridDataContent').querySelectorAll('.account-history-row').forEach(node=>node.onclick=e=>{if(e.target.closest('button'))return;const row=rows[Number(node.dataset.index)],key=`earth-sky-account:${row.grid_id}`;expandedScores.has(key)?expandedScores.delete(key):expandedScores.add(key);render();});$('#gridDataContent').querySelectorAll('.earth-sky-account-ranking').forEach(button=>button.onclick=()=>openGridRanking(rows[Number(button.dataset.index)].grid_id,true));$('#gridDataContent').querySelectorAll('.earth-sky-account-id').forEach(button=>button.onclick=()=>navigator.clipboard?.writeText(publicGridId(rows[Number(button.dataset.index)].grid_id)).then(()=>showToast('Identifiant copié !')));$('#gridDataContent').querySelectorAll('.earth-sky-account-summary').forEach(button=>button.onclick=()=>{const row=rows[Number(button.dataset.index)];navigator.clipboard?.writeText(formatShareText({gameVariant:'earthSky',gridId:row.grid_id,name:currentPlayerAccount.display_name,success:row.success,cost:row.cost,rayCount:row.ray_count,coordCount:row.coord_count,timeMs:row.time_ms,date:new Date(row.played_at).getTime()})).then(()=>showToast('Résumé copié !'));});if($('#earthSkyAccountMore'))$('#earthSkyAccountMore').onclick=async()=>{await load();render();};};
-  try{await load();bindTabs();bindHistoryOptionFilters('accountHistoryEarthSkyFilters',optionFilters,render);$('#accountHistoryEarthSkySort').onchange=render;$('#accountHistoryEarthSkyReverse').onclick=()=>{list.reverse=!list.reverse;$('#accountHistoryEarthSkyReverse').textContent=list.reverse?'↑':'↓';render();};render();}catch(error){$('#gridDataContent').innerHTML=`<div class="account-error" style="display:block">${escapeHtml(error.message)}</div>`;}
+  const render=async(addPage=false)=>{
+    const revision=++renderRevision;
+    const pageResult=await list.result(optionFilters,addPage);
+    if(revision!==renderRevision||viewRevision!==accountHistoryViewRevision)return;
+    const sort=$('#accountHistoryEarthSkySort')?.value||'date';
+    const rows=pageResult.rows.slice().sort((a,b)=>{let value=sort==='points'?Number(a.cost)-Number(b.cost):sort==='time'?Number(a.time_ms)-Number(b.time_ms):new Date(b.played_at)-new Date(a.played_at);if(value===0)value=String(a.grid_id).localeCompare(String(b.grid_id));return list.reverse?-value:value;});
+    $('#gridDataContent').innerHTML=(rows.length?rows.map((row,index)=>{const key=`earth-sky-account:${row.grid_id}`,expanded=expandedScores.has(key),date=new Date(row.played_at).toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'2-digit'}),decoded=decodeGridId(row.grid_id),moves=`${row.ray_count} 🔦 + ${row.coord_count} 📍`;return `<div class="ranking-row account-history-row account-ranked-history${expanded?' expanded':''}" data-index="${index}"><div class="ranking-row-top"><span class="account-result-position"><span class="solo-result-mark ${row.success?'win':'fail'}">${row.success?'✓':'✕'}</span><b>#${row.rank}</b></span><span class="ranking-gems earth-sky-history-options">${earthSkyFlagsEmojiLine(decoded)}</span><span class="ranking-points">${row.cost} pts</span><span class="ranking-date">${date}</span></div>${expanded?`<div class="ranking-row-detail">ID <b>${escapeHtml(publicGridId(row.grid_id))}</b> · ${moves} · ${formatDuration(row.time_ms)}</div><div class="controls ranking-compact-actions three"><button class="earth-sky-account-summary ghost" data-index="${index}">📋 Résumé</button><button class="earth-sky-account-id ghost" data-index="${index}">📋 ID</button><button class="earth-sky-account-ranking primary" data-index="${index}">🏆 Grille</button></div>`:''}</div>`;}).join(''):'<div class="history-empty">Aucune partie correspondant à ce filtre.</div>')+(pageResult.hasMore?'<button id="earthSkyAccountMore" class="ghost solo-load-more">Afficher les résultats suivants</button>':'');
+    $('#gridDataContent').querySelectorAll('.account-history-row').forEach(node=>node.onclick=e=>{if(e.target.closest('button'))return;const row=rows[Number(node.dataset.index)],key=`earth-sky-account:${row.grid_id}`;expandedScores.has(key)?expandedScores.delete(key):expandedScores.add(key);render();});
+    $('#gridDataContent').querySelectorAll('.earth-sky-account-ranking').forEach(button=>button.onclick=()=>openGridRanking(rows[Number(button.dataset.index)].grid_id,true));
+    $('#gridDataContent').querySelectorAll('.earth-sky-account-id').forEach(button=>button.onclick=()=>navigator.clipboard?.writeText(publicGridId(rows[Number(button.dataset.index)].grid_id)).then(()=>showToast('Identifiant copié !')));
+    $('#gridDataContent').querySelectorAll('.earth-sky-account-summary').forEach(button=>button.onclick=()=>{const row=rows[Number(button.dataset.index)];navigator.clipboard?.writeText(formatShareText({gameVariant:'earthSky',gridId:row.grid_id,name:currentPlayerAccount.display_name,success:row.success,cost:row.cost,rayCount:row.ray_count,coordCount:row.coord_count,timeMs:row.time_ms,date:new Date(row.played_at).getTime()})).then(()=>showToast('Résumé copié !'));});
+    if($('#earthSkyAccountMore'))$('#earthSkyAccountMore').onclick=async()=>{const button=$('#earthSkyAccountMore');button.disabled=true;button.textContent='Chargement…';try{await render(true);}catch(error){showErrorToast(`Chargement impossible : ${error.message}`);button.disabled=false;button.textContent='Afficher les résultats suivants';}};
+  };
+  try{await list.loadNext();bindTabs();bindHistoryOptionFilters('accountHistoryEarthSkyFilters',optionFilters,()=>render());$('#accountHistoryEarthSkySort').onchange=()=>render();$('#accountHistoryEarthSkyReverse').onclick=()=>{list.reverse=!list.reverse;$('#accountHistoryEarthSkyReverse').textContent=list.reverse?'↑':'↓';render();};await render();}catch(error){$('#gridDataContent').innerHTML=`<div class="account-error" style="display:block">${escapeHtml(error.message)}</div>`;}
 }
 async function openMyDailyHistory(){
   if(!currentPlayerAccount) return;
@@ -5373,28 +5432,39 @@ async function openEarthSkyGlobalStats(){
 const GLOBAL_SOLO_PAGE_SIZE=10;
 let globalSoloScoresCache=null;
 let globalSoloVisibleCounts={};
+let globalSoloRenderRevision=0;
+let globalFilteredHistoryPagers={space:null,earthSky:null};
+let globalFilteredHistoryRenderRevision={space:0,earthSky:0};
 function invalidateGlobalSoloScores(){
   globalSoloScoresCache=null;
   globalSoloVisibleCounts={};
+  globalSoloRenderRevision=0;
+  globalFilteredHistoryPagers={space:null,earthSky:null};
+  globalFilteredHistoryRenderRevision={space:0,earthSky:0};
 }
 function filterGlobalSoloRows(optionFilters){
   const cachedRows=globalSoloScoresCache?.rows||[];
   return cachedRows.filter(row=>historyOptionFiltersMatch(decodeGridId(row.grid_id),optionFilters));
 }
 async function loadNextGlobalSoloPage(){
-  if(!globalSoloScoresCache) globalSoloScoresCache={rows:[],hasMore:true};
+  if(!globalSoloScoresCache) globalSoloScoresCache={rows:[],hasMore:true,loading:null};
   if(!globalSoloScoresCache.hasMore) return;
-  const page=await supabaseRpc('orapa_get_recent_grid_scores',{
-    p_session_token:currentPlayerAccount?.session_token||'',
-    p_limit:GLOBAL_SOLO_PAGE_SIZE+1,
-    p_offset:globalSoloScoresCache.rows.length
-  });
-  const pageRows=Array.isArray(page)?page:[];
-  globalSoloScoresCache.rows.push(...pageRows.slice(0,GLOBAL_SOLO_PAGE_SIZE));
-  globalSoloScoresCache.hasMore=pageRows.length>GLOBAL_SOLO_PAGE_SIZE;
+  if(globalSoloScoresCache.loading)return globalSoloScoresCache.loading;
+  globalSoloScoresCache.loading=(async()=>{
+    const page=await supabaseRpc('orapa_get_recent_grid_scores',{
+      p_session_token:currentPlayerAccount?.session_token||'',
+      p_limit:GLOBAL_SOLO_PAGE_SIZE+1,
+      p_offset:globalSoloScoresCache.rows.length
+    });
+    const pageRows=Array.isArray(page)?page:[];
+    globalSoloScoresCache.rows.push(...pageRows.slice(0,GLOBAL_SOLO_PAGE_SIZE));
+    globalSoloScoresCache.hasMore=pageRows.length>GLOBAL_SOLO_PAGE_SIZE;
+  })();
+  try{await globalSoloScoresCache.loading;}finally{globalSoloScoresCache.loading=null;}
 }
 async function renderGlobalSoloScores(optionFilters=globalHistoryOptionFilters.classic){
   const el=$('#rankingList');
+  const revision=++globalSoloRenderRevision;
   const savedScrollTop=el.scrollTop;
   if(!globalSoloScoresCache) el.innerHTML='<div class="history-empty">Chargement des grilles aléatoires…</div>';
   try{
@@ -5407,6 +5477,7 @@ async function renderGlobalSoloScores(optionFilters=globalHistoryOptionFilters.c
       await loadNextGlobalSoloPage();
       matchingRows=filterGlobalSoloRows(optionFilters);
     }
+    if(revision!==globalSoloRenderRevision||rankingView!=='solo'||historyDisplayMode!=='classic')return;
     const rows=matchingRows.slice(0,visibleTarget);
     if(!rows?.length && !globalSoloScoresCache.hasMore){ el.innerHTML='<div class="history-empty">Aucune grille aléatoire enregistrée.</div>'; return; }
     const rowsHtml=rows.map((row,i)=>{
@@ -5485,28 +5556,45 @@ function renderRankingList(){
     return;
   }
 }
-async function renderSpaceHistoryRanking(optionFilters=globalHistoryOptionFilters.space){
-  const filterKey=true;
-  const spaceHistoryConfigKey=decoded=>historyOptionFiltersMatch(decoded,optionFilters);
-  const el=$('#rankingList');el.innerHTML='<div class="history-empty">Chargement des parties Orapa Space…</div>';
-  const state={rows:[],hasMore:true,loading:false};
-  const loadPage=async()=>{if(state.loading||!state.hasMore)return;state.loading=true;try{const page=await supabaseRpc('orapa_space_global_history',{p_session_token:currentPlayerAccount?.session_token||'',p_limit:11,p_offset:state.rows.length});const pageRows=Array.isArray(page)?page:[];state.rows.push(...pageRows.slice(0,10));state.hasMore=pageRows.length>10;}finally{state.loading=false;}};
+async function renderSpaceHistoryRanking(optionFilters=globalHistoryOptionFilters.space,addPage=false){
+  const el=$('#rankingList');
+  const revision=++globalFilteredHistoryRenderRevision.space;
+  if(!globalFilteredHistoryPagers.space){
+    el.innerHTML='<div class="history-empty">Chargement des parties Orapa Space…</div>';
+    globalFilteredHistoryPagers.space=createFilteredHistoryPager((offset,limit)=>supabaseRpc('orapa_space_global_history',{p_session_token:currentPlayerAccount?.session_token||'',p_limit:limit,p_offset:offset}));
+  }
+  const pager=globalFilteredHistoryPagers.space;
   try{
-    await loadPage();
-    const render=()=>{const rows=state.rows.filter(row=>filterKey==='ALL'||spaceHistoryConfigKey(decodeGridId(row.grid_id))===filterKey);el.innerHTML=(rows.length?rows.map((row,index)=>{const key=`global-space-history:${row.id}`,expanded=expandedScores.has(key),date=new Date(row.played_at).toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'2-digit'}),decoded=decodeGridId(row.grid_id),moves=`${row.ray_count} 🔦 + ${row.coord_count} 📍`;return `<div class="ranking-row solo-global-row${expanded?' expanded':''}" data-index="${index}"><div class="ranking-row-top"><span class="solo-ranking-player"><span class="ranking-rank solo-result-mark ${row.success?'win':'fail'}">${row.success?'✓':'✕'}</span><span class="ranking-name${row.is_mine?' mine':''}">${escapeHtml(row.player_name||'Anonyme')}</span></span><span class="solo-ranking-config ranking-gems space-history-options">${spaceFlagsEmojiLine(decoded)}</span><span class="solo-ranking-score"><span class="ranking-points">${row.cost} pts</span><span class="ranking-date">${date}</span></span></div>${expanded?`<div class="ranking-row-detail">ID <b>${escapeHtml(publicGridId(row.grid_id))}</b> · ${moves} · ${formatDuration(row.time_ms)}</div><div class="controls ranking-compact-actions three"><button class="space-history-summary ghost" data-index="${index}">📋 Résumé</button><button class="space-history-id ghost" data-index="${index}">📋 ID</button><button class="space-history-ranking primary" data-index="${index}">🏆 Grille</button></div>`:''}</div>`;}).join(''):'<div class="history-empty">Aucune partie correspondant à cette configuration dans les pages chargées.</div>')+(state.hasMore?'<button id="spaceHistoryLoadMore" class="ghost solo-load-more">Afficher les résultats suivants</button>':'');
-    el.querySelectorAll('.solo-global-row').forEach(element=>element.onclick=event=>{if(event.target.closest('button'))return;const row=rows[Number(element.dataset.index)],key=`global-space-history:${row.id}`;expandedScores.has(key)?expandedScores.delete(key):expandedScores.add(key);render();});
+    const pageResult=await pager.result(optionFilters,addPage);
+    if(revision!==globalFilteredHistoryRenderRevision.space||rankingView!=='solo'||historyDisplayMode!=='space')return;
+    const rows=pageResult.rows;
+    el.innerHTML=(rows.length?rows.map((row,index)=>{const key=`global-space-history:${row.id}`,expanded=expandedScores.has(key),date=new Date(row.played_at).toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'2-digit'}),decoded=decodeGridId(row.grid_id),moves=`${row.ray_count} 🔦 + ${row.coord_count} 📍`;return `<div class="ranking-row solo-global-row${expanded?' expanded':''}" data-index="${index}"><div class="ranking-row-top"><span class="solo-ranking-player"><span class="ranking-rank solo-result-mark ${row.success?'win':'fail'}">${row.success?'✓':'✕'}</span><span class="ranking-name${row.is_mine?' mine':''}">${escapeHtml(row.player_name||'Anonyme')}</span></span><span class="solo-ranking-config ranking-gems space-history-options">${spaceFlagsEmojiLine(decoded)}</span><span class="solo-ranking-score"><span class="ranking-points">${row.cost} pts</span><span class="ranking-date">${date}</span></span></div>${expanded?`<div class="ranking-row-detail">ID <b>${escapeHtml(publicGridId(row.grid_id))}</b> · ${moves} · ${formatDuration(row.time_ms)}</div><div class="controls ranking-compact-actions three"><button class="space-history-summary ghost" data-index="${index}">📋 Résumé</button><button class="space-history-id ghost" data-index="${index}">📋 ID</button><button class="space-history-ranking primary" data-index="${index}">🏆 Grille</button></div>`:''}</div>`;}).join(''):'<div class="history-empty">Aucune partie correspondant à cette configuration.</div>')+(pageResult.hasMore?'<button id="spaceHistoryLoadMore" class="ghost solo-load-more">Afficher les résultats suivants</button>':'');
+    el.querySelectorAll('.solo-global-row').forEach(element=>element.onclick=event=>{if(event.target.closest('button'))return;const row=rows[Number(element.dataset.index)],key=`global-space-history:${row.id}`;expandedScores.has(key)?expandedScores.delete(key):expandedScores.add(key);renderSpaceHistoryRanking(optionFilters);});
     el.querySelectorAll('.space-history-ranking').forEach(button=>button.onclick=()=>openGridRanking(rows[Number(button.dataset.index)].grid_id));
     el.querySelectorAll('.space-history-summary').forEach(button=>button.onclick=()=>{const row=rows[Number(button.dataset.index)];navigator.clipboard?.writeText(formatShareText({gameVariant:'space',gridId:row.grid_id,name:row.player_name||'Anonyme',success:row.success,cost:row.cost,rayCount:row.ray_count,coordCount:row.coord_count,timeMs:row.time_ms,date:new Date(row.played_at).getTime()})).then(()=>showToast('Résumé copié !'));});
-    el.querySelectorAll('.space-history-id').forEach(button=>button.onclick=()=>{const id=rows[Number(button.dataset.index)].grid_id;navigator.clipboard?.writeText(id).then(()=>showToast('Identifiant copié : '+id));});const more=$('#spaceHistoryLoadMore');if(more)more.onclick=async()=>{more.disabled=true;more.textContent='Chargement…';try{await loadPage();render();}catch(error){showErrorToast(`Chargement impossible : ${error.message}`);more.disabled=false;more.textContent='Afficher les résultats suivants';}};};render();
+    el.querySelectorAll('.space-history-id').forEach(button=>button.onclick=()=>{const id=publicGridId(rows[Number(button.dataset.index)].grid_id);navigator.clipboard?.writeText(id).then(()=>showToast('Identifiant copié : '+id));});
+    const more=$('#spaceHistoryLoadMore');if(more)more.onclick=async()=>{more.disabled=true;more.textContent='Chargement…';try{await renderSpaceHistoryRanking(optionFilters,true);}catch(error){showErrorToast(`Chargement impossible : ${error.message}`);more.disabled=false;more.textContent='Afficher les résultats suivants';}};
   }catch(error){el.innerHTML=`<div class="account-error" style="display:block">${escapeHtml(error.message)}</div>`;}
 }
-async function renderEarthSkyHistoryRanking(optionFilters=globalHistoryOptionFilters.earthSky){
-  const filterKey=true;
-  const earthSkyHistoryConfigKey=decoded=>historyOptionFiltersMatch(decoded,optionFilters);
-  const el=$('#rankingList');el.innerHTML='<div class="history-empty">Chargement des parties Terre et Ciel…</div>';
-  const state={rows:[],hasMore:true,loading:false};
-  const loadPage=async()=>{if(state.loading||!state.hasMore)return;state.loading=true;try{const page=await supabaseRpc('orapa_earth_sky_global_history',{p_session_token:currentPlayerAccount?.session_token||'',p_limit:11,p_offset:state.rows.length});const pageRows=Array.isArray(page)?page:[];state.rows.push(...pageRows.slice(0,10));state.hasMore=pageRows.length>10;}finally{state.loading=false;}};
-  try{await loadPage();const render=()=>{const rows=state.rows.filter(row=>filterKey==='ALL'||earthSkyHistoryConfigKey(decodeGridId(row.grid_id))===filterKey);el.innerHTML=(rows.length?rows.map((row,index)=>{const key=`global-earth-sky:${row.id}`,expanded=expandedScores.has(key),date=new Date(row.played_at).toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'2-digit'}),decoded=decodeGridId(row.grid_id),moves=`${row.ray_count} 🔦 + ${row.coord_count} 📍`;return `<div class="ranking-row solo-global-row${expanded?' expanded':''}" data-index="${index}"><div class="ranking-row-top"><span class="solo-ranking-player"><span class="ranking-rank solo-result-mark ${row.success?'win':'fail'}">${row.success?'✓':'✕'}</span><span class="ranking-name${row.is_mine?' mine':''}">${escapeHtml(row.player_name||'Anonyme')}</span></span><span class="solo-ranking-config ranking-gems earth-sky-history-options">${earthSkyFlagsEmojiLine(decoded)}</span><span class="solo-ranking-score"><span class="ranking-points">${row.cost} pts</span><span class="ranking-date">${date}</span></span></div>${expanded?`<div class="ranking-row-detail">ID <b>${escapeHtml(publicGridId(row.grid_id))}</b> · ${moves} · ${formatDuration(row.time_ms)}</div><div class="controls ranking-compact-actions three"><button class="earth-sky-history-summary ghost" data-index="${index}">📋 Résumé</button><button class="earth-sky-history-id ghost" data-index="${index}">📋 ID</button><button class="earth-sky-history-ranking primary" data-index="${index}">🏆 Grille</button></div>`:''}</div>`;}).join(''):'<div class="history-empty">Aucune partie correspondant à cette configuration dans les pages chargées.</div>')+(state.hasMore?'<button id="earthSkyHistoryMore" class="ghost solo-load-more">Afficher les résultats suivants</button>':'');el.querySelectorAll('.solo-global-row').forEach(node=>node.onclick=e=>{if(e.target.closest('button'))return;const row=rows[Number(node.dataset.index)],key=`global-earth-sky:${row.id}`;expandedScores.has(key)?expandedScores.delete(key):expandedScores.add(key);render();});el.querySelectorAll('.earth-sky-history-ranking').forEach(button=>button.onclick=()=>openGridRanking(rows[Number(button.dataset.index)].grid_id));el.querySelectorAll('.earth-sky-history-id').forEach(button=>button.onclick=()=>navigator.clipboard?.writeText(publicGridId(rows[Number(button.dataset.index)].grid_id)).then(()=>showToast('Identifiant copié !')));el.querySelectorAll('.earth-sky-history-summary').forEach(button=>button.onclick=()=>{const row=rows[Number(button.dataset.index)];navigator.clipboard?.writeText(formatShareText({gameVariant:'earthSky',gridId:row.grid_id,name:row.player_name||'Anonyme',success:row.success,cost:row.cost,rayCount:row.ray_count,coordCount:row.coord_count,timeMs:row.time_ms,date:new Date(row.played_at).getTime()})).then(()=>showToast('Résumé copié !'));});if($('#earthSkyHistoryMore'))$('#earthSkyHistoryMore').onclick=async()=>{await loadPage();render();};};render();}catch(error){el.innerHTML=`<div class="account-error" style="display:block">${escapeHtml(error.message)}</div>`;}
+async function renderEarthSkyHistoryRanking(optionFilters=globalHistoryOptionFilters.earthSky,addPage=false){
+  const el=$('#rankingList');
+  const revision=++globalFilteredHistoryRenderRevision.earthSky;
+  if(!globalFilteredHistoryPagers.earthSky){
+    el.innerHTML='<div class="history-empty">Chargement des parties Terre et Ciel…</div>';
+    globalFilteredHistoryPagers.earthSky=createFilteredHistoryPager((offset,limit)=>supabaseRpc('orapa_earth_sky_global_history',{p_session_token:currentPlayerAccount?.session_token||'',p_limit:limit,p_offset:offset}));
+  }
+  const pager=globalFilteredHistoryPagers.earthSky;
+  try{
+    const pageResult=await pager.result(optionFilters,addPage);
+    if(revision!==globalFilteredHistoryRenderRevision.earthSky||rankingView!=='solo'||historyDisplayMode!=='earthSky')return;
+    const rows=pageResult.rows;
+    el.innerHTML=(rows.length?rows.map((row,index)=>{const key=`global-earth-sky:${row.id}`,expanded=expandedScores.has(key),date=new Date(row.played_at).toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'2-digit'}),decoded=decodeGridId(row.grid_id),moves=`${row.ray_count} 🔦 + ${row.coord_count} 📍`;return `<div class="ranking-row solo-global-row${expanded?' expanded':''}" data-index="${index}"><div class="ranking-row-top"><span class="solo-ranking-player"><span class="ranking-rank solo-result-mark ${row.success?'win':'fail'}">${row.success?'✓':'✕'}</span><span class="ranking-name${row.is_mine?' mine':''}">${escapeHtml(row.player_name||'Anonyme')}</span></span><span class="solo-ranking-config ranking-gems earth-sky-history-options">${earthSkyFlagsEmojiLine(decoded)}</span><span class="solo-ranking-score"><span class="ranking-points">${row.cost} pts</span><span class="ranking-date">${date}</span></span></div>${expanded?`<div class="ranking-row-detail">ID <b>${escapeHtml(publicGridId(row.grid_id))}</b> · ${moves} · ${formatDuration(row.time_ms)}</div><div class="controls ranking-compact-actions three"><button class="earth-sky-history-summary ghost" data-index="${index}">📋 Résumé</button><button class="earth-sky-history-id ghost" data-index="${index}">📋 ID</button><button class="earth-sky-history-ranking primary" data-index="${index}">🏆 Grille</button></div>`:''}</div>`;}).join(''):'<div class="history-empty">Aucune partie correspondant à cette configuration.</div>')+(pageResult.hasMore?'<button id="earthSkyHistoryMore" class="ghost solo-load-more">Afficher les résultats suivants</button>':'');
+    el.querySelectorAll('.solo-global-row').forEach(node=>node.onclick=e=>{if(e.target.closest('button'))return;const row=rows[Number(node.dataset.index)],key=`global-earth-sky:${row.id}`;expandedScores.has(key)?expandedScores.delete(key):expandedScores.add(key);renderEarthSkyHistoryRanking(optionFilters);});
+    el.querySelectorAll('.earth-sky-history-ranking').forEach(button=>button.onclick=()=>openGridRanking(rows[Number(button.dataset.index)].grid_id));
+    el.querySelectorAll('.earth-sky-history-id').forEach(button=>button.onclick=()=>navigator.clipboard?.writeText(publicGridId(rows[Number(button.dataset.index)].grid_id)).then(()=>showToast('Identifiant copié !')));
+    el.querySelectorAll('.earth-sky-history-summary').forEach(button=>button.onclick=()=>{const row=rows[Number(button.dataset.index)];navigator.clipboard?.writeText(formatShareText({gameVariant:'earthSky',gridId:row.grid_id,name:row.player_name||'Anonyme',success:row.success,cost:row.cost,rayCount:row.ray_count,coordCount:row.coord_count,timeMs:row.time_ms,date:new Date(row.played_at).getTime()})).then(()=>showToast('Résumé copié !'));});
+    const more=$('#earthSkyHistoryMore');if(more)more.onclick=async()=>{more.disabled=true;more.textContent='Chargement…';try{await renderEarthSkyHistoryRanking(optionFilters,true);}catch(error){showErrorToast(`Chargement impossible : ${error.message}`);more.disabled=false;more.textContent='Afficher les résultats suivants';}};
+  }catch(error){el.innerHTML=`<div class="account-error" style="display:block">${escapeHtml(error.message)}</div>`;}
 }
 async function renderLostHistoryRanking(){
   const el=$('#rankingList');el.innerHTML='<div class="history-empty">Chargement des parties Gemme perdue…</div>';
