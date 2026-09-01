@@ -8,9 +8,9 @@ const LOCAL_STORAGE_PREFIX = IS_PREPRODUCTION ? 'orapaPreprod' : 'orapaMine';
 // publication et provoque une demande de mise à jour en boucle.
 const APP_VERSION = (()=>{
   try{
-    return new URL(document.currentScript?.src || '',window.location.href).searchParams.get('v') || '20260901-0003';
+    return new URL(document.currentScript?.src || '',window.location.href).searchParams.get('v') || '20260901-0004';
   }catch(_error){
-    return '20260901-0003';
+    return '20260901-0004';
   }
 })();
 let publishedAppVersion = null;
@@ -245,6 +245,11 @@ function updateHistoryOptionFilterButton(button,value){
   if(marker)marker.textContent=value===1?'✅':value===-1?'❌':'';
   button.setAttribute('aria-label',`Filtre ${icon} : ${value===1?'option présente':value===-1?'option absente':'avec ou sans cette option'}`);
 }
+let historyFilterHelpDocumentBound=false;
+function closeHistoryFilterHelp(wrap){
+  wrap.classList.remove('open');
+  wrap.querySelector('.history-filter-help-button')?.setAttribute('aria-expanded','false');
+}
 function bindHistoryOptionFilters(id,filters,onChange){
   const root=$('#'+id);if(!root)return;
   root.querySelectorAll('.history-option-filter').forEach(button=>{
@@ -253,7 +258,14 @@ function bindHistoryOptionFilters(id,filters,onChange){
     button.onclick=()=>{filters[key]=(filters[key]||0)===0?1:filters[key]===1?-1:0;updateHistoryOptionFilterButton(button,filters[key]);onChange?.();};
   });
   const helpWrap=root.querySelector('.history-filter-help-wrap'),helpButton=root.querySelector('.history-filter-help-button');
-  if(helpButton)helpButton.onclick=event=>{event.stopPropagation();const open=!helpWrap.classList.contains('open');helpWrap.classList.toggle('open',open);helpButton.setAttribute('aria-expanded',String(open));};
+  if(helpButton){
+    helpButton.onclick=event=>{event.stopPropagation();const open=!helpWrap.classList.contains('open');document.querySelectorAll('.history-filter-help-wrap.open').forEach(closeHistoryFilterHelp);helpWrap.classList.toggle('open',open);helpWrap.classList.toggle('suppress-hover',!open);helpButton.setAttribute('aria-expanded',String(open));};
+    helpWrap.onmouseleave=()=>helpWrap.classList.remove('suppress-hover');
+  }
+  if(!historyFilterHelpDocumentBound){
+    document.addEventListener('click',()=>document.querySelectorAll('.history-filter-help-wrap.open').forEach(closeHistoryFilterHelp));
+    historyFilterHelpDocumentBound=true;
+  }
 }
 function historyOptionFiltersMatch(decoded,filters){
   if(!decoded)return false;
