@@ -8,9 +8,9 @@ const LOCAL_STORAGE_PREFIX = IS_PREPRODUCTION ? 'orapaPreprod' : 'orapaMine';
 // publication et provoque une demande de mise à jour en boucle.
 const APP_VERSION = (()=>{
   try{
-    return new URL(document.currentScript?.src || '',window.location.href).searchParams.get('v') || '20260901-0006';
+    return new URL(document.currentScript?.src || '',window.location.href).searchParams.get('v') || '20260901-0007';
   }catch(_error){
-    return '20260901-0006';
+    return '20260901-0007';
   }
 })();
 let publishedAppVersion = null;
@@ -2612,12 +2612,22 @@ function normalizedClippedPieceVertices(piece,tol=1e-7){
 function visiblePolygonsMatch(pA,pB,tol=1e-3){
   return polygonVertexSetsMatch(normalizedClippedPieceVertices(pA),normalizedClippedPieceVertices(pB),tol);
 }
+function pieceGroupsMatch(secretPieces,guessPieces,compare){
+  if(secretPieces.length!==guessPieces.length)return false;
+  const unmatched=guessPieces.slice();
+  for(const secret of secretPieces){
+    const matchIndex=unmatched.findIndex(guess=>compare(secret,guess));
+    if(matchIndex<0)return false;
+    unmatched.splice(matchIndex,1);
+  }
+  return true;
+}
 function evaluateGuess(){
-  for(const type of allTypes()){
-    const s = state.secretPieces.find(p=>p.type===type);
-    const g = state.pieces.find(p=>p.type===type && p.center);
-    if(!s || !g) return false;
-    if(state.isDaily ? !visiblePolygonsMatch(s,g) : !polygonsMatch(s,g)) return false;
+  const compare=state.isDaily?visiblePolygonsMatch:polygonsMatch;
+  for(const type of new Set(allTypes())){
+    const secrets=state.secretPieces.filter(piece=>piece.type===type);
+    const guesses=state.pieces.filter(piece=>piece.type===type&&piece.center);
+    if(!pieceGroupsMatch(secrets,guesses,compare))return false;
   }
   return true;
 }
