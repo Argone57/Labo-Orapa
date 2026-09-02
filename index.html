@@ -47,8 +47,8 @@ header .subtitle{color:var(--text-dim);font-size:.78rem;letter-spacing:.04em;tex
 .mode-pill.lose{color:#f5b8ae;border-color:#c1503f;background:#2a1712;}
 .mode-pill.lose .dot{background:#c1503f;box-shadow:0 0 8px #c1503f;}
 .controls{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;}
-.myludo-result-slot{display:flex;align-items:center;justify-content:center;margin-right:auto}.myludo-result-slot:empty{display:none}
-.account-myludo-button{display:flex!important;align-items:center;justify-content:center;gap:8px;width:100%;margin:8px 0!important}.account-myludo-button img{display:block;width:74px;height:32px;object-fit:contain}.myludo-settings{display:grid;gap:12px}.myludo-settings-section{display:grid;gap:8px;padding:11px;border:1px solid var(--vein);border-radius:10px;background:rgba(21,16,11,.3)}.myludo-settings-section h3{margin:0;color:var(--gold-bright);font-size:.82rem}.myludo-setting-row{display:grid;grid-template-columns:minmax(120px,.8fr) minmax(0,1.2fr);align-items:center;gap:10px}.myludo-setting-row label{font-size:.72rem;color:var(--text-dim)}.myludo-setting-row select,.myludo-setting-row input{margin:0}.myludo-custom-field[hidden]{display:none!important}@media(max-width:520px){.myludo-setting-row{grid-template-columns:1fr;gap:5px}}
+.myludo-result-slot{display:flex;align-items:center;justify-content:center;margin:0;min-width:0;height:100%}.myludo-result-slot:empty{display:none}
+.victory-actions{display:grid!important;grid-template-columns:minmax(76px,.8fr) repeat(3,minmax(0,1fr));align-items:stretch;gap:7px!important}.victory-actions button{display:flex;align-items:center;justify-content:center;min-width:0;padding:8px 7px;font-size:.72rem;line-height:1.2}.account-myludo-button{display:flex!important;align-items:center;justify-content:center;gap:8px}.account-myludo-button img{display:block;width:74px;height:32px;object-fit:contain;object-position:center}.myludo-settings{display:grid;gap:12px}.myludo-settings-section{display:grid;gap:8px;padding:11px;border:1px solid var(--vein);border-radius:10px;background:rgba(21,16,11,.3)}.myludo-settings-section h3{margin:0;color:var(--gold-bright);font-size:.82rem}.myludo-setting-row{display:grid;grid-template-columns:minmax(120px,.8fr) minmax(0,1.2fr);align-items:center;gap:10px}.myludo-setting-row label{font-size:.72rem;color:var(--text-dim)}.myludo-setting-row select,.myludo-setting-row input{margin:0}.myludo-custom-field[hidden]{display:none!important}@media(max-width:520px){.victory-actions{grid-template-columns:minmax(58px,.7fr) repeat(3,minmax(0,1fr));gap:4px!important}.victory-actions button{padding:7px 3px;font-size:.62rem}.myludo-setting-row{grid-template-columns:1fr;gap:5px}}
 button{font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:.85rem;border:1px solid var(--vein);background:var(--panel);color:var(--text);padding:10px 16px;border-radius:8px;cursor:pointer;transition:transform .08s ease,background .15s ease,border-color .15s ease;letter-spacing:.01em;}
 button:active{transform:scale(.96);}
 button.primary{background:linear-gradient(180deg,#3a2c17,#2a1f10);border-color:var(--gold);color:var(--gold-bright);}
@@ -833,13 +833,13 @@ body.app-loading .app,body.app-loading .account-fab,body.app-loading .rankings-f
     </div>
     <div class="controls victory-actions" style="justify-content:flex-end;margin-top:16px;">
       <span id="myludoResultSlot" class="myludo-result-slot"></span>
-      <button id="btnVictoryGridRanking" class="primary">🏆 Classement de la grille</button>
+      <button id="btnVictoryGridRanking" class="primary">🏆 Classement</button>
       <button id="btnVictoryCopyId" class="ghost">📋 Copier ID</button>
-      <button id="btnVictoryCopySummary" class="ghost">📋 Copier le résumé</button>
+      <button id="btnVictoryCopySummary" class="ghost">📋 Copier résumé</button>
     </div>
   </div>
 </div>
 
-<script src="boot.js?v=20260902-0003"></script>
+<script src="boot.js?v=20260902-0004"></script>
 </body>
 </html>
