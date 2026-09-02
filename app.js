@@ -2666,6 +2666,41 @@ function currentEntryForDisplay(){
     date: (lastScoreResult && lastScoreResult.entry.date) || Date.now()
   };
 }
+function localDateKey(value){
+  const date=new Date(value||Date.now());
+  return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
+}
+function currentMyLudoPayload(){
+  const entry=currentEntryForDisplay();
+  const decoded=state.gridId?decodeGridId(state.gridId):null;
+  const optionSource=decoded||state;
+  return {
+    schemaVersion:1,
+    source:'orapa-mine',
+    gameId:state.gameVariant==='space'?89980:96014,
+    gameVariant:state.gameVariant||'classic',
+    isDaily:!!state.isDaily,
+    solo:true,
+    online:true,
+    win:!!entry.success,
+    playerName:entry.name||'',
+    date:localDateKey(entry.date),
+    durationMinutes:Math.max(1,Math.round(Number(entry.timeMs||0)/60000)),
+    location:'Orapa-Mine',
+    comment:formatShareText(entry),
+    options:{
+      diamond:!!optionSource.includeGray,
+      blackBody:!!optionSource.includeOnyx,
+      sapphire:!!optionSource.includeSapphire,
+      blackHole:!!optionSource.includeBlackHole,
+      wormhole:!!optionSource.includeWormhole
+    }
+  };
+}
+document.addEventListener('orapa:myludo-request',()=>{
+  if(!state.soloOver||!state.soloResult)return;
+  document.dispatchEvent(new CustomEvent('orapa:myludo-result',{detail:JSON.stringify(currentMyLudoPayload())}));
+});
 function openVictoryModal(){
   const entry = currentEntryForDisplay();
   const won = state.soloResult==='win';

@@ -47,6 +47,7 @@ header .subtitle{color:var(--text-dim);font-size:.78rem;letter-spacing:.04em;tex
 .mode-pill.lose{color:#f5b8ae;border-color:#c1503f;background:#2a1712;}
 .mode-pill.lose .dot{background:#c1503f;box-shadow:0 0 8px #c1503f;}
 .controls{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;}
+.myludo-result-slot{display:flex;margin-right:auto}.myludo-result-slot:empty{display:none}
 button{font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:.85rem;border:1px solid var(--vein);background:var(--panel);color:var(--text);padding:10px 16px;border-radius:8px;cursor:pointer;transition:transform .08s ease,background .15s ease,border-color .15s ease;letter-spacing:.01em;}
 button:active{transform:scale(.96);}
 button.primary{background:linear-gradient(180deg,#3a2c17,#2a1f10);border-color:var(--gold);color:var(--gold-bright);}
@@ -821,7 +822,8 @@ body.app-loading .app,body.app-loading .account-fab,body.app-loading .rankings-f
     <div class="ranking-row-id" id="victoryIdLine" style="margin-left:0;margin-top:12px;">
       Grille : <b id="victoryGridId"></b>
     </div>
-    <div class="controls" style="justify-content:flex-end;margin-top:16px;">
+    <div class="controls victory-actions" style="justify-content:flex-end;margin-top:16px;">
+      <span id="myludoResultSlot" class="myludo-result-slot"></span>
       <button id="btnVictoryGridRanking" class="primary">🏆 Classement de la grille</button>
       <button id="btnVictoryCopyId" class="ghost">📋 Copier ID</button>
       <button id="btnVictoryCopySummary" class="ghost">📋 Copier le résumé</button>
@@ -829,6 +831,6 @@ body.app-loading .app,body.app-loading .account-fab,body.app-loading .rankings-f
   </div>
 </div>
 
-<script src="boot.js?v=20260902-0001"></script>
+<script src="boot.js?v=20260902-0002"></script>
 </body>
 </html>
