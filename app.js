@@ -489,9 +489,9 @@ const DEFAULT_MYLUDO_PREFERENCES=Object.freeze({
   daily_game_id:96014,earth_sky_game_id:96014,fill_score:false,
   location_mode:'default',custom_location:'',exclude_from_statistics:false,auto_submit:false
 });
-let myLudoPreferencesCache=null;
+let myludoPreferencesCache=null;
 
-function normalizeMyLudoPreferences(value={}){
+function normalizeMyludoPreferences(value={}){
   const gameId=id=>Number(id)===89980?89980:96014;
   return {
     player_mode:value.player_mode==='custom'?'custom':'default',
@@ -503,12 +503,12 @@ function normalizeMyLudoPreferences(value={}){
     exclude_from_statistics:!!value.exclude_from_statistics,auto_submit:!!value.auto_submit
   };
 }
-async function loadMyLudoPreferences(force=false){
-  if(!currentPlayerAccount?.session_token)return normalizeMyLudoPreferences(DEFAULT_MYLUDO_PREFERENCES);
-  if(myLudoPreferencesCache&&!force)return myLudoPreferencesCache;
+async function loadMyludoPreferences(force=false){
+  if(!currentPlayerAccount?.session_token)return normalizeMyludoPreferences(DEFAULT_MYLUDO_PREFERENCES);
+  if(myludoPreferencesCache&&!force)return myludoPreferencesCache;
   const value=await supabaseRpc('orapa_get_myludo_preferences',{p_session_token:currentPlayerAccount.session_token});
-  myLudoPreferencesCache=normalizeMyLudoPreferences(value||{});
-  return myLudoPreferencesCache;
+  myludoPreferencesCache=normalizeMyludoPreferences(value||{});
+  return myludoPreferencesCache;
 }
 
 function isFirefox(){
@@ -535,7 +535,7 @@ function loadPlayerAccount(){
 }
 function savePlayerAccount(account){
   currentPlayerAccount=account||null;
-  myLudoPreferencesCache=null;
+  myludoPreferencesCache=null;
   if(!currentPlayerAccount)showFirstWaveHelp=false;
   invalidateGlobalSoloScores();
   try{
@@ -786,14 +786,14 @@ async function renderAccountHome(){
       <button class="ghost" id="accountSharedGridsBtn">📤 Mes grilles partagées</button>
       <button class="ghost" id="accountRenameBtn">✏️ Changer le pseudo</button>
       <button class="ghost" id="accountPinBtn">🔢 Modifier le code</button>
-      <button class="ghost account-myludo-button" id="accountMyludoBtn"><span>⚙️ Options</span><img src="Ressources/myludo-logo.svg" alt="MyLudo"></button>
+      <button class="ghost account-myludo-button" id="accountMyludoBtn"><span>⚙️ Options</span><img src="Ressources/myludo-logo.svg" alt="Myludo"></button>
       <button class="danger account-logout-button" id="accountLogoutBtn">🚪 Se déconnecter</button>
     </div>`;
   $('#accountTrustDevice').onchange=e=>setTrustedDevice(e.target.checked);
   const firefoxPerformance=$('#accountFirefoxPerformance');
   if(firefoxPerformance)firefoxPerformance.onchange=e=>{setFirefoxPerformanceMode(e.target.checked);showToast(e.target.checked?'Mode performances activé':'Mode performances désactivé');};
   $('#accountStatsBtn').onclick=openAccountStatistics;
-  $('#accountMyludoBtn').onclick=openMyLudoOptions;
+  $('#accountMyludoBtn').onclick=openMyludoOptions;
   $('#accountAchievementsBtn').onclick=openMyAchievements;
   $('#accountDailyHistoryBtn').onclick=()=>openMyDailyHistory();
   $('#accountGridHistoryBtn').onclick=()=>openMyGridHistory();
@@ -814,25 +814,25 @@ async function renderAccountHome(){
     $('#accountPaletteScale').onchange=saveAchievementPreferences;$('#accountFirstWaveHelp').onchange=saveAchievementPreferences;$('#accountHideAchievementNotifications').onchange=saveAchievementPreferences;$('#accountHideAchievementRankings').onchange=saveAchievementPreferences;
   }catch(e){showErrorToast(`Chargement des préférences impossible : ${e.message}`);}
 }
-function myLudoGameOptions(selected){
+function myludoGameOptions(selected){
   return `<option value="96014"${Number(selected)===96014?' selected':''}>Orapa Mine (96014)</option><option value="89980"${Number(selected)===89980?' selected':''}>Orapa Space (89980)</option>`;
 }
-async function openMyLudoOptions(){
+async function openMyludoOptions(){
   const content=$('#myludoOptionsContent');
   content.innerHTML='<div class="history-empty">Chargement…</div>';
   $('#myludoOptionsModal').classList.add('open');
   try{
-    const pref=await loadMyLudoPreferences(true);
+    const pref=await loadMyludoPreferences(true);
     content.innerHTML=`<div class="myludo-settings">
       <section class="myludo-settings-section"><h3>Nom du joueur</h3>
-        <div class="myludo-setting-row"><label for="myludoPlayerMode">Valeur utilisée</label><select id="myludoPlayerMode" class="ranking-select"><option value="default">Information par défaut de MyLudo</option><option value="custom"${pref.player_mode==='custom'?' selected':''}>Nom personnalisé</option></select></div>
+        <div class="myludo-setting-row"><label for="myludoPlayerMode">Valeur utilisée</label><select id="myludoPlayerMode" class="ranking-select"><option value="default">Information par défaut de Myludo</option><option value="custom"${pref.player_mode==='custom'?' selected':''}>Nom personnalisé</option></select></div>
         <div class="myludo-setting-row myludo-custom-field" id="myludoPlayerNameRow"><label for="myludoPlayerName">Nom personnalisé</label><input id="myludoPlayerName" maxlength="80" value="${escapeHtml(pref.custom_player_name)}"></div>
       </section>
-      <section class="myludo-settings-section"><h3>Choix de la fiche MyLudo pour les jeux spéciaux</h3>
-        <div class="myludo-setting-row"><label for="myludoChallengeGame">Défi</label><select id="myludoChallengeGame" class="ranking-select">${myLudoGameOptions(pref.challenge_game_id)}</select></div>
-        <div class="myludo-setting-row"><label for="myludoLostGame">Gemme perdue</label><select id="myludoLostGame" class="ranking-select">${myLudoGameOptions(pref.lost_game_id)}</select></div>
-        <div class="myludo-setting-row"><label for="myludoDailyGame">Défi du jour</label><select id="myludoDailyGame" class="ranking-select">${myLudoGameOptions(pref.daily_game_id)}</select></div>
-        <div class="myludo-setting-row"><label for="myludoEarthSkyGame">Terre et Ciel</label><select id="myludoEarthSkyGame" class="ranking-select">${myLudoGameOptions(pref.earth_sky_game_id)}</select></div>
+      <section class="myludo-settings-section"><h3>Choix de la fiche Myludo pour les jeux spéciaux</h3>
+        <div class="myludo-setting-row"><label for="myludoChallengeGame">Défi</label><select id="myludoChallengeGame" class="ranking-select">${myludoGameOptions(pref.challenge_game_id)}</select></div>
+        <div class="myludo-setting-row"><label for="myludoLostGame">Gemme perdue</label><select id="myludoLostGame" class="ranking-select">${myludoGameOptions(pref.lost_game_id)}</select></div>
+        <div class="myludo-setting-row"><label for="myludoDailyGame">Défi du jour</label><select id="myludoDailyGame" class="ranking-select">${myludoGameOptions(pref.daily_game_id)}</select></div>
+        <div class="myludo-setting-row"><label for="myludoEarthSkyGame">Terre et Ciel</label><select id="myludoEarthSkyGame" class="ranking-select">${myludoGameOptions(pref.earth_sky_game_id)}</select></div>
       </section>
       <section class="myludo-settings-section"><h3>Informations de la partie</h3>
         <div class="myludo-setting-row"><label for="myludoSubmitMode">Enregistrer la partie</label><select id="myludoSubmitMode" class="ranking-select"><option value="manual">Manuellement</option><option value="automatic"${pref.auto_submit?' selected':''}>Automatiquement</option></select></div>
@@ -846,17 +846,17 @@ async function openMyLudoOptions(){
     </div>`;
     const updateCustomFields=()=>{$('#myludoPlayerNameRow').hidden=$('#myludoPlayerMode').value!=='custom';$('#myludoLocationRow').hidden=$('#myludoLocationMode').value!=='custom';};
     $('#myludoPlayerMode').onchange=updateCustomFields;$('#myludoLocationMode').onchange=updateCustomFields;updateCustomFields();
-    $('#cancelMyludoOptions').onclick=closeMyLudoOptions;
+    $('#cancelMyludoOptions').onclick=closeMyludoOptions;
     $('#saveMyludoOptions').onclick=async()=>{
-      const next=normalizeMyLudoPreferences({player_mode:$('#myludoPlayerMode').value,custom_player_name:$('#myludoPlayerName').value,challenge_game_id:$('#myludoChallengeGame').value,lost_game_id:$('#myludoLostGame').value,daily_game_id:$('#myludoDailyGame').value,earth_sky_game_id:$('#myludoEarthSkyGame').value,fill_score:$('#myludoScoreMode').value==='fill',location_mode:$('#myludoLocationMode').value,custom_location:$('#myludoLocation').value,exclude_from_statistics:$('#myludoExcludeStats').value==='yes',auto_submit:$('#myludoSubmitMode').value==='automatic'});
-      if(next.player_mode==='custom'&&!next.custom_player_name){accountError('#myludoOptionsError','Saisis le nom personnalisé à utiliser sur MyLudo.');return;}
-      if(next.location_mode==='custom'&&!next.custom_location){accountError('#myludoOptionsError','Saisis le lieu personnalisé à utiliser sur MyLudo.');return;}
+      const next=normalizeMyludoPreferences({player_mode:$('#myludoPlayerMode').value,custom_player_name:$('#myludoPlayerName').value,challenge_game_id:$('#myludoChallengeGame').value,lost_game_id:$('#myludoLostGame').value,daily_game_id:$('#myludoDailyGame').value,earth_sky_game_id:$('#myludoEarthSkyGame').value,fill_score:$('#myludoScoreMode').value==='fill',location_mode:$('#myludoLocationMode').value,custom_location:$('#myludoLocation').value,exclude_from_statistics:$('#myludoExcludeStats').value==='yes',auto_submit:$('#myludoSubmitMode').value==='automatic'});
+      if(next.player_mode==='custom'&&!next.custom_player_name){accountError('#myludoOptionsError','Saisis le nom personnalisé à utiliser sur Myludo.');return;}
+      if(next.location_mode==='custom'&&!next.custom_location){accountError('#myludoOptionsError','Saisis le lieu personnalisé à utiliser sur Myludo.');return;}
       const button=$('#saveMyludoOptions');button.disabled=true;
-      try{await supabaseRpc('orapa_set_myludo_preferences',{p_session_token:currentPlayerAccount.session_token,p_preferences:next});myLudoPreferencesCache=next;closeMyLudoOptions();showToast('Options MyLudo enregistrées');}catch(error){accountError('#myludoOptionsError','Enregistrement impossible : '+error.message);}finally{button.disabled=false;}
+      try{await supabaseRpc('orapa_set_myludo_preferences',{p_session_token:currentPlayerAccount.session_token,p_preferences:next});myludoPreferencesCache=next;closeMyludoOptions();showToast('Options Myludo enregistrées');}catch(error){accountError('#myludoOptionsError','Enregistrement impossible : '+error.message);}finally{button.disabled=false;}
     };
   }catch(error){content.innerHTML=`<div class="account-error" style="display:block">Chargement impossible : ${escapeHtml(error.message)}</div>`;}
 }
-function closeMyLudoOptions(){$('#myludoOptionsModal').classList.remove('open');}
+function closeMyludoOptions(){$('#myludoOptionsModal').classList.remove('open');}
 function showRenameAccount(){
   $('#accountContent').innerHTML=`<button class="ghost" id="accountBackHome">← Retour</button><h3 style="margin-top:14px;">Renommer le pseudo</h3>
     <div class="account-form">${accountInput('Nouveau pseudo','accountNewName','text','maxlength="24"')}${accountInput('Code actuel','accountRenamePin','password','inputmode="numeric" maxlength="4"')}<div class="account-error" id="accountRenameError"></div></div>
@@ -2742,18 +2742,18 @@ function localDateKey(value){
   const date=new Date(value||Date.now());
   return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
 }
-function myLudoGameIdForResult(preferences){
+function myludoGameIdForResult(preferences){
   if(state.gameVariant==='space')return 89980;
   if(state.isDaily)return preferences.daily_game_id;
   if(state.gameVariant==='lost')return preferences.lost_game_id;
   if(isEarthSky())return preferences.earth_sky_game_id;
   return preferences.challenge_game_id;
 }
-function currentMyLudoPayload(preferences){
+function currentMyludoPayload(preferences){
   const entry=currentEntryForDisplay();
   const decoded=state.gridId?decodeGridId(state.gridId):null;
   const optionSource=decoded||state;
-  const gameId=myLudoGameIdForResult(preferences);
+  const gameId=myludoGameIdForResult(preferences);
   return {
     schemaVersion:1,
     source:'orapa-mine',
@@ -2784,9 +2784,9 @@ function currentMyLudoPayload(preferences){
 }
 document.addEventListener('orapa:myludo-request',async()=>{
   if(!state.soloOver||!state.soloResult||state.gridUnrankedReason==='already_played')return;
-  let preferences=normalizeMyLudoPreferences(DEFAULT_MYLUDO_PREFERENCES);
-  try{preferences=await loadMyLudoPreferences();}catch(error){console.error('Chargement des options MyLudo impossible :',error);}
-  document.dispatchEvent(new CustomEvent('orapa:myludo-result',{detail:JSON.stringify(currentMyLudoPayload(preferences))}));
+  let preferences=normalizeMyludoPreferences(DEFAULT_MYLUDO_PREFERENCES);
+  try{preferences=await loadMyludoPreferences();}catch(error){console.error('Chargement des options Myludo impossible :',error);}
+  document.dispatchEvent(new CustomEvent('orapa:myludo-result',{detail:JSON.stringify(currentMyludoPayload(preferences))}));
 });
 function openVictoryModal(){
   const entry = currentEntryForDisplay();
@@ -5796,12 +5796,12 @@ $('#rankingDateNext').addEventListener('click',()=>{
   selectGlobalRankingDate(shiftDateKey(current,1));
 });
 $('#accountFab').addEventListener('click',openAccountModal);
-$('#closeAccount').addEventListener('click',()=>{$('#accountStatsModal').classList.remove('open');closeMyLudoOptions();$('#accountModal').classList.remove('open');});
-$('#accountModal').addEventListener('click',e=>{if(e.target.id==='accountModal'){$('#accountStatsModal').classList.remove('open');closeMyLudoOptions();$('#accountModal').classList.remove('open');}});
+$('#closeAccount').addEventListener('click',()=>{$('#accountStatsModal').classList.remove('open');closeMyludoOptions();$('#accountModal').classList.remove('open');});
+$('#accountModal').addEventListener('click',e=>{if(e.target.id==='accountModal'){$('#accountStatsModal').classList.remove('open');closeMyludoOptions();$('#accountModal').classList.remove('open');}});
 $('#closeAccountStats').addEventListener('click',()=>$('#accountStatsModal').classList.remove('open'));
-$('#closeMyludoOptions').addEventListener('click',closeMyLudoOptions);
+$('#closeMyludoOptions').addEventListener('click',closeMyludoOptions);
 document.querySelectorAll('.myludo-download-placeholder').forEach(link=>link.addEventListener('click',event=>{event.preventDefault();showToast('Lien de téléchargement bientôt disponible');}));
-$('#myludoOptionsModal').addEventListener('click',event=>{if(event.target.id==='myludoOptionsModal')closeMyLudoOptions();});
+$('#myludoOptionsModal').addEventListener('click',event=>{if(event.target.id==='myludoOptionsModal')closeMyludoOptions();});
 $('#accountStatsModal').addEventListener('click',e=>{if(e.target.id==='accountStatsModal')$('#accountStatsModal').classList.remove('open');});
 $('#cancelScoreIdentity').addEventListener('click',()=>closeScoreIdentity(null));
 $('#scoreIdentityModal').addEventListener('click',e=>{if(e.target.id==='scoreIdentityModal')closeScoreIdentity(null);});
