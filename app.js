@@ -2781,7 +2781,7 @@ function currentMyLudoPayload(preferences){
   };
 }
 document.addEventListener('orapa:myludo-request',async()=>{
-  if(!state.soloOver||!state.soloResult)return;
+  if(!state.soloOver||!state.soloResult||state.gridUnrankedReason==='already_played')return;
   let preferences=normalizeMyLudoPreferences(DEFAULT_MYLUDO_PREFERENCES);
   try{preferences=await loadMyLudoPreferences();}catch(error){console.error('Chargement des options MyLudo impossible :',error);}
   document.dispatchEvent(new CustomEvent('orapa:myludo-result',{detail:JSON.stringify(currentMyLudoPayload(preferences))}));
@@ -2807,7 +2807,9 @@ function openVictoryModal(){
       : '')));
   $('#victoryGridId').textContent = state.isDaily ? `Défi du jour (${formatDailyDate(state.dailyDate)})` : `${state.gameVariant==='lost'?'Gemme perdue · ':(state.gameVariant==='space'?'Orapa Space · ':(isEarthSky()?'Terre et Ciel · ':''))}${publicGridId(state.gridId)||''}`;
   $('#btnVictoryGridRanking').style.display=(!state.isDaily&&state.gridId)?'':'none';
-  $('#btnVictoryCopySummary').style.display=state.gridUnrankedReason==='already_played'?'none':'';
+  const resultAlreadyRecorded=state.gridUnrankedReason==='already_played';
+  $('#btnVictoryCopySummary').style.display=resultAlreadyRecorded?'none':'';
+  $('#myludoResultSlot').style.display=resultAlreadyRecorded?'none':'';
   $('#victoryModal').classList.add('open');
 }
 async function proposeSolution(){
