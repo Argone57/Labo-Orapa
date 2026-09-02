@@ -784,10 +784,10 @@ async function renderAccountHome(){
       <button class="ghost" id="accountDailyHistoryBtn">📅 Historique des défis</button>
       <button class="ghost" id="accountGridHistoryBtn">🕘 Historique des grilles</button>
       <button class="ghost" id="accountSharedGridsBtn">📤 Mes grilles partagées</button>
-      <button class="ghost account-myludo-button" id="accountMyludoBtn"><span>⚙️ Options</span><img src="Ressources/myludo-logo.svg" alt="MyLudo"></button>
       <button class="ghost" id="accountRenameBtn">✏️ Changer le pseudo</button>
       <button class="ghost" id="accountPinBtn">🔢 Modifier le code</button>
-      <button class="danger" id="accountLogoutBtn">🚪 Se déconnecter</button>
+      <button class="ghost account-myludo-button" id="accountMyludoBtn"><span>⚙️ Options</span><img src="Ressources/myludo-logo.svg" alt="MyLudo"></button>
+      <button class="danger account-logout-button" id="accountLogoutBtn">🚪 Se déconnecter</button>
     </div>`;
   $('#accountTrustDevice').onchange=e=>setTrustedDevice(e.target.checked);
   const firefoxPerformance=$('#accountFirefoxPerformance');
@@ -841,7 +841,7 @@ async function openMyLudoOptions(){
         <div class="myludo-setting-row"><label for="myludoExcludeStats">Exclure des statistiques</label><select id="myludoExcludeStats" class="ranking-select"><option value="no">Non</option><option value="yes"${pref.exclude_from_statistics?' selected':''}>Oui</option></select></div>
       </section>
       <div class="account-error" id="myludoOptionsError"></div>
-      <div class="controls" style="justify-content:flex-end"><button class="ghost" id="cancelMyludoOptions">Annuler</button><button class="primary" id="saveMyludoOptions">Enregistrer</button></div>
+      <div class="myludo-options-footer"><p class="myludo-options-credit">Un grand merci à the_real_hnk et son extension BGA2Myludo sur laquelle est basée cette extension !</p><div class="controls"><button class="ghost" id="cancelMyludoOptions">Annuler</button><button class="primary" id="saveMyludoOptions">Enregistrer</button></div></div>
     </div>`;
     const updateCustomFields=()=>{$('#myludoPlayerNameRow').hidden=$('#myludoPlayerMode').value!=='custom';$('#myludoLocationRow').hidden=$('#myludoLocationMode').value!=='custom';};
     $('#myludoPlayerMode').onchange=updateCustomFields;$('#myludoLocationMode').onchange=updateCustomFields;updateCustomFields();
@@ -5794,6 +5794,7 @@ $('#closeAccount').addEventListener('click',()=>{$('#accountStatsModal').classLi
 $('#accountModal').addEventListener('click',e=>{if(e.target.id==='accountModal'){$('#accountStatsModal').classList.remove('open');closeMyLudoOptions();$('#accountModal').classList.remove('open');}});
 $('#closeAccountStats').addEventListener('click',()=>$('#accountStatsModal').classList.remove('open'));
 $('#closeMyludoOptions').addEventListener('click',closeMyLudoOptions);
+document.querySelectorAll('.myludo-download-placeholder').forEach(link=>link.addEventListener('click',event=>{event.preventDefault();showToast('Lien de téléchargement bientôt disponible');}));
 $('#myludoOptionsModal').addEventListener('click',event=>{if(event.target.id==='myludoOptionsModal')closeMyLudoOptions();});
 $('#accountStatsModal').addEventListener('click',e=>{if(e.target.id==='accountStatsModal')$('#accountStatsModal').classList.remove('open');});
 $('#cancelScoreIdentity').addEventListener('click',()=>closeScoreIdentity(null));
