@@ -47,7 +47,8 @@ header .subtitle{color:var(--text-dim);font-size:.78rem;letter-spacing:.04em;tex
 .mode-pill.lose{color:#f5b8ae;border-color:#c1503f;background:#2a1712;}
 .mode-pill.lose .dot{background:#c1503f;box-shadow:0 0 8px #c1503f;}
 .controls{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;}
-.myludo-result-slot{display:flex;margin-right:auto}.myludo-result-slot:empty{display:none}
+.myludo-result-slot{display:flex;align-items:center;justify-content:center;margin-right:auto}.myludo-result-slot:empty{display:none}
+.account-myludo-button{display:flex!important;align-items:center;justify-content:center;gap:8px;width:100%;margin:8px 0!important}.account-myludo-button img{display:block;width:74px;height:32px;object-fit:contain}.myludo-settings{display:grid;gap:12px}.myludo-settings-section{display:grid;gap:8px;padding:11px;border:1px solid var(--vein);border-radius:10px;background:rgba(21,16,11,.3)}.myludo-settings-section h3{margin:0;color:var(--gold-bright);font-size:.82rem}.myludo-setting-row{display:grid;grid-template-columns:minmax(120px,.8fr) minmax(0,1.2fr);align-items:center;gap:10px}.myludo-setting-row label{font-size:.72rem;color:var(--text-dim)}.myludo-setting-row select,.myludo-setting-row input{margin:0}.myludo-custom-field[hidden]{display:none!important}@media(max-width:520px){.myludo-setting-row{grid-template-columns:1fr;gap:5px}}
 button{font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:.85rem;border:1px solid var(--vein);background:var(--panel);color:var(--text);padding:10px 16px;border-radius:8px;cursor:pointer;transition:transform .08s ease,background .15s ease,border-color .15s ease;letter-spacing:.01em;}
 button:active{transform:scale(.96);}
 button.primary{background:linear-gradient(180deg,#3a2c17,#2a1f10);border-color:var(--gold);color:var(--gold-bright);}
@@ -552,6 +553,14 @@ body.app-loading .app,body.app-loading .account-fab,body.app-loading .rankings-f
   </div>
 </div>
 
+<div class="modal-backdrop" id="myludoOptionsModal">
+  <div class="modal">
+    <button class="close-x" id="closeMyludoOptions">×</button>
+    <h2 style="display:flex;align-items:center;gap:9px;">⚙️ Options <img src="Ressources/myludo-logo.svg" alt="MyLudo" style="width:74px;height:32px;object-fit:contain;"></h2>
+    <div id="myludoOptionsContent"></div>
+  </div>
+</div>
+
 <div class="modal-backdrop" id="soloAccountPromptModal">
   <div class="modal">
     <button class="close-x" id="closeSoloAccountPrompt">×</button>
@@ -831,6 +840,6 @@ body.app-loading .app,body.app-loading .account-fab,body.app-loading .rankings-f
   </div>
 </div>
 
-<script src="boot.js?v=20260902-0002"></script>
+<script src="boot.js?v=20260902-0003"></script>
 </body>
 </html>
