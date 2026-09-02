@@ -841,7 +841,7 @@ async function openMyLudoOptions(){
         <div class="myludo-setting-row"><label for="myludoExcludeStats">Exclure des statistiques</label><select id="myludoExcludeStats" class="ranking-select"><option value="no">Non</option><option value="yes"${pref.exclude_from_statistics?' selected':''}>Oui</option></select></div>
       </section>
       <div class="account-error" id="myludoOptionsError"></div>
-      <div class="myludo-options-footer"><p class="myludo-options-credit">Un grand merci à the_real_hnk et son extension BGA2Myludo sur laquelle est basée cette extension !</p><div class="controls"><button class="ghost" id="cancelMyludoOptions">Annuler</button><button class="primary" id="saveMyludoOptions">Enregistrer</button></div></div>
+      <div class="myludo-options-footer"><p class="myludo-options-credit">Un grand merci à the_real_hnk et son extension <a href="https://github.com/therealhnk/bga2myludo-web-extension" target="_blank" rel="noopener noreferrer">BGA2Myludo</a> sur laquelle est basée cette extension !</p><div class="controls"><button class="ghost" id="cancelMyludoOptions">Annuler</button><button class="primary" id="saveMyludoOptions">Enregistrer</button></div></div>
     </div>`;
     const updateCustomFields=()=>{$('#myludoPlayerNameRow').hidden=$('#myludoPlayerMode').value!=='custom';$('#myludoLocationRow').hidden=$('#myludoLocationMode').value!=='custom';};
     $('#myludoPlayerMode').onchange=updateCustomFields;$('#myludoLocationMode').onchange=updateCustomFields;updateCustomFields();
