@@ -829,7 +829,6 @@ async function openMyludoOptions(){
         <div class="myludo-setting-row myludo-custom-field" id="myludoPlayerNameRow"><label for="myludoPlayerName">Nom personnalisé</label><input id="myludoPlayerName" maxlength="80" value="${escapeHtml(pref.custom_player_name)}"></div>
       </section>
       <section class="myludo-settings-section"><h3>Choix de la fiche Myludo pour les jeux spéciaux</h3>
-        <div class="myludo-setting-row"><label for="myludoChallengeGame">Défi</label><select id="myludoChallengeGame" class="ranking-select">${myludoGameOptions(pref.challenge_game_id)}</select></div>
         <div class="myludo-setting-row"><label for="myludoLostGame">Gemme perdue</label><select id="myludoLostGame" class="ranking-select">${myludoGameOptions(pref.lost_game_id)}</select></div>
         <div class="myludo-setting-row"><label for="myludoDailyGame">Défi du jour</label><select id="myludoDailyGame" class="ranking-select">${myludoGameOptions(pref.daily_game_id)}</select></div>
         <div class="myludo-setting-row"><label for="myludoEarthSkyGame">Terre et Ciel</label><select id="myludoEarthSkyGame" class="ranking-select">${myludoGameOptions(pref.earth_sky_game_id)}</select></div>
@@ -848,7 +847,7 @@ async function openMyludoOptions(){
     $('#myludoPlayerMode').onchange=updateCustomFields;$('#myludoLocationMode').onchange=updateCustomFields;updateCustomFields();
     $('#cancelMyludoOptions').onclick=closeMyludoOptions;
     $('#saveMyludoOptions').onclick=async()=>{
-      const next=normalizeMyludoPreferences({player_mode:$('#myludoPlayerMode').value,custom_player_name:$('#myludoPlayerName').value,challenge_game_id:$('#myludoChallengeGame').value,lost_game_id:$('#myludoLostGame').value,daily_game_id:$('#myludoDailyGame').value,earth_sky_game_id:$('#myludoEarthSkyGame').value,fill_score:$('#myludoScoreMode').value==='fill',location_mode:$('#myludoLocationMode').value,custom_location:$('#myludoLocation').value,exclude_from_statistics:$('#myludoExcludeStats').value==='yes',auto_submit:$('#myludoSubmitMode').value==='automatic'});
+      const next=normalizeMyludoPreferences({player_mode:$('#myludoPlayerMode').value,custom_player_name:$('#myludoPlayerName').value,challenge_game_id:96014,lost_game_id:$('#myludoLostGame').value,daily_game_id:$('#myludoDailyGame').value,earth_sky_game_id:$('#myludoEarthSkyGame').value,fill_score:$('#myludoScoreMode').value==='fill',location_mode:$('#myludoLocationMode').value,custom_location:$('#myludoLocation').value,exclude_from_statistics:$('#myludoExcludeStats').value==='yes',auto_submit:$('#myludoSubmitMode').value==='automatic'});
       if(next.player_mode==='custom'&&!next.custom_player_name){accountError('#myludoOptionsError','Saisis le nom personnalisé à utiliser sur Myludo.');return;}
       if(next.location_mode==='custom'&&!next.custom_location){accountError('#myludoOptionsError','Saisis le lieu personnalisé à utiliser sur Myludo.');return;}
       const button=$('#saveMyludoOptions');button.disabled=true;
@@ -2747,7 +2746,7 @@ function myludoGameIdForResult(preferences){
   if(state.isDaily)return preferences.daily_game_id;
   if(state.gameVariant==='lost')return preferences.lost_game_id;
   if(isEarthSky())return preferences.earth_sky_game_id;
-  return preferences.challenge_game_id;
+  return 96014;
 }
 function currentMyludoPayload(preferences){
   const entry=currentEntryForDisplay();
