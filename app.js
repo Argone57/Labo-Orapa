@@ -2997,10 +2997,10 @@ function pieceAtCell(row,col,piecesList){
     });
   });
 }
-function pieceAtCoordinateCell(row,col,piecesList){
+function piecesAtCoordinateCell(row,col,piecesList){
   piecesList = piecesList || state.pieces;
   const cellPoly = [{x:col,y:row},{x:col+1,y:row},{x:col+1,y:row+1},{x:col,y:row+1}];
-  return piecesList.find(piece=>{
+  return piecesList.filter(piece=>{
     if(!piece.center) return false;
     // L'anneau de la planète annulaire repose exactement sur une ligne de la
     // grille : il n'occupe donc aucune des deux cases voisines pour un indice.
@@ -3755,10 +3755,32 @@ function renderTraces(){
       <line x1="${m.x-s}" y1="${m.y+s}" x2="${m.x+s}" y2="${m.y-s}"/>
     </g>`;
   }).join('');
-  html += state.coordDots.map(m=>{
-    return `<circle cx="${m.x}" cy="${m.y}" r="0.17" fill="${m.hex}" stroke="rgba(0,0,0,.45)" stroke-width="0.03"/>`;
-  }).join('');
+  html += state.coordDots.map(m=>coordinateMarkerShapes(m.hexes||[m.hex],m.x,m.y,0.17)).join('');
   traceSvg.innerHTML = html;
+}
+
+function coordinateMarkerShapes(rawColors,cx,cy,r){
+  const colors=(Array.isArray(rawColors)?rawColors:[rawColors]).filter(Boolean);
+  if(!colors.length)colors.push('#6b6355');
+  const outline=`<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="rgba(0,0,0,.55)" stroke-width="${r*.18}"/>`;
+  if(colors.length===1)return `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${colors[0]}" stroke="rgba(0,0,0,.45)" stroke-width="${r*.18}"/>`;
+  if(colors.length===2){
+    const top=cy-r,bottom=cy+r,zag=r*.26;
+    return `<g><circle cx="${cx}" cy="${cy}" r="${r}" fill="${colors[0]}"/>`+
+      `<path d="M ${cx} ${top} A ${r} ${r} 0 0 1 ${cx} ${bottom} L ${cx-zag} ${cy+r*.5} L ${cx+zag} ${cy} L ${cx-zag} ${cy-r*.5} Z" fill="${colors[1]}"/>`+
+      `<path d="M ${cx} ${top} L ${cx-zag} ${cy-r*.5} L ${cx+zag} ${cy} L ${cx-zag} ${cy+r*.5} L ${cx} ${bottom}" fill="none" stroke="rgba(0,0,0,.5)" stroke-width="${r*.13}" stroke-linejoin="round"/>${outline}</g>`;
+  }
+  const step=Math.PI*2/colors.length;
+  const sectors=colors.map((color,index)=>{
+    const a1=-Math.PI/2+index*step,a2=a1+step;
+    const x1=cx+Math.cos(a1)*r,y1=cy+Math.sin(a1)*r,x2=cx+Math.cos(a2)*r,y2=cy+Math.sin(a2)*r;
+    return `<path d="M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${step>Math.PI?1:0} 1 ${x2} ${y2} Z" fill="${color}"/>`;
+  }).join('');
+  return `<g>${sectors}${outline}</g>`;
+}
+
+function historyCoordinateSwatch(hexes){
+  return `<svg class="history-swatch history-swatch-svg" viewBox="-1 -1 2 2" aria-hidden="true">${coordinateMarkerShapes(hexes,0,0,.86)}</svg>`;
 }
 
 function renderHistory(){
@@ -3775,6 +3797,15 @@ function renderHistory(){
     return;
   }
   el.innerHTML = state.history.slice().reverse().map(h=>{
+    const coordinateHexes=Array.isArray(h.hexes)?h.hexes.filter(Boolean):[];
+    if(h.kind==='coord'&&coordinateHexes.length>1){
+      return `
+      <div class="history-item">
+        ${historyCoordinateSwatch(coordinateHexes)}
+        <span class="history-text">${h.text}</span>
+        <span class="history-time">${h.time}</span>
+      </div>`;
+    }
     const colorName=beamColorName(h.hex);
     const specialClass=colorName==='Transparent'?' beam-transparent':(colorName==='Absorbé'||colorName==='Disparue')?' beam-absorbed':colorName==='Prisonnière'?' space-prison-swatch':'';
     const swatchStyle=specialClass?'':` style="background:${h.hex}"`;
@@ -4282,19 +4313,21 @@ async function onCellClick(r,c,cellEl){
   }
   state.cellUsed[key] = true;
   const piecesForQuery = state.mode==='solo' ? state.secretPieces : state.pieces;
-  const piece = pieceAtCoordinateCell(r,c,piecesForQuery);
+  const pieces = piecesAtCoordinateCell(r,c,piecesForQuery);
   let text, hex;
-  if(piece){
-    const def = CONFIG.PIECES[piece.type];
-    text = `<b>${coord}</b> — ${gemDisplayName(piece)}`;
-    hex = def.hex;
-    if(state.mode==='solo') state.coordDots.push({x:c+0.5, y:r+0.5, hex:def.hex});
+  let hexes=null;
+  if(pieces.length){
+    const results=pieces.map(piece=>({name:gemDisplayName(piece),hex:CONFIG.PIECES[piece.type].hex}));
+    text = `<b>${coord}</b> — ${results.map(result=>result.name).join(' / ')}`;
+    hexes=results.map(result=>result.hex);
+    hex=hexes[0];
+    if(state.mode==='solo') state.coordDots.push({x:c+0.5,y:r+0.5,hex,hexes});
   } else {
     text = `<b>${coord}</b> — Vide`;
     hex = '#6b6355';
     state.emptyMarks.push({x:c+0.5, y:r+0.5});
   }
-  state.history.push({ text, hex, time: timeNow(), kind:'coord' });
+  state.history.push({text,hex,hexes,time:timeNow(),kind:'coord'});
   if(state.mode==='solo') setHintMode(false);
   saveState();
   renderHistory();
