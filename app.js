@@ -493,12 +493,13 @@ const DEFAULT_MYLUDO_PREFERENCES=Object.freeze({
 let myludoPreferencesCache=null;
 
 function normalizeMyludoPreferences(value={}){
-  const gameId=id=>Number(id)===89980?89980:96014;
+  const mineGameId=id=>Number(id)===81131?81131:96014;
+  const earthSkyGameId=id=>[81131,89980].includes(Number(id))?Number(id):96014;
   return {
     player_mode:value.player_mode==='custom'?'custom':'default',
     custom_player_name:String(value.custom_player_name||'').trim().slice(0,80),
-    challenge_game_id:gameId(value.challenge_game_id),lost_game_id:gameId(value.lost_game_id),
-    daily_game_id:gameId(value.daily_game_id),earth_sky_game_id:gameId(value.earth_sky_game_id),
+    challenge_game_id:mineGameId(value.challenge_game_id),lost_game_id:mineGameId(value.lost_game_id),
+    daily_game_id:mineGameId(value.daily_game_id),earth_sky_game_id:earthSkyGameId(value.earth_sky_game_id),
     fill_score:!!value.fill_score,location_mode:value.location_mode==='custom'?'custom':'default',
     custom_location:String(value.custom_location||'').trim().slice(0,80),
     exclude_from_statistics:!!value.exclude_from_statistics,auto_submit:!!value.auto_submit,
@@ -816,8 +817,11 @@ async function renderAccountHome(){
     $('#accountPaletteScale').onchange=saveAchievementPreferences;$('#accountFirstWaveHelp').onchange=saveAchievementPreferences;$('#accountHideAchievementNotifications').onchange=saveAchievementPreferences;$('#accountHideAchievementRankings').onchange=saveAchievementPreferences;
   }catch(e){showErrorToast(`Chargement des préférences impossible : ${e.message}`);}
 }
-function myludoGameOptions(selected){
-  return `<option value="96014"${Number(selected)===96014?' selected':''}>Orapa Mine (96014)</option><option value="89980"${Number(selected)===89980?' selected':''}>Orapa Space (89980)</option>`;
+function myludoMineGameOptions(selected){
+  return `<option value="96014"${Number(selected)===96014?' selected':''}>Orapa Mine 🇫🇷 (96014)</option><option value="81131"${Number(selected)===81131?' selected':''}>Orapa Mine 🇬🇧 (81131)</option>`;
+}
+function myludoEarthSkyGameOptions(selected){
+  return `${myludoMineGameOptions(selected)}<option value="89980"${Number(selected)===89980?' selected':''}>Orapa Space 🇬🇧 (89980)</option>`;
 }
 async function openMyludoOptions(){
   const content=$('#myludoOptionsContent');
@@ -830,10 +834,12 @@ async function openMyludoOptions(){
         <div class="myludo-setting-row"><label for="myludoPlayerMode">Valeur utilisée</label><select id="myludoPlayerMode" class="ranking-select"><option value="default">Information par défaut de Myludo</option><option value="custom"${pref.player_mode==='custom'?' selected':''}>Nom personnalisé</option></select></div>
         <div class="myludo-setting-row myludo-custom-field" id="myludoPlayerNameRow"><label for="myludoPlayerName">Nom personnalisé</label><input id="myludoPlayerName" maxlength="80" value="${escapeHtml(pref.custom_player_name)}"></div>
       </section>
-      <section class="myludo-settings-section"><h3>Choix de la fiche Myludo pour les jeux spéciaux</h3>
-        <div class="myludo-setting-row"><label for="myludoLostGame">Gemme perdue</label><select id="myludoLostGame" class="ranking-select">${myludoGameOptions(pref.lost_game_id)}</select></div>
-        <div class="myludo-setting-row"><label for="myludoDailyGame">Défi du jour</label><select id="myludoDailyGame" class="ranking-select">${myludoGameOptions(pref.daily_game_id)}</select></div>
-        <div class="myludo-setting-row"><label for="myludoEarthSkyGame">Terre et Ciel</label><select id="myludoEarthSkyGame" class="ranking-select">${myludoGameOptions(pref.earth_sky_game_id)}</select></div>
+      <section class="myludo-settings-section"><h3>Choix de la fiche Myludo</h3>
+        <div class="myludo-setting-row"><label for="myludoChallengeGame">Orapa Mine</label><select id="myludoChallengeGame" class="ranking-select">${myludoMineGameOptions(pref.challenge_game_id)}</select></div>
+        <div class="myludo-setting-row"><label for="myludoSpaceGame">Orapa Space</label><select id="myludoSpaceGame" class="ranking-select"><option value="89980">Orapa Space 🇬🇧 (89980)</option></select></div>
+        <div class="myludo-setting-row"><label for="myludoDailyGame">Défi du jour</label><select id="myludoDailyGame" class="ranking-select">${myludoMineGameOptions(pref.daily_game_id)}</select></div>
+        <div class="myludo-setting-row"><label for="myludoLostGame">Gemme perdue</label><select id="myludoLostGame" class="ranking-select">${myludoMineGameOptions(pref.lost_game_id)}</select></div>
+        <div class="myludo-setting-row"><label for="myludoEarthSkyGame">Terre et Ciel</label><select id="myludoEarthSkyGame" class="ranking-select">${myludoEarthSkyGameOptions(pref.earth_sky_game_id)}</select></div>
       </section>
       <section class="myludo-settings-section"><h3>Informations de la partie</h3>
         <div class="myludo-setting-row"><label for="myludoSubmitMode">Enregistrer la partie</label><select id="myludoSubmitMode" class="ranking-select"><option value="manual">Manuellement</option><option value="automatic"${pref.auto_submit?' selected':''}>Automatiquement</option></select></div>
@@ -850,7 +856,7 @@ async function openMyludoOptions(){
     $('#myludoPlayerMode').onchange=updateCustomFields;$('#myludoLocationMode').onchange=updateCustomFields;updateCustomFields();
     $('#cancelMyludoOptions').onclick=closeMyludoOptions;
     $('#saveMyludoOptions').onclick=async()=>{
-      const next=normalizeMyludoPreferences({player_mode:$('#myludoPlayerMode').value,custom_player_name:$('#myludoPlayerName').value,challenge_game_id:96014,lost_game_id:$('#myludoLostGame').value,daily_game_id:$('#myludoDailyGame').value,earth_sky_game_id:$('#myludoEarthSkyGame').value,fill_score:$('#myludoScoreMode').value==='fill',location_mode:$('#myludoLocationMode').value,custom_location:$('#myludoLocation').value,exclude_from_statistics:$('#myludoExcludeStats').value==='yes',auto_submit:$('#myludoSubmitMode').value==='automatic',duplicate_detection:$('#myludoDuplicateDetection').value==='yes'});
+      const next=normalizeMyludoPreferences({player_mode:$('#myludoPlayerMode').value,custom_player_name:$('#myludoPlayerName').value,challenge_game_id:$('#myludoChallengeGame').value,lost_game_id:$('#myludoLostGame').value,daily_game_id:$('#myludoDailyGame').value,earth_sky_game_id:$('#myludoEarthSkyGame').value,fill_score:$('#myludoScoreMode').value==='fill',location_mode:$('#myludoLocationMode').value,custom_location:$('#myludoLocation').value,exclude_from_statistics:$('#myludoExcludeStats').value==='yes',auto_submit:$('#myludoSubmitMode').value==='automatic',duplicate_detection:$('#myludoDuplicateDetection').value==='yes'});
       if(next.player_mode==='custom'&&!next.custom_player_name){accountError('#myludoOptionsError','Saisis le nom personnalisé à utiliser sur Myludo.');return;}
       if(next.location_mode==='custom'&&!next.custom_location){accountError('#myludoOptionsError','Saisis le lieu personnalisé à utiliser sur Myludo.');return;}
       const button=$('#saveMyludoOptions');button.disabled=true;
@@ -2749,7 +2755,7 @@ function myludoGameIdForResult(preferences){
   if(state.isDaily)return preferences.daily_game_id;
   if(state.gameVariant==='lost')return preferences.lost_game_id;
   if(isEarthSky())return preferences.earth_sky_game_id;
-  return 96014;
+  return preferences.challenge_game_id;
 }
 function currentMyludoPayload(preferences){
   const entry=currentEntryForDisplay();
