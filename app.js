@@ -487,7 +487,8 @@ let scoreIdentityResolver = null;
 const DEFAULT_MYLUDO_PREFERENCES=Object.freeze({
   player_mode:'default',custom_player_name:'',challenge_game_id:96014,lost_game_id:96014,
   daily_game_id:96014,earth_sky_game_id:96014,fill_score:false,
-  location_mode:'default',custom_location:'',exclude_from_statistics:false,auto_submit:false
+  location_mode:'default',custom_location:'',exclude_from_statistics:false,auto_submit:false,
+  duplicate_detection:true
 });
 let myludoPreferencesCache=null;
 
@@ -500,7 +501,8 @@ function normalizeMyludoPreferences(value={}){
     daily_game_id:gameId(value.daily_game_id),earth_sky_game_id:gameId(value.earth_sky_game_id),
     fill_score:!!value.fill_score,location_mode:value.location_mode==='custom'?'custom':'default',
     custom_location:String(value.custom_location||'').trim().slice(0,80),
-    exclude_from_statistics:!!value.exclude_from_statistics,auto_submit:!!value.auto_submit
+    exclude_from_statistics:!!value.exclude_from_statistics,auto_submit:!!value.auto_submit,
+    duplicate_detection:value.duplicate_detection!==false
   };
 }
 async function loadMyludoPreferences(force=false){
@@ -835,6 +837,7 @@ async function openMyludoOptions(){
       </section>
       <section class="myludo-settings-section"><h3>Informations de la partie</h3>
         <div class="myludo-setting-row"><label for="myludoSubmitMode">Enregistrer la partie</label><select id="myludoSubmitMode" class="ranking-select"><option value="manual">Manuellement</option><option value="automatic"${pref.auto_submit?' selected':''}>Automatiquement</option></select></div>
+        <div class="myludo-setting-row"><label for="myludoDuplicateDetection">Détection des doublons</label><select id="myludoDuplicateDetection" class="ranking-select"><option value="yes">Oui</option><option value="no"${pref.duplicate_detection?'':' selected'}>Non</option></select></div>
         <div class="myludo-setting-row"><label for="myludoScoreMode">Score</label><select id="myludoScoreMode" class="ranking-select"><option value="none">Ne pas saisir le score</option><option value="fill"${pref.fill_score?' selected':''}>Saisir le score</option></select></div>
         <div class="myludo-setting-row"><label for="myludoLocationMode">Lieu</label><select id="myludoLocationMode" class="ranking-select"><option value="default">Orapa-Mine</option><option value="custom"${pref.location_mode==='custom'?' selected':''}>Nom personnalisé</option></select></div>
         <div class="myludo-setting-row myludo-custom-field" id="myludoLocationRow"><label for="myludoLocation">Lieu personnalisé</label><input id="myludoLocation" maxlength="80" value="${escapeHtml(pref.custom_location)}"></div>
@@ -847,7 +850,7 @@ async function openMyludoOptions(){
     $('#myludoPlayerMode').onchange=updateCustomFields;$('#myludoLocationMode').onchange=updateCustomFields;updateCustomFields();
     $('#cancelMyludoOptions').onclick=closeMyludoOptions;
     $('#saveMyludoOptions').onclick=async()=>{
-      const next=normalizeMyludoPreferences({player_mode:$('#myludoPlayerMode').value,custom_player_name:$('#myludoPlayerName').value,challenge_game_id:96014,lost_game_id:$('#myludoLostGame').value,daily_game_id:$('#myludoDailyGame').value,earth_sky_game_id:$('#myludoEarthSkyGame').value,fill_score:$('#myludoScoreMode').value==='fill',location_mode:$('#myludoLocationMode').value,custom_location:$('#myludoLocation').value,exclude_from_statistics:$('#myludoExcludeStats').value==='yes',auto_submit:$('#myludoSubmitMode').value==='automatic'});
+      const next=normalizeMyludoPreferences({player_mode:$('#myludoPlayerMode').value,custom_player_name:$('#myludoPlayerName').value,challenge_game_id:96014,lost_game_id:$('#myludoLostGame').value,daily_game_id:$('#myludoDailyGame').value,earth_sky_game_id:$('#myludoEarthSkyGame').value,fill_score:$('#myludoScoreMode').value==='fill',location_mode:$('#myludoLocationMode').value,custom_location:$('#myludoLocation').value,exclude_from_statistics:$('#myludoExcludeStats').value==='yes',auto_submit:$('#myludoSubmitMode').value==='automatic',duplicate_detection:$('#myludoDuplicateDetection').value==='yes'});
       if(next.player_mode==='custom'&&!next.custom_player_name){accountError('#myludoOptionsError','Saisis le nom personnalisé à utiliser sur Myludo.');return;}
       if(next.location_mode==='custom'&&!next.custom_location){accountError('#myludoOptionsError','Saisis le lieu personnalisé à utiliser sur Myludo.');return;}
       const button=$('#saveMyludoOptions');button.disabled=true;
@@ -2771,6 +2774,7 @@ function currentMyludoPayload(preferences){
     location:preferences.location_mode==='custom'?preferences.custom_location:'Orapa-Mine',
     excludeFromStatistics:!!preferences.exclude_from_statistics,
     autoSubmit:!!preferences.auto_submit,
+    duplicateDetection:preferences.duplicate_detection!==false,
     comment:formatShareText(entry),
     options:{
       diamond:!!optionSource.includeGray,
