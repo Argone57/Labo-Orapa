@@ -333,6 +333,141 @@ function registerSoloAction(kind){
   if(kind==='ray'){ state.moveCost = (state.moveCost||0) + COST_RAY; state.rayCount = (state.rayCount||0) + 1; }
   else { state.moveCost = (state.moveCost||0) + COST_COORD; state.coordCount = (state.coordCount||0) + 1; }
 }
+let activeAttempt=null,attemptSyncPromise=null;
+const pendingAttemptActions=[];
+function attemptKindForState(){return state.isDaily?'daily':(isEarthSky()?'earthSky':state.gameVariant||'classic');}
+function attemptReferenceForState(){return state.isDaily?state.dailyDate:state.gridId;}
+function attemptContextForState(){
+  return state.isDaily
+    ? {option_mask:(state.includeGray?1:0)+(state.includeOnyx?2:0)+(state.includeSapphire?4:0)}
+    : (state.gameVariant==='space'
+      ? {has_black_hole:!!state.includeBlackHole,has_wormhole:!!state.includeWormhole}
+      : (isEarthSky()?{mine_on_top:state.earthSkyMineOnTop!==false,option_flags:earthSkyOptionFlags()}:{}));
+}
+function activeAttemptProgress(){
+  return {history:state.history,historyHintShown:!!state.historyHintShown,labelColor:state.labelColor,labelBounce:state.labelBounce,labelPair:state.labelPair,labelPartner:state.labelPartner,labelExitMarker:state.labelExitMarker,cellUsed:state.cellUsed,traces:state.traces,emptyMarks:state.emptyMarks,occupiedMarks:state.occupiedMarks,coordDots:state.coordDots,firstActionTime:state.firstActionTime,soloAttempts:state.soloAttempts};
+}
+function applyActiveAttemptProgress(attempt){
+  const progress=attempt?.progress;
+  if(!progress||typeof progress!=='object')return;
+  for(const key of ['history','labelColor','labelBounce','labelPair','labelPartner','labelExitMarker','cellUsed','traces','emptyMarks','occupiedMarks','coordDots']){
+    if(progress[key]!=null)state[key]=progress[key];
+  }
+  state.historyHintShown=!!progress.historyHintShown;
+  state.firstActionTime=Number(progress.firstActionTime)||null;
+  state.soloAttempts=Math.max(0,Number(progress.soloAttempts)||0);
+  state.rayCount=Number(attempt.ray_count)||0;
+  state.coordCount=Number(attempt.coord_count)||0;
+  state.moveCost=state.rayCount*COST_RAY+state.coordCount*COST_COORD;
+}
+function attemptMatches(target,attempt=activeAttempt){return !!attempt&&attempt.game_kind===target.kind&&attempt.reference===String(target.reference||'').toUpperCase();}
+async function fetchActiveAttempt(){
+  if(!currentPlayerAccount?.session_token)return null;
+  activeAttempt=await supabaseRpc('orapa_get_active_attempt',{p_session_token:currentPlayerAccount.session_token});
+  return activeAttempt;
+}
+async function beginActiveAttempt(target){
+  const result=await supabaseRpc('orapa_begin_active_attempt',{p_session_token:currentPlayerAccount.session_token,p_game_kind:target.kind,p_reference:target.reference,p_context:target.context||{},p_progress:target.progress||{}});
+  if(result?.accepted)activeAttempt=result.attempt||null;
+  return result;
+}
+async function abandonServerAttempt(attempt=activeAttempt){
+  if(!attempt?.attempt_id||!currentPlayerAccount?.session_token)return true;
+  await flushActiveAttemptActions();
+  const result=await supabaseRpc('orapa_abandon_active_attempt',{p_session_token:currentPlayerAccount.session_token,p_attempt_id:attempt.attempt_id});
+  if(result?.accepted&&attempt===activeAttempt)activeAttempt=null;
+  return result?.accepted!==false;
+}
+function markLocalAttemptAbandoned(){
+  if(state.mode!=='solo'||state.soloOver)return;
+  state.soloOver=true;state.soloResult='lose';state.finalTimeMs=state.firstActionTime?Date.now()-state.firstActionTime:0;
+  if(state.isDaily&&state.dailyDate)saveDailyAttempt({date:state.dailyDate,result:'lose',accountId:dailyAttemptAccountKey()});
+  saveState();
+}
+async function prepareNewActiveAttempt(target,ranked=true){
+  if(!currentPlayerAccount?.session_token)return {ok:false};
+  let current=activeAttempt;
+  if(!current)try{current=await fetchActiveAttempt();}catch(error){showErrorToast('Impossible de vérifier la partie en cours. Vérifie ta connexion puis réessaie.');return {ok:false};}
+  if(current&&!attemptMatches(target,current)){
+    const continueCurrent=await gameConfirm(`Une partie ${activeAttemptSentenceLabel(current)} est en cours. Celle-ci sera perdue si vous démarrez une nouvelle grille.`,'Partie en cours','Continuer la partie','Abandonner et choisir une autre grille');
+    if(continueCurrent)return {ok:false,resume:true};
+    try{if(!await abandonServerAttempt(current))return {ok:false};}
+    catch(error){showErrorToast('Impossible d’abandonner la partie en cours. Vérifie ta connexion puis réessaie.');return {ok:false};}
+    markLocalAttemptAbandoned();
+  }
+  if(!ranked)return {ok:true,attempt:null};
+  try{
+    const result=await beginActiveAttempt({...target,progress:{}});
+    if(!result?.accepted)return {ok:false};
+    return {ok:true,attempt:result.attempt||null,resumed:!!result.resumed};
+  }catch(error){showErrorToast('Impossible de démarrer la tentative classée. Vérifie ta connexion puis réessaie.');return {ok:false};}
+}
+async function ensureCurrentLocalAttempt(){
+  if(state.mode!=='solo'||state.soloOver||(!state.gridRanked&&!state.isDaily)||!attemptReferenceForState()||!currentPlayerAccount?.session_token)return null;
+  const target={kind:attemptKindForState(),reference:attemptReferenceForState(),context:attemptContextForState(),progress:activeAttemptProgress()};
+  if(attemptMatches(target))return activeAttempt;
+  const current=await fetchActiveAttempt();
+  if(current){
+    if(attemptMatches(target,current))reconcileLocalAttemptActions(current);
+    return current;
+  }
+  const result=await beginActiveAttempt(target);
+  return result?.attempt||null;
+}
+function reconcileLocalAttemptActions(attempt){
+  if(!attempt?.attempt_id)return;
+  const progress=activeAttemptProgress();
+  const missingRays=Math.max(0,(Number(state.rayCount)||0)-(Number(attempt.ray_count)||0));
+  const missingCoords=Math.max(0,(Number(state.coordCount)||0)-(Number(attempt.coord_count)||0));
+  const missingProposals=Math.max(0,(Number(state.soloAttempts)||0)-(Number(attempt.progress?.soloAttempts)||0));
+  for(const [kind,count] of [['ray',missingRays],['coord',missingCoords],['proposal',missingProposals]]){
+    for(let index=0;index<count;index++)pendingAttemptActions.push({kind,actionId:crypto.randomUUID(),attemptId:attempt.attempt_id,progress});
+  }
+  if(missingRays||missingCoords||missingProposals)void drainAttemptActions();
+}
+async function abandonCurrentLocalAttempt(){
+  try{
+    const attempt=await ensureCurrentLocalAttempt();
+    if(attempt&&attemptMatches({kind:attemptKindForState(),reference:attemptReferenceForState()})){await abandonServerAttempt(attempt);}
+    markLocalAttemptAbandoned();
+    return true;
+  }catch(error){showErrorToast('Impossible d’abandonner la partie en cours. Vérifie ta connexion puis réessaie.');return false;}
+}
+function activeAttemptTypeLabel(attempt){
+  return attempt?.game_kind==='daily'?'Défi du jour':attempt?.game_kind==='lost'?'Gemme perdue':attempt?.game_kind==='space'?'Orapa Space':attempt?.game_kind==='earthSky'?'Terre et Ciel':'Orapa Mine';
+}
+function activeAttemptSentenceLabel(attempt){return attempt?.game_kind==='daily'?'du Défi du jour':attempt?.game_kind==='lost'?'de Gemme perdue':attempt?.game_kind==='space'?'d’Orapa Space':attempt?.game_kind==='earthSky'?'de Terre et Ciel':'d’Orapa Mine';}
+function queueActiveAttemptAction(kind){
+  if(!activeAttempt?.attempt_id||state.mode!=='solo'||state.soloOver||(!state.gridRanked&&!state.isDaily))return;
+  pendingAttemptActions.push({kind,actionId:crypto.randomUUID(),attemptId:activeAttempt.attempt_id,progress:activeAttemptProgress()});
+  void drainAttemptActions();
+}
+async function drainAttemptActions(){
+  if(attemptSyncPromise)return attemptSyncPromise;
+  attemptSyncPromise=(async()=>{
+    while(pendingAttemptActions.length){
+      const action=pendingAttemptActions[0];
+      try{
+        const result=await supabaseRpc('orapa_record_active_attempt_action',{p_session_token:currentPlayerAccount?.session_token||'',p_attempt_id:action.attemptId,p_action_id:action.actionId,p_action_kind:action.kind,p_progress:action.progress});
+        if(result?.attempt&&activeAttempt?.attempt_id===action.attemptId)activeAttempt=result.attempt;
+        pendingAttemptActions.shift();
+      }catch(error){console.warn('Synchronisation de la tentative différée :',error);break;}
+    }
+  })();
+  try{await attemptSyncPromise;}finally{attemptSyncPromise=null;}
+}
+async function finishActiveAttempt(){
+  if(!activeAttempt?.attempt_id||!currentPlayerAccount?.session_token)return;
+  await drainAttemptActions();
+  if(pendingAttemptActions.length)throw new Error('La synchronisation des coups n’est pas terminée.');
+  const closing=activeAttempt;
+  await supabaseRpc('orapa_finish_active_attempt',{p_session_token:currentPlayerAccount.session_token,p_attempt_id:closing.attempt_id});
+  if(activeAttempt===closing)activeAttempt=null;
+}
+async function flushActiveAttemptActions(){
+  await drainAttemptActions();
+  if(pendingAttemptActions.length)throw new Error('La synchronisation des coups n’est pas terminée. Réessaie dans quelques secondes.');
+}
 function formatScoreLine(e){
   return `${e.cost} pts (${e.rayCount||0}🔦 + ${e.coordCount||0}📍) · ${formatDuration(e.timeMs)}`;
 }
@@ -378,6 +513,7 @@ const DAILY_FINAL_SNAPSHOTS_KEY = `${LOCAL_STORAGE_PREFIX}DailyFinalSnapshotsV1`
 // indépendant du compte : chaque navigateur garde sa propre dernière visite.
 const UPDATES_READ_KEY = `${LOCAL_STORAGE_PREFIX}UpdatesReadV2`;
 const GAME_UPDATES = [
+  {id:'active-attempts-20260906',date:'06/09/2026',title:'Protection des tentatives classées en cours'},
   {id:'wormhole-20260901',date:'01/09/2026',title:'Trou de ver pour Space et Terre et Ciel'},
   {id:'engine-20260901',date:'01/09/2026',title:'Nouveau moteur de jeu'},
   {id:'earth-sky-20260821',date:'21/08/2026',title:'Mode de jeu : Terre et Ciel'},
@@ -1408,6 +1544,7 @@ function supabaseHeaders(extra={}){
 async function submitGlobalDailyScore(entry, identity){
   if(!entry || !entry.dailyDate || !identity) return null;
   try{
+    await flushActiveAttemptActions();
     const dailyFlags=generateDailyLayout(entry.dailyDate)?.flags||{};
     const row=await supabaseRpc('orapa_submit_daily_score',{
       p_name:identity.name,
@@ -1421,6 +1558,7 @@ async function submitGlobalDailyScore(entry, identity){
       p_time_ms:Math.max(0,Math.round(Number(entry.timeMs)||0)),
       p_option_mask:(dailyFlags.gray?1:0)+(dailyFlags.onyx?2:0)+(dailyFlags.sapphire?4:0)
     });
+    if(row?.accepted||row?.reason==='already_played')await finishActiveAttempt();
     await releaseDailyChallengeLock(identity,entry.dailyDate);
     if(row?.accepted===false&&row?.reason==='already_played'){
       showToast('Ce défi du jour est déjà enregistré avec ce compte.');
@@ -1449,6 +1587,7 @@ async function shareGridGlobally(gridId){
 async function submitGlobalGridScore(entry, identity){
   if(!entry?.gridId || !identity?.sessionToken) return null;
   try{
+    await flushActiveAttemptActions();
     const row=await supabaseRpc('orapa_submit_grid_score',{
       p_grid_id:entry.gridId,
       p_session_token:identity.sessionToken,
@@ -1458,6 +1597,7 @@ async function submitGlobalGridScore(entry, identity){
       p_coord_count:Number(entry.coordCount)||0,
       p_time_ms:Math.max(0,Math.round(Number(entry.timeMs)||0))
     });
+    if(row?.accepted||row?.reason==='already_played')await finishActiveAttempt();
     if(row?.accepted){invalidateGlobalSoloScores();refreshAchievements(entry.firstTry?'first_try':null);}
     if(row?.reason==='already_played'){refreshAchievements('deja_vu');}
     else if(row?.reason==='creator_protected') showToast('⭐ Cette grille est la vôtre et ne peut pas être résolue avec ce compte.');
@@ -1472,8 +1612,10 @@ async function submitGlobalGridScore(entry, identity){
 async function submitSpaceGridScore(entry,identity){
   if(!entry?.gridId||!identity?.sessionToken)return null;
   try{
+    await flushActiveAttemptActions();
     const unlockedBefore=new Set((await getAchievementCatalog(true)).filter(item=>item.unlocked).map(item=>item.achievement_key));
     const row=await supabaseRpc('orapa_submit_space_grid_score',{p_grid_id:entry.gridId,p_session_token:identity.sessionToken,p_success:entry.success!==false,p_cost:Number(entry.cost)||0,p_ray_count:Number(entry.rayCount)||0,p_coord_count:Number(entry.coordCount)||0,p_time_ms:Math.max(0,Math.round(Number(entry.timeMs)||0)),p_has_black_hole:!!state.includeBlackHole,p_first_try:!!entry.firstTry});
+    if(row?.accepted||row?.reason==='already_played')await finishActiveAttempt();
     if(row?.accepted){
       const result=await refreshAchievements();
       const unlockedAfter=(await getAchievementCatalog(true)).filter(item=>item.unlocked).map(item=>item.achievement_key);
@@ -1506,7 +1648,9 @@ async function shareEarthSkyGridGlobally(gridId){
 async function submitEarthSkyGridScore(entry,identity){
   if(!entry?.gridId||!identity?.sessionToken)return null;
   try{
+    await flushActiveAttemptActions();
     const row=await supabaseRpc('orapa_submit_earth_sky_grid_score',{p_grid_id:entry.gridId,p_session_token:identity.sessionToken,p_success:entry.success!==false,p_cost:Number(entry.cost)||0,p_ray_count:Number(entry.rayCount)||0,p_coord_count:Number(entry.coordCount)||0,p_time_ms:Math.max(0,Math.round(Number(entry.timeMs)||0)),p_mine_on_top:state.earthSkyMineOnTop!==false,p_option_flags:earthSkyOptionFlags(),p_first_try:!!entry.firstTry});
+    if(row?.accepted||row?.reason==='already_played')await finishActiveAttempt();
     if(row?.accepted)showToast(row?.rank?`🌍 Première tentative enregistrée · rang #${row.rank}`:'🌍 Première tentative enregistrée');
     else if(row?.reason==='already_played')showToast('Cette grille a déjà été jouée avec ce profil. Le nouveau résultat ne sera pas enregistré.');
     else if(row?.reason==='creator_protected')showToast('Cette grille a été créée avec ce profil et reste disponible uniquement en consultation.');
@@ -1516,8 +1660,10 @@ async function submitEarthSkyGridScore(entry,identity){
 async function submitLostGridScore(entry,identity){
   if(!entry?.gridId||!identity?.sessionToken)return null;
   try{
+    await flushActiveAttemptActions();
     const unlockedBefore=new Set((await getAchievementCatalog(true)).filter(item=>item.unlocked).map(item=>item.achievement_key));
     const row=await supabaseRpc('orapa_submit_lost_grid_score',{p_grid_id:entry.gridId,p_session_token:identity.sessionToken,p_success:entry.success!==false,p_placement_bonus:!!entry.placementBonus,p_placed_count:state.pieces.filter(piece=>piece.center).length,p_cost:Number(entry.cost)||0,p_ray_count:Number(entry.rayCount)||0,p_coord_count:Number(entry.coordCount)||0,p_time_ms:Math.max(0,Math.round(Number(entry.timeMs)||0))});
+    if(row?.accepted||row?.reason==='already_played')await finishActiveAttempt();
     if(row?.accepted){
       achievementCatalogCache=null;
       const result=await refreshAchievements(entry.placementBonus?'lost_full_placement':'lost_completed');
@@ -2376,6 +2522,8 @@ async function startSoloGame(explicitId,creatorRetry=0){
   }
   const gridAlias=await ensureGridAlias(gridId,'classic');
   const unrankedReason=gridStatus?.creator_protected?'creator_protected':(gridStatus?.already_played?'already_played':null);
+  const attemptStart=await prepareNewActiveAttempt({kind:'classic',reference:gridId,context:{}},!unrankedReason);
+  if(!attemptStart.ok){if(explicitId)Object.assign(state,previousOptions);return;}
   setHintMode(false);
   state.mode = 'solo';
   state.gameVariant='classic';state.missingType=null;state.selectedMissingType=null;state.placementBonus=false;
@@ -2410,6 +2558,7 @@ async function startSoloGame(explicitId,creatorRetry=0){
   state.traces = [];
   state.emptyMarks = [];
   state.coordDots = [];
+  applyActiveAttemptProgress(attemptStart.attempt);
   saveState();
   document.body.classList.remove('solo-menu-open');
   showGame();
@@ -2441,9 +2590,13 @@ async function startSpaceSoloGame(explicitId,creatorRetry=0){
     state.gameVariant=previousVariant;state.includeBlackHole=previousBlackHole;state.includeWormhole=previousWormhole;openCreatorGridBlockedModal(gridId);return;
   }
   const gridAlias=await ensureGridAlias(gridId,'space');
+  const attemptStart=await prepareNewActiveAttempt({kind:'space',reference:gridId,context:{has_black_hole:!!state.includeBlackHole,has_wormhole:!!state.includeWormhole}},!status?.already_played);
+  if(!attemptStart.ok){state.gameVariant=previousVariant;state.includeBlackHole=previousBlackHole;state.includeWormhole=previousWormhole;return;}
   setHintMode(false);
   Object.assign(state,{mode:'solo',gameVariant:'space',started:false,secretPieces:secret,pieces:spaceTypes().map(type=>newPiece(type)),gridId,gridAlias,gridRanked:!status?.already_played,gridUnrankedReason:status?.already_played?'already_played':null,soloAttempts:0,soloOver:false,soloResult:null,soloShowGuess:true,soloShowSecret:true,moveCost:0,firstActionTime:null,finalTimeMs:null,rayCount:0,coordCount:0,isDaily:false,dailyDate:null,history:[],labelColor:{top:{},bottom:{},left:{},right:{}},labelBounce:{top:{},bottom:{},left:{},right:{}},labelPair:{top:{},bottom:{},left:{},right:{}},labelPartner:{top:{},bottom:{},left:{},right:{}},labelExitMarker:{top:{},bottom:{},left:{},right:{}},cellUsed:{},traces:[],emptyMarks:[],occupiedMarks:[],coordDots:[]});
-  resetHistoryDisclosure();lastScoreResult=null;saveState();document.body.classList.remove('solo-menu-open');showGame();renderAll();
+  resetHistoryDisclosure();
+  applyActiveAttemptProgress(attemptStart.attempt);
+  lastScoreResult=null;saveState();document.body.classList.remove('solo-menu-open');showGame();renderAll();
   if(status?.already_played)setTimeout(openAlreadyPlayedGridModal,60);
 }
 
@@ -2471,9 +2624,13 @@ async function startEarthSkySoloGame(explicitId=null,creatorRetry=0){
     Object.assign(state,{gameVariant:previous.variant,earthSkyMineOnTop:previous.mineOnTop});openCreatorGridBlockedModal(gridId);return;
   }
   const gridAlias=await ensureGridAlias(gridId,'earthSky');
+  const attemptStart=await prepareNewActiveAttempt({kind:'earthSky',reference:gridId,context:{mine_on_top:state.earthSkyMineOnTop!==false,option_flags:earthSkyOptionFlags()}},!status?.already_played);
+  if(!attemptStart.ok){Object.assign(state,{gameVariant:previous.variant,earthSkyMineOnTop:previous.mineOnTop});return;}
   setHintMode(false);
   Object.assign(state,{mode:'solo',gameVariant:'earthSky',started:false,secretPieces:secret,pieces:earthSkyTypes().map(type=>newPiece(type)),gridId,gridAlias,gridRanked:!status?.already_played,gridUnrankedReason:status?.already_played?'already_played':null,soloAttempts:0,soloOver:false,soloResult:null,soloShowGuess:true,soloShowSecret:true,moveCost:0,firstActionTime:null,finalTimeMs:null,rayCount:0,coordCount:0,isDaily:false,dailyDate:null,history:[],labelColor:{top:{},bottom:{},left:{},right:{}},labelBounce:{top:{},bottom:{},left:{},right:{}},labelPair:{top:{},bottom:{},left:{},right:{}},labelPartner:{top:{},bottom:{},left:{},right:{}},labelExitMarker:{top:{},bottom:{},left:{},right:{}},cellUsed:{},traces:[],emptyMarks:[],occupiedMarks:[],coordDots:[]});
-  resetHistoryDisclosure();lastScoreResult=null;saveState();closeSoloChoiceModal();showGame();renderAll();
+  resetHistoryDisclosure();
+  applyActiveAttemptProgress(attemptStart.attempt);
+  lastScoreResult=null;saveState();closeSoloChoiceModal();showGame();renderAll();
   if(status?.already_played)setTimeout(openAlreadyPlayedGridModal,60);
 }
 
@@ -2505,11 +2662,14 @@ async function startLostGame(explicitId=null,creatorRetry=0){
     restorePrevious();openCreatorGridBlockedModal(gridId);return;
   }
   const gridAlias=await ensureGridAlias(gridId,'lost');
+  const attemptStart=await prepareNewActiveAttempt({kind:'lost',reference:gridId,context:{}},!gridStatus?.already_played);
+  if(!attemptStart.ok){restorePrevious();return;}
   setHintMode(false);
   state.mode='solo';state.gameVariant='lost';state.started=false;state.includeGray=true;state.includeOnyx=true;state.includeSapphire=true;
   state.secretPieces=secret;state.pieces=TYPE_ORDER.map(type=>newPiece(type));state.missingType=missingType;state.selectedMissingType=null;state.placementBonus=false;
   state.gridId=gridId;state.gridAlias=gridAlias;state.gridRanked=!gridStatus?.already_played;state.gridUnrankedReason=gridStatus?.already_played?'already_played':null;
   state.soloAttempts=0;state.soloOver=false;state.soloResult=null;state.soloShowGuess=true;state.soloShowSecret=true;state.moveCost=0;state.firstActionTime=null;state.finalTimeMs=null;state.rayCount=0;state.coordCount=0;lastScoreResult=null;state.isDaily=false;state.dailyDate=null;state.history=[];resetHistoryDisclosure();state.labelColor={top:{},bottom:{},left:{},right:{}};state.labelBounce={top:{},bottom:{},left:{},right:{}};state.labelPair={top:{},bottom:{},left:{},right:{}};state.labelPartner={top:{},bottom:{},left:{},right:{}};state.labelExitMarker={top:{},bottom:{},left:{},right:{}};state.cellUsed={};state.traces=[];state.emptyMarks=[];state.occupiedMarks=[];state.coordDots=[];
+  applyActiveAttemptProgress(attemptStart.attempt);
   saveState();closeSoloChoiceModal();showGame();renderAll();
   if(gridStatus?.already_played)setTimeout(openAlreadyPlayedGridModal,60);
 }
@@ -2601,15 +2761,16 @@ async function releaseDailyChallengeLock(identity,dateKey){
   try{await supabaseRpc('orapa_release_daily_lock',{p_session_token:identity.sessionToken,p_daily_date:dateKey});}
   catch(error){console.warn('Libération du verrou du défi impossible :',error);}
 }
-async function startDailyChallenge(){
-  const { dateKey, alreadyPlayed, attempt } = dailyStatusToday();
-  if(alreadyPlayed){
+async function startDailyChallenge(resumeAttempt=null){
+  const dailyStatus=resumeAttempt?{dateKey:resumeAttempt.reference,alreadyPlayed:false,attempt:null}:dailyStatusToday();
+  const { dateKey, alreadyPlayed } = dailyStatus;
+  if(!resumeAttempt&&alreadyPlayed){
     reviewDailyFinalGrid(dateKey);
     return;
   }
-  if(!await verifyTriforcePrerequisite(true)) return;
+  if(!resumeAttempt&&!await verifyTriforcePrerequisite(true)) return;
   if(!await ensureCurrentAppVersion(true,true)) return;
-  try{
+  if(!resumeAttempt)try{
     const lock=await acquireDailyChallengeLock(dateKey);
     if(lock?.accepted===false){
       if(lock.reason==='already_played') reviewDailyFinalGrid(dateKey);
@@ -2624,6 +2785,13 @@ async function startDailyChallenge(){
   const daily = generateDailyLayout(dateKey);
   if(!daily){
     setTimeout(()=>void gameAlert("Je n'ai pas réussi à générer le défi du jour. Réessaie plus tard.",'Génération impossible'),60);
+    return;
+  }
+  const optionMask=(daily.flags.gray?1:0)+(daily.flags.onyx?2:0)+(daily.flags.sapphire?4:0);
+  if(resumeAttempt)activeAttempt=resumeAttempt;
+  const attemptStart=resumeAttempt?{ok:true,attempt:resumeAttempt,resumed:true}:await prepareNewActiveAttempt({kind:'daily',reference:dateKey,context:{option_mask:optionMask}},true);
+  if(!attemptStart.ok){
+    await releaseDailyChallengeLock({sessionToken:currentPlayerAccount?.session_token},dateKey);
     return;
   }
   setHintMode(false);
@@ -2661,6 +2829,7 @@ async function startDailyChallenge(){
   state.traces = [];
   state.emptyMarks = [];
   state.coordDots = [];
+  applyActiveAttemptProgress(attemptStart.attempt);
   saveState();
   document.body.classList.remove('solo-menu-open');
   showGame();
@@ -2887,7 +3056,7 @@ async function proposeSolution(){
     }
     if(state.isDaily) saveDailyFinalSnapshot();
     saveState();renderAll();setTimeout(()=>openVictoryModal(),60);
-  }else{saveState();setTimeout(openIncorrectSolutionModal,60);}
+  }else{saveState();queueActiveAttemptAction('proposal');setTimeout(openIncorrectSolutionModal,60);}
 }
 function lostPlacementIsExact(){
   const placed=state.pieces.filter(piece=>piece.center);
@@ -4288,6 +4457,7 @@ function onLabelClick(side,index){
     state.traces.push({ points: result.points, hex: result.color.hex });
   }
   saveState();
+  queueActiveAttemptAction('ray');
   renderLabels(); renderHistory(); renderTraces();
   if(showFirstWaveHelp&&!tutorialActive)setTimeout(()=>showUsedLabelFeedback(side,index),0);
   if(tutorialActive) tutorialAfterRay(result);
@@ -4339,6 +4509,7 @@ async function onCellClick(r,c,cellEl){
   state.history.push({text,hex,hexes,time:timeNow(),kind:'coord'});
   if(state.mode==='solo') setHintMode(false);
   saveState();
+  queueActiveAttemptAction('coord');
   renderHistory();
   renderTraces();
   cellEl.classList.remove('queried'); void cellEl.offsetWidth; cellEl.classList.add('queried');
@@ -4357,6 +4528,15 @@ function showGame(){
   window.scrollTo({top:0,behavior:'smooth'});
   setTimeout(()=>{ computeCellSize(); renderAll(); },0);
 }
+async function resumeServerAttempt(attempt){
+  if(!attempt)return;
+  activeAttempt=attempt;
+  if(attempt.game_kind==='daily')return startDailyChallenge(attempt);
+  if(attempt.game_kind==='lost')return startLostGame(attempt.reference);
+  if(attempt.game_kind==='space')return startSpaceSoloGame(attempt.reference);
+  if(attempt.game_kind==='earthSky')return startEarthSkySoloGame(attempt.reference);
+  return startSoloGame(attempt.reference);
+}
 async function enterSolo(){
   if(!currentPlayerAccount){
     $('#soloAccountPromptModal').classList.add('open');
@@ -4364,10 +4544,20 @@ async function enterSolo(){
   }
   if(state.mode==='solo' && !state.soloOver){
     if(!await activeSoloGridIsAllowed())return;
-    const resume=await gameConfirm(`${activeGridLabel()} est en cours. Voulez-vous la reprendre ?`,'Partie en cours','Reprendre','Choisir une autre grille');
-    if(resume)showGame();else openSoloChoiceModal();
+    const resume=await gameConfirm(`Une partie ${activeAttemptSentenceLabel({game_kind:attemptKindForState()})} est en cours. Celle-ci sera perdue si vous démarrez une nouvelle grille.`,'Partie en cours','Continuer la partie','Abandonner et choisir une autre grille');
+    if(resume)showGame();
+    else if(await abandonCurrentLocalAttempt())openSoloChoiceModal();
     return;
   }
+  try{
+    const serverAttempt=await fetchActiveAttempt();
+    if(serverAttempt){
+      const resume=await gameConfirm(`Une partie ${activeAttemptSentenceLabel(serverAttempt)} est en cours. Celle-ci sera perdue si vous démarrez une nouvelle grille.`,'Partie en cours','Continuer la partie','Abandonner et choisir une autre grille');
+      if(resume)await resumeServerAttempt(serverAttempt);
+      else try{if(await abandonServerAttempt(serverAttempt))openSoloChoiceModal();}catch(error){showErrorToast('Impossible d’abandonner la partie en cours. Vérifie ta connexion puis réessaie.');}
+      return;
+    }
+  }catch(error){console.warn('Recherche de la partie en cours impossible :',error);}
   openSoloChoiceModal();
 }
 $('#homeSolo').addEventListener('click', enterSolo);
@@ -4562,7 +4752,10 @@ function tutorialShowStage(){
   else tutorialCoach('Tutoriel termin\u00e9 !','Tu connais maintenant les principes du jeu et les principales fonctions du site. Tu peux revenir au tutoriel &agrave; tout moment depuis l&rsquo;accueil.','Retour \u00e0 l\u2019accueil');
 }
 async function beginInteractiveTutorial(){
-  if(state.mode==='solo'&&!state.soloOver&&state.gridUnrankedReason!=='tutorial'&&!await gameConfirm(`${activeGridLabel()} est en cours. Voulez-vous la quitter pour lancer le tutoriel ?`,'Quitter la partie','Quitter','Continuer la partie')) return;
+  if(state.mode==='solo'&&!state.soloOver&&state.gridUnrankedReason!=='tutorial'){
+    if(!await gameConfirm('Celle-ci sera perdue.','Abandonner la partie en cours ?','Abandonner','Continuer'))return;
+    if(!await abandonCurrentLocalAttempt())return;
+  }
   tutorialKind='mine';state.includeGray=false;state.includeOnyx=false;state.includeSapphire=false;
   const lesson=tutorialFixedLesson();
   if(!lesson.pieces||lesson.examples.length<11){showErrorToast('Le tutoriel est momentan\u00e9ment indisponible.');return;}
@@ -4697,7 +4890,10 @@ function initializeSpaceTutorialState(){
   state.mode='gm';state.gameVariant='space';state.started=false;state.includeBlackHole=false;state.includeWormhole=false;state.gridUnrankedReason='tutorial';state.pieces=spaceTypes(false).map(type=>newPiece(type));state.secretPieces=[];resetSpaceTutorialBoardState();showGame();setTimeout(tutorialShowStage,80);
 }
 async function beginSpaceInteractiveTutorial(){
-  if(state.mode==='solo'&&!state.soloOver&&state.gridUnrankedReason!=='tutorial'&&!await gameConfirm(`${activeGridLabel()} est en cours. Voulez-vous la quitter pour lancer le tutoriel ?`,'Quitter la partie','Quitter','Continuer la partie'))return;
+  if(state.mode==='solo'&&!state.soloOver&&state.gridUnrankedReason!=='tutorial'){
+    if(!await gameConfirm('Celle-ci sera perdue.','Abandonner la partie en cours ?','Abandonner','Continuer'))return;
+    if(!await abandonCurrentLocalAttempt())return;
+  }
   initializeSpaceTutorialState();
 }
 function startSpaceInteractiveTutorial(){
@@ -4794,7 +4990,10 @@ $('#soloPromptLogin').addEventListener('click',async()=>{$('#soloAccountPromptMo
 $('#soloPromptRegister').addEventListener('click',async()=>{$('#soloAccountPromptModal').classList.remove('open');await openAccountModal();showAccountCreate();});
 $('#homeCreate').addEventListener('click', async()=>{
   if(state.mode==='solo'){
-    if(!state.soloOver && !await gameConfirm(`${activeGridLabel()} est en cours. Elle sera effacée si vous créez une nouvelle grille.`,'Quitter la partie','Créer une grille','Annuler')) return;
+    if(!state.soloOver){
+      if(!await gameConfirm('Celle-ci sera perdue.','Abandonner la partie en cours ?','Abandonner','Continuer'))return;
+      if(!await abandonCurrentLocalAttempt())return;
+    }
     resetAll();
   }
   const spaceCreationZone=$('#createSpaceMode').closest('.choice-zone');
@@ -4816,7 +5015,7 @@ $('#createSpaceMode').addEventListener('click',()=>{if(!canPreviewSpaceTutorial(
 $('#createEarthSkyMode').addEventListener('click',()=>{if(!canPreviewEarthSky())return;closeCreateModeModal();resetAll();Object.assign(state,{mode:'gm',gameVariant:'earthSky',includeGray:false,includeOnyx:false,includeSapphire:false,includeBlackHole:false,includeWormhole:false,earthSkyMineOnTop:null});state.pieces=earthSkyTypes().map(type=>newPiece(type));showGame();renderAll();});
 $('#btnHome').addEventListener('click',async()=>{
   if(state.mode==='solo'&&!state.soloOver){
-    if(!await gameConfirm(`Revenir à l’accueil ? ${activeGridLabel()} restera disponible tant que vous ne démarrez pas une autre partie.`,'Retour à l’accueil','Revenir à l’accueil','Continuer la partie')) return;
+    if(!await gameConfirm('La grille en cours restera disponible dans ce navigateur tant que vous ne démarrez pas une autre grille.','Revenir à l’accueil ?','Revenir à l’accueil','Continuer la partie')) return;
   }
   if(state.mode==='solo'&&state.soloOver) resetAll();
   showHome();
@@ -4891,6 +5090,10 @@ $('#btnBackToGM').addEventListener('click', ()=>{
 });
 $('#btnReset').addEventListener('click', async()=>{
   if(state.mode==='solo'){
+    if(!state.soloOver){
+      if(!await gameConfirm('Celle-ci sera perdue.','Abandonner la partie en cours ?','Abandonner','Continuer'))return;
+      if(!await abandonCurrentLocalAttempt())return;
+    }
     if(state.gameVariant==='lost'){
       startLostGame();
       return;
@@ -5907,6 +6110,9 @@ function init(){
     }
     if(state.mode==='solo'&&!state.soloOver&&!state.isDaily&&state.gridId){
       await activeSoloGridIsAllowed();
+    }
+    if(state.mode==='solo'&&!state.soloOver){
+      try{await ensureCurrentLocalAttempt();}catch(error){console.warn('Enregistrement de la tentative en cours différé :',error);}
     }
   }).catch(error=>console.error('Validation du compte impossible :',error));
 }
