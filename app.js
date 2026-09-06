@@ -3081,7 +3081,7 @@ async function proposeSolution(){
     }
     if(state.isDaily) saveDailyFinalSnapshot();
     saveState();renderAll();setTimeout(()=>openVictoryModal(),60);
-  }else{saveState();queueActiveAttemptAction('proposal');setTimeout(openIncorrectSolutionModal,60);}
+  }else{saveState();queueActiveAttemptAction('proposal');renderControls();setTimeout(openIncorrectSolutionModal,60);}
 }
 function lostPlacementIsExact(){
   const placed=state.pieces.filter(piece=>piece.center);
@@ -3855,13 +3855,13 @@ function renderPalette(){
       const poly = document.createElementNS(SVGNS,'polygon');
       poly.setAttribute('points', polyPointsAttr(pts));
       poly.setAttribute('fill', def.isDiamond ? 'rgba(207,216,220,0.55)' : def.hex);
-      poly.setAttribute('stroke', def.isOnyx ? '#5c574f' : 'rgba(230,194,122,.46)');
-      poly.setAttribute('stroke-width', def.isOnyx ? '.13' : '.055');
+      poly.setAttribute('stroke', def.isOnyx ? '#b99a61' : 'rgba(230,194,122,.46)');
+      poly.setAttribute('stroke-width', def.isOnyx ? '.16' : '.055');
       poly.setAttribute('vector-effect','non-scaling-stroke');
       svg.appendChild(poly);
       if(def.isOnyx){
         const inner=document.createElementNS(SVGNS,'polygon');
-        inner.setAttribute('points',polyPointsAttr(pts));inner.setAttribute('fill','none');inner.setAttribute('stroke','#e6c27a');inner.setAttribute('stroke-width','.045');inner.setAttribute('vector-effect','non-scaling-stroke');svg.appendChild(inner);
+        inner.setAttribute('points',polyPointsAttr(pts));inner.setAttribute('fill','none');inner.setAttribute('stroke','#f3d58e');inner.setAttribute('stroke-width','.055');inner.setAttribute('vector-effect','non-scaling-stroke');svg.appendChild(inner);
       }
     }
     svg.dataset.id = piece.id;
@@ -4127,7 +4127,14 @@ function renderControls(){
   }
   $('#btnReplayVictory').style.display = (state.mode==='solo' && state.soloOver) ? '' : 'none';
   $('#btnReset').style.display = state.isDaily ? 'none' : '';
-  $('#btnPropose').textContent=state.gameVariant==='lost'?'💎 Choisir la gemme perdue':'✅ Proposer une solution';
+  const proposeButton=$('#btnPropose');
+  const showAttemptCounter=state.mode==='solo'&&!state.soloOver&&!state.isDaily&&state.gameVariant!=='lost'&&!tutorialActive;
+  proposeButton.classList.toggle('has-attempt-counter',showAttemptCounter);
+  if(state.gameVariant==='lost')proposeButton.textContent='💎 Choisir la gemme perdue';
+  else if(showAttemptCounter){
+    const remaining=Math.max(1,2-(Number(state.soloAttempts)||0));
+    proposeButton.innerHTML=`<span>✅ Proposer une solution</span><span class="attempt-counter${remaining===1?' last':''}" aria-label="${remaining} proposition${remaining>1?'s':''} restante${remaining>1?'s':''}" title="Propositions restantes">${remaining} essai${remaining>1?'s':''}</span>`;
+  }else proposeButton.textContent='✅ Proposer une solution';
 }
 function renderAll(){
   renderModePill();
