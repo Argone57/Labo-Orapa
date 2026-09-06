@@ -468,6 +468,30 @@ async function flushActiveAttemptActions(){
   await drainAttemptActions();
   if(pendingAttemptActions.length)throw new Error('La synchronisation des coups n’est pas terminée. Réessaie dans quelques secondes.');
 }
+async function refreshCurrentActiveAttemptProgress(render=false){
+  if(state.mode!=='solo'||state.soloOver||(!state.gridRanked&&!state.isDaily)||!currentPlayerAccount?.session_token)return true;
+  const target={kind:attemptKindForState(),reference:attemptReferenceForState()};
+  try{
+    await flushActiveAttemptActions();
+    let serverAttempt=await fetchActiveAttempt();
+    if(!attemptMatches(target,serverAttempt))return false;
+    if((Number(state.rayCount)||0)>(Number(serverAttempt.ray_count)||0)||(Number(state.coordCount)||0)>(Number(serverAttempt.coord_count)||0)||(Number(state.soloAttempts)||0)>(Number(serverAttempt.progress?.soloAttempts)||0)){
+      reconcileLocalAttemptActions(serverAttempt);
+      await flushActiveAttemptActions();
+      serverAttempt=await fetchActiveAttempt();
+      if(!attemptMatches(target,serverAttempt))return false;
+    }
+    applyActiveAttemptProgress(serverAttempt);
+    saveState();
+    if(render)renderAll();
+    return true;
+  }catch(error){
+    console.warn('Actualisation de la tentative impossible :',error);
+    if(render)return false;
+    showErrorToast('Impossible de synchroniser les coups. Vérifie ta connexion puis réessaie.');
+    return false;
+  }
+}
 function formatScoreLine(e){
   return `${e.cost} pts (${e.rayCount||0}🔦 + ${e.coordCount||0}📍) · ${formatDuration(e.timeMs)}`;
 }
@@ -2996,6 +3020,7 @@ async function proposeSolution(){
   if(state.mode!=='solo' || state.soloOver) return;
   if(tutorialActive){tutorialPropose();return;}
   if(state.gameVariant==='lost'){openLostSolutionModal();return;}
+  if(!await refreshCurrentActiveAttemptProgress())return;
   if(state.pieces.some(piece=>!piece.center)) return;
   const correct=evaluateGuess();
   if(correct){
@@ -3065,6 +3090,7 @@ function lostPlacementIsExact(){
 }
 async function finalizeLostSolution(){
   if(state.gameVariant!=='lost'||state.soloOver||!state.selectedMissingType)return;
+  if(!await refreshCurrentActiveAttemptProgress())return;
   $('#lostSolutionModal').classList.remove('open');
   const won=state.selectedMissingType===state.missingType;
   const originalCost=state.moveCost||0;
@@ -6119,4 +6145,8 @@ function init(){
 init();
 ensureCurrentAppVersion(false,true);
 window.addEventListener('pageshow',()=>ensureCurrentAppVersion(false,true));
-document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')ensureCurrentAppVersion(false,true);});
+document.addEventListener('visibilitychange',()=>{
+  if(document.visibilityState!=='visible')return;
+  ensureCurrentAppVersion(false,true);
+  void refreshCurrentActiveAttemptProgress(true);
+});
