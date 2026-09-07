@@ -537,7 +537,7 @@ const DAILY_FINAL_SNAPSHOTS_KEY = `${LOCAL_STORAGE_PREFIX}DailyFinalSnapshotsV1`
 // indépendant du compte : chaque navigateur garde sa propre dernière visite.
 const UPDATES_READ_KEY = `${LOCAL_STORAGE_PREFIX}UpdatesReadV2`;
 const GAME_UPDATES = [
-  {id:'active-attempts-20260906',date:'06/09/2026',title:'Protection des tentatives classées en cours'},
+  {id:'myludo-20260907',date:'07/09/2026',title:'Export Myludo possible via l\'extension Chrome et Firefox Orapa2Myludo, direction vos options (encore en attente de validation sur Firefox)'},
   {id:'wormhole-20260901',date:'01/09/2026',title:'Trou de ver pour Space et Terre et Ciel'},
   {id:'engine-20260901',date:'01/09/2026',title:'Nouveau moteur de jeu'},
   {id:'earth-sky-20260821',date:'21/08/2026',title:'Mode de jeu : Terre et Ciel'},
@@ -6111,7 +6111,6 @@ $('#closeAccount').addEventListener('click',()=>{$('#accountStatsModal').classLi
 $('#accountModal').addEventListener('click',e=>{if(e.target.id==='accountModal'){$('#accountStatsModal').classList.remove('open');closeMyludoOptions();$('#accountModal').classList.remove('open');}});
 $('#closeAccountStats').addEventListener('click',()=>$('#accountStatsModal').classList.remove('open'));
 $('#closeMyludoOptions').addEventListener('click',closeMyludoOptions);
-document.querySelectorAll('.myludo-download-placeholder').forEach(link=>link.addEventListener('click',event=>{event.preventDefault();showToast('Lien de téléchargement bientôt disponible');}));
 $('#myludoOptionsModal').addEventListener('click',event=>{if(event.target.id==='myludoOptionsModal')closeMyludoOptions();});
 $('#accountStatsModal').addEventListener('click',e=>{if(e.target.id==='accountStatsModal')$('#accountStatsModal').classList.remove('open');});
 $('#cancelScoreIdentity').addEventListener('click',()=>closeScoreIdentity(null));
