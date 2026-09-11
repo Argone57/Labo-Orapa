@@ -81,6 +81,7 @@ const EARTH_SKY_LEFT_LABELS=Array.from({length:EARTH_SKY_ROWS},(_,i)=>String.fro
 const EARTH_SKY_RIGHT_LABELS=Array.from({length:EARTH_SKY_ROWS},(_,i)=>String(11+i)); // 11..26
 const EARTH_SKY_BOTTOM_LABELS=Array.from({length:COLS},(_,i)=>String.fromCharCode(81+i)); // Q..Z
 function isEarthSky(){return state.gameVariant==='earthSky';}
+function isDailyLab(){return state.gameVariant==='dailyLab';}
 function activeRows(){return isEarthSky()?EARTH_SKY_ROWS:ROWS;}
 function activeBottomLabels(){return isEarthSky()?EARTH_SKY_BOTTOM_LABELS:BOTTOM_LABELS;}
 function activeLeftLabels(){return isEarthSky()?EARTH_SKY_LEFT_LABELS:LEFT_LABELS;}
@@ -188,6 +189,11 @@ let state = {
   selectedMissingType:null,
   placementBonus:false,
   dailyDate:null,
+  labReference:null,
+  labTypes:[],
+  labExceptionRule:null,
+  labExceptionType:null,
+  labTouchTypes:[],
   history:[],
   historyHintShown:false,
   labelColor:{ top:{}, bottom:{}, left:{}, right:{} },
@@ -1814,6 +1820,7 @@ function allTypes(){
   if(state.gameVariant==='lost') return TYPE_ORDER.slice();
   if(state.gameVariant==='space') return spaceTypes();
   if(state.gameVariant==='earthSky') return earthSkyTypes();
+  if(isDailyLab()) return Array.isArray(state.labTypes)?state.labTypes.slice():[];
   return classicTypes();
 }
 function earthSkyTypes(){
@@ -1894,6 +1901,11 @@ function loadState(){
     if(state.finalTimeMs === undefined) state.finalTimeMs = null;
     if(state.isDaily === undefined) state.isDaily = false;
     if(state.dailyDate === undefined) state.dailyDate = null;
+    if(state.labReference === undefined) state.labReference = null;
+    if(!Array.isArray(state.labTypes)) state.labTypes = [];
+    if(state.labExceptionRule === undefined) state.labExceptionRule = null;
+    if(state.labExceptionType === undefined) state.labExceptionType = null;
+    if(!Array.isArray(state.labTouchTypes)) state.labTouchTypes = [];
     if(state.historyHintShown === undefined) state.historyHintShown = false;
     if(state.gridRanked === undefined) state.gridRanked = true;
     if(state.soloShowGuess === undefined) state.soloShowGuess = true;
@@ -1920,7 +1932,7 @@ function resetAll(){
   state = { mode:'gm', gameVariant:'classic',missingType:null,selectedMissingType:null,placementBonus:false,started:false, includeGray:g, includeOnyx:o, includeSapphire:s2, includeBlackHole:false,includeWormhole:false,earthSkyMineOnTop:true, pieces:[], secretPieces:[],
             soloAttempts:0, soloOver:false, soloResult:null, soloShowGuess:true, soloShowSecret:true, history:[], historyHintShown:false,
             gridId:null, gridAlias:null, gridRanked:true, moveCost:0, firstActionTime:null, finalTimeMs:null, rayCount:0, coordCount:0,
-            isDaily:false, dailyDate:null,
+            isDaily:false, dailyDate:null, labReference:null, labTypes:[], labExceptionRule:null, labExceptionType:null, labTouchTypes:[],
             labelColor:{top:{},bottom:{},left:{},right:{}}, labelBounce:{top:{},bottom:{},left:{},right:{}},
             labelPair:{top:{},bottom:{},left:{},right:{}},
             labelPartner:{top:{},bottom:{},left:{},right:{}},
@@ -2461,6 +2473,187 @@ function generateDailyLayout(dateKey){
   return null;
 }
 
+// ---------------------------------------------------------------------
+// LABORATOIRE — variante temporaire, déterministe et strictement locale.
+// La référence contient la version du générateur et sa graine ; elle suffit
+// donc à reproduire une grille sans créer d'identifiant public ni écrire dans
+// Supabase.
+// ---------------------------------------------------------------------
+const DAILY_LAB_VERSION='LAB1';
+const DAILY_LAB_REGULAR_TYPES=['red','yellow','blue','white','rhombus','gray','sapphire','spaceWhiteLarge','spaceRedLarge','spaceBlue','spaceYellow','spaceRing'];
+const DAILY_LAB_BLACK_TYPES=['onyx','spaceBlackHole','spaceWormhole'];
+function normalizeDailyLabReference(value){
+  const text=String(value||'').trim().toUpperCase().replace(/\s+/g,'');
+  return new RegExp(`^${DAILY_LAB_VERSION}-[0-9A-Z]{6,10}$`).test(text)?text:null;
+}
+function newDailyLabReference(){
+  let value;
+  if(globalThis.crypto?.getRandomValues){const data=new Uint32Array(2);crypto.getRandomValues(data);value=(BigInt(data[0])<<32n)|BigInt(data[1]);}
+  else value=BigInt(Date.now())*1000000n+BigInt(Math.floor(Math.random()*1000000));
+  return `${DAILY_LAB_VERSION}-${value.toString(36).toUpperCase().padStart(10,'0').slice(-10)}`;
+}
+function dailyLabColorKeys(type){
+  if(type==='gray')return ['gray'];
+  if(type==='sapphire')return ['skyBlue'];
+  const definition=CONFIG.PIECES[type]||{};
+  return definition.colorKey?[definition.colorKey]:[];
+}
+function createDailyLabTypePlan(rngFn){
+  const target=5+Math.floor(rngFn()*4);
+  const blackRoll=rngFn();
+  const blackType=blackRoll<.55?DAILY_LAB_BLACK_TYPES[Math.floor(rngFn()*DAILY_LAB_BLACK_TYPES.length)]:null;
+  const blackEntries=blackType==='spaceWormhole'?['spaceWormhole','spaceWormhole']:(blackType?[blackType]:[]);
+  const wantedRegular=target-blackEntries.length;
+  const selected=[],counts={};
+  for(const type of seededShuffle(DAILY_LAB_REGULAR_TYPES,rngFn)){
+    const colors=dailyLabColorKeys(type);
+    if(colors.some(color=>(counts[color]||0)>=2))continue;
+    selected.push(type);
+    colors.forEach(color=>counts[color]=(counts[color]||0)+1);
+    if(selected.length===wantedRegular)break;
+  }
+  if(selected.length!==wantedRegular)return null;
+  const hasMine=selected.some(type=>!earthSkyPieceIsSpace(type));
+  const hasSpace=selected.some(earthSkyPieceIsSpace)||blackEntries.some(earthSkyPieceIsSpace);
+  if(!hasMine||!hasSpace)return null;
+  return seededShuffle([...selected,...blackEntries],rngFn);
+}
+function dailyLabContactKind(pieceA,pieceB){
+  let side=false;
+  for(const polyA of piecePlacementPolygons(pieceA))for(const polyB of piecePlacementPolygons(pieceB)){
+    const kind=edgeContactKind(polyA,polyB);
+    if(kind==='overlap')return 'overlap';
+    if(kind==='sideTouch')side=true;
+  }
+  return side?'sideTouch':'none';
+}
+function dailyLabInsideStatus(piece){
+  const vertices=pieceVertices(piece),xs=vertices.map(point=>point.x),ys=vertices.map(point=>point.y);
+  const inside=Math.min(...xs)>=-1e-6&&Math.max(...xs)<=COLS+1e-6&&Math.min(...ys)>=-1e-6&&Math.max(...ys)<=ROWS+1e-6;
+  const board=ensureCCW([{x:0,y:0},{x:COLS,y:0},{x:COLS,y:ROWS},{x:0,y:ROWS}]);
+  const visibleArea=pieceCollisionPolygons(piece).reduce((sum,poly)=>sum+polyArea(clipPolygon(ensureCCW(poly),board)),0);
+  return {inside,partial:!inside&&visibleArea>.3,visibleArea};
+}
+function dailyLabWhiteEdgeValid(piece){
+  if(piece.type!=='spaceWhiteLarge')return true;
+  const [a,b]=pieceVertices(piece),tol=1e-6;
+  const within=(value,min,max)=>value>=min-tol&&value<=max+tol;
+  if(Math.abs(a.x)<tol&&Math.abs(b.x)<tol)return within(a.y,0,ROWS)&&within(b.y,0,ROWS);
+  if(Math.abs(a.x-COLS)<tol&&Math.abs(b.x-COLS)<tol)return within(a.y,0,ROWS)&&within(b.y,0,ROWS);
+  if(Math.abs(a.y)<tol&&Math.abs(b.y)<tol)return within(a.x,0,COLS)&&within(b.x,0,COLS);
+  if(Math.abs(a.y-ROWS)<tol&&Math.abs(b.y-ROWS)<tol)return within(a.x,0,COLS)&&within(b.x,0,COLS);
+  return false;
+}
+function dailyLabCandidates(entry,rngFn,mode='inside'){
+  const candidates=[];
+  for(const rotation of ROTATIONS)for(const flipped of [false,true]){
+    const probe={id:entry.key,type:entry.type,center:{x:0,y:0},rotation,flipped};
+    const bounds=pieceLocalBounds(probe),fractions=pieceSnapFractions(probe);
+    const minX=Math.ceil(-bounds.maxX-fractions.fracX)+fractions.fracX;
+    const maxX=Math.floor(COLS-bounds.minX-fractions.fracX)+fractions.fracX;
+    const minY=Math.ceil(-bounds.maxY-fractions.fracY)+fractions.fracY;
+    const maxY=Math.floor(ROWS-bounds.minY-fractions.fracY)+fractions.fracY;
+    for(let x=minX;x<=maxX+1e-6;x++)for(let y=minY;y<=maxY+1e-6;y++){
+      const candidate={...probe,center:{x,y}};
+      const status=dailyLabInsideStatus(candidate);
+      if(mode==='inside'&&!status.inside)continue;
+      if(mode==='partial'&&!status.partial)continue;
+      if(entry.type==='spaceWhiteLarge'&&!dailyLabWhiteEdgeValid(candidate))continue;
+      candidates.push(candidate);
+    }
+  }
+  return seededShuffle(candidates,rngFn);
+}
+function dailyLabCandidateFits(candidate,placed,{allowSideWith=null}={}){
+  let sideCount=0;
+  for(const other of placed){
+    const kind=dailyLabContactKind(candidate,other);
+    if(kind==='overlap')return false;
+    if(kind==='sideTouch'){
+      if(other.id!==allowSideWith)return false;
+      sideCount++;
+    }
+  }
+  return allowSideWith?sideCount===1:sideCount===0;
+}
+function dailyLabPlace(entry,placed,rngFn,mode='inside',allowSideWith=null){
+  const candidates=dailyLabCandidates(entry,rngFn,mode);
+  for(const candidate of candidates){
+    if(dailyLabCandidateFits(candidate,placed,{allowSideWith}))return candidate;
+  }
+  return null;
+}
+function tryDailyLabLayout(rngFn){
+  const types=createDailyLabTypePlan(rngFn);
+  if(!types)return null;
+  const entries=types.map((type,index)=>({type,key:`lab_${index}_${type}`}));
+  const modes=['partialOut','sideTouch','both'];
+  const exceptionRule=modes[Math.floor(rngFn()*modes.length)];
+  const needsPartial=exceptionRule!=='sideTouch',needsTouch=exceptionRule!=='partialOut';
+  const partialPool=entries.filter(entry=>!['spaceWhiteLarge','spaceBlackHole','spaceWormhole'].includes(entry.type));
+  const touchPool=entries.filter(entry=>!['spaceBlackHole','spaceWormhole'].includes(entry.type));
+  if(needsPartial&&!partialPool.length||needsTouch&&touchPool.length<2)return null;
+  const partialEntry=needsPartial?partialPool[Math.floor(rngFn()*partialPool.length)]:null;
+  let touchEntries=[];
+  if(needsTouch){
+    const pool=seededShuffle(touchPool,rngFn);
+    if(needsPartial&&rngFn()<.5){
+      const partner=pool.find(entry=>entry.key!==partialEntry.key);
+      touchEntries=[partialEntry,partner];
+    }else touchEntries=pool.filter(entry=>entry.key!==partialEntry?.key).slice(0,2);
+    if(touchEntries.length<2)return null;
+  }
+  const placed=[];
+  if(partialEntry){
+    const partial=dailyLabPlace(partialEntry,placed,rngFn,'partial');
+    if(!partial)return null;
+    placed.push(partial);
+  }
+  if(needsTouch){
+    let anchor=placed.find(piece=>piece.id===touchEntries[0].key||piece.id===touchEntries[1].key);
+    let partnerEntry;
+    if(anchor)partnerEntry=touchEntries.find(entry=>entry.key!==anchor.id);
+    else{
+      anchor=dailyLabPlace(touchEntries[0],placed,rngFn,'inside');
+      if(!anchor)return null;
+      placed.push(anchor);
+      partnerEntry=touchEntries[1];
+    }
+    const touching=dailyLabPlace(partnerEntry,placed,rngFn,'inside',anchor.id);
+    if(!touching)return null;
+    placed.push(touching);
+  }
+  for(const entry of seededShuffle(entries,rngFn)){
+    if(placed.some(piece=>piece.id===entry.key))continue;
+    const candidate=dailyLabPlace(entry,placed,rngFn,'inside');
+    if(!candidate)return null;
+    placed.push(candidate);
+  }
+  const partialCount=placed.filter(piece=>dailyLabInsideStatus(piece).partial).length;
+  let touchCount=0,overlapCount=0;
+  for(let i=0;i<placed.length;i++)for(let j=i+1;j<placed.length;j++){
+    const kind=dailyLabContactKind(placed[i],placed[j]);
+    if(kind==='sideTouch')touchCount++;
+    if(kind==='overlap')overlapCount++;
+  }
+  if(overlapCount||partialCount!==(needsPartial?1:0)||touchCount!==(needsTouch?1:0))return null;
+  if(dailyUnreachablePieces(placed).length)return null;
+  return {
+    pieces:placed.map(piece=>({...piece,id:'p'+pieceIdSeq++})),types,
+    exceptionRule,exceptionType:partialEntry?.type||null,touchTypes:touchEntries.map(entry=>entry.type)
+  };
+}
+function generateDailyLabLayout(reference){
+  const normalized=normalizeDailyLabReference(reference);
+  if(!normalized)return null;
+  const rngFn=mulberry32(seedFromString(`DAILY-LAB-V1-${normalized}`));
+  for(let attempt=0;attempt<180;attempt++){
+    const result=tryDailyLabLayout(rngFn);
+    if(result)return result;
+  }
+  return null;
+}
+
 // Audit de génération sans effet sur le tirage : les signatures ignorent les
 // identifiants temporaires, dont l'incrémentation ne participe pas au hasard.
 // Il permet de vérifier en une passe la stabilité du défi et ses exceptions.
@@ -2504,9 +2697,34 @@ window.runDailyGeneratorAudit=function(startDate='2026-07-30',days=180){
   if(counts.both&&!counts.bothIndependent)failures.push({reason:'aucun-cas-double-independant'});
   return {ok:failures.length===0,checked:days,counts,knownIssues,failures};
 };
-if(new URLSearchParams(location.search).get('labAudit')==='daily'){
+window.runDailyLabGeneratorAudit=function(samples=80){
+  const failures=[],counts={partialOut:0,sideTouch:0,both:0,blackBody:0,blackHole:0,wormhole:0,noBlack:0};
+  const signature=layout=>JSON.stringify({types:layout?.types,exceptionRule:layout?.exceptionRule,exceptionType:layout?.exceptionType,touchTypes:layout?.touchTypes,pieces:layout?.pieces.map(piece=>({type:piece.type,center:piece.center,rotation:piece.rotation,flipped:piece.flipped}))});
+  for(let index=0;index<samples;index++){
+    const reference=`LAB1-${index.toString(36).toUpperCase().padStart(6,'0')}`;
+    const first=generateDailyLabLayout(reference),second=generateDailyLabLayout(reference);
+    if(!first){failures.push({reference,reason:'generation'});continue;}
+    if(signature(first)!==signature(second))failures.push({reference,reason:'non-deterministe'});
+    const physical=first.types.length;
+    if(physical<5||physical>8)failures.push({reference,reason:'nombre-pieces',physical});
+    const colorCounts={};
+    first.types.forEach(type=>dailyLabColorKeys(type).forEach(color=>colorCounts[color]=(colorCounts[color]||0)+1));
+    if(Object.values(colorCounts).some(count=>count>2))failures.push({reference,reason:'couleur',colorCounts});
+    const black=[...new Set(first.types.filter(type=>DAILY_LAB_BLACK_TYPES.includes(type)))];
+    if(black.length>1)failures.push({reference,reason:'mecanismes-noirs',black});
+    if(first.types.filter(type=>type==='spaceWormhole').length===1)failures.push({reference,reason:'trou-de-ver-isole'});
+    const whiteLarge=first.pieces.find(piece=>piece.type==='spaceWhiteLarge');
+    if(whiteLarge&&(!dailyLabWhiteEdgeValid(whiteLarge)||dailyLabInsideStatus(whiteLarge).partial))failures.push({reference,reason:'grande-blanche'});
+    if(first.pieces.some(piece=>['spaceBlackHole','spaceWormhole'].includes(piece.type)&&dailyLabInsideStatus(piece).partial))failures.push({reference,reason:'mecanisme-hors-grille'});
+    counts[first.exceptionRule]++;
+    if(black[0]==='onyx')counts.blackBody++;else if(black[0]==='spaceBlackHole')counts.blackHole++;else if(black[0]==='spaceWormhole')counts.wormhole++;else counts.noBlack++;
+  }
+  return {ok:failures.length===0,checked:samples,counts,failures};
+};
+const requestedLabAudit=new URLSearchParams(location.search).get('labAudit');
+if(requestedLabAudit==='daily'||requestedLabAudit==='experimental'){
   setTimeout(()=>{
-    const result=window.runDailyGeneratorAudit('2026-07-30',240);
+    const result=requestedLabAudit==='experimental'?window.runDailyLabGeneratorAudit(80):window.runDailyGeneratorAudit('2026-07-30',240);
     const output=document.createElement('pre');
     output.id='lab-audit-output';
     output.dataset.status=result.ok?'passed':'failed';
@@ -2859,6 +3077,41 @@ async function startDailyChallenge(resumeAttempt=null){
   showGame();
   renderAll();
 }
+function dailyLabDiagnostic(){
+  return JSON.stringify({
+    schema:'orapa-daily-lab-v1',reference:state.labReference,
+    rules:{exceptionRule:state.labExceptionRule,exceptionType:state.labExceptionType,touchTypes:state.labTouchTypes},
+    pieces:(state.secretPieces||[]).map(piece=>({type:piece.type,center:piece.center,rotation:piece.rotation,flipped:piece.flipped})),
+    play:{result:state.soloResult,attempts:state.soloAttempts,cost:state.moveCost,rayCount:state.rayCount,coordCount:state.coordCount,history:state.history}
+  },null,2);
+}
+async function startDailyLabChallenge(reference=null){
+  const normalized=reference?normalizeDailyLabReference(reference):newDailyLabReference();
+  if(!normalized)return {ok:false,reason:'reference'};
+  const layout=generateDailyLabLayout(normalized);
+  if(!layout)return {ok:false,reason:'generation'};
+  setHintMode(false);
+  Object.assign(state,{
+    mode:'solo',gameVariant:'dailyLab',started:false,secretPieces:layout.pieces,
+    labReference:normalized,labTypes:layout.types.slice(),labExceptionRule:layout.exceptionRule,
+    labExceptionType:layout.exceptionType,labTouchTypes:layout.touchTypes.slice(),
+    pieces:layout.types.map(type=>newPiece(type)),gridId:null,gridAlias:null,gridRanked:false,
+    gridUnrankedReason:'daily_lab',soloAttempts:0,soloOver:false,soloResult:null,
+    soloShowGuess:true,soloShowSecret:true,moveCost:0,firstActionTime:null,finalTimeMs:null,
+    rayCount:0,coordCount:0,isDaily:false,dailyDate:null,history:[],
+    labelColor:{top:{},bottom:{},left:{},right:{}},labelBounce:{top:{},bottom:{},left:{},right:{}},
+    labelPair:{top:{},bottom:{},left:{},right:{}},labelPartner:{top:{},bottom:{},left:{},right:{}},
+    labelExitMarker:{top:{},bottom:{},left:{},right:{}},cellUsed:{},traces:[],emptyMarks:[],occupiedMarks:[],coordDots:[]
+  });
+  state.includeGray=layout.types.includes('gray');
+  state.includeOnyx=layout.types.includes('onyx');
+  state.includeSapphire=layout.types.includes('sapphire');
+  state.includeBlackHole=layout.types.includes('spaceBlackHole');
+  state.includeWormhole=layout.types.includes('spaceWormhole');
+  activeAttempt=null;lastScoreResult=null;resetHistoryDisclosure();saveState();
+  closeSoloChoiceModal();document.body.classList.remove('solo-menu-open');showGame();renderAll();
+  return {ok:true};
+}
 function polygonVertexSetsMatch(vA,vB,tol=1e-3){
   if(vA.length !== vB.length) return false;
   const used = new Array(vB.length).fill(false);
@@ -2913,7 +3166,7 @@ function pieceGroupsMatch(secretPieces,guessPieces,compare){
   return true;
 }
 function evaluateGuess(){
-  const compare=state.isDaily?visiblePolygonsMatch:polygonsMatch;
+  const compare=(state.isDaily||isDailyLab())?visiblePolygonsMatch:polygonsMatch;
   for(const type of new Set(allTypes())){
     const secrets=state.secretPieces.filter(piece=>piece.type===type);
     const guesses=state.pieces.filter(piece=>piece.type===type&&piece.center);
@@ -2989,7 +3242,7 @@ function currentMyludoPayload(preferences){
   return myludoPayloadForEntry(entry,preferences,decoded||state);
 }
 document.addEventListener('orapa:myludo-request',async()=>{
-  if(!state.soloOver||!state.soloResult||state.gridUnrankedReason==='already_played')return;
+  if(!state.soloOver||!state.soloResult||state.gridUnrankedReason==='already_played'||isDailyLab())return;
   let preferences=normalizeMyludoPreferences(DEFAULT_MYLUDO_PREFERENCES);
   try{preferences=await loadMyludoPreferences();}catch(error){console.error('Chargement des options Myludo impossible :',error);}
   document.dispatchEvent(new CustomEvent('orapa:myludo-result',{detail:JSON.stringify(currentMyludoPayload(preferences))}));
@@ -3010,8 +3263,8 @@ function openVictoryModal(){
   const won = state.soloResult==='win';
   $('#resultModalTitle').textContent = won ? '🏆 Victoire !' : '💥 Défaite';
   $('#victoryMessage').textContent = won
-    ? (state.gameVariant==='lost'?(state.placementBonus?'Tu as identifié la gemme perdue et reconstitué toute la grille !':'Tu as identifié la gemme perdue !'):(state.gameVariant==='space'?'Tu as retrouvé la disposition exacte des planètes !':(isEarthSky()?'Tu as retrouvé la disposition exacte des gemmes et des astres !':'Tu as retrouvé la disposition exacte !')))
-    : (state.isDaily
+    ? (isDailyLab()?'Expérience réussie : tu as retrouvé la disposition exacte !':(state.gameVariant==='lost'?(state.placementBonus?'Tu as identifié la gemme perdue et reconstitué toute la grille !':'Tu as identifié la gemme perdue !'):(state.gameVariant==='space'?'Tu as retrouvé la disposition exacte des planètes !':(isEarthSky()?'Tu as retrouvé la disposition exacte des gemmes et des astres !':'Tu as retrouvé la disposition exacte !'))))
+    : ((state.isDaily||isDailyLab())
       ? 'Solution incorrecte : la grille secrète est révélée ci-dessous.'
       : (state.gameVariant==='lost'
         ? 'La gemme sélectionnée n’était pas la gemme perdue : la grille secrète est révélée ci-dessous.'
@@ -3024,11 +3277,12 @@ function openVictoryModal(){
       : (state.isDaily ? '' : (state.gridUnrankedReason==='creator_protected'
       ? '⭐ Cette grille est la vôtre et ne peut pas être résolue avec ce compte.'
       : '')));
-  $('#victoryGridId').textContent = state.isDaily ? `Défi du jour (${formatDailyDate(state.dailyDate)})` : `${state.gameVariant==='lost'?'Gemme perdue · ':(state.gameVariant==='space'?'Orapa Space · ':(isEarthSky()?'Terre et Ciel · ':''))}${publicGridId(state.gridId)||''}`;
+  $('#victoryGridId').textContent = state.isDaily ? `Défi du jour (${formatDailyDate(state.dailyDate)})` : (isDailyLab()?`Expérience ${state.labReference}`:`${state.gameVariant==='lost'?'Gemme perdue · ':(state.gameVariant==='space'?'Orapa Space · ':(isEarthSky()?'Terre et Ciel · ':''))}${publicGridId(state.gridId)||''}`);
   $('#btnVictoryGridRanking').style.display=(!state.isDaily&&state.gridId)?'':'none';
   const resultAlreadyRecorded=state.gridUnrankedReason==='already_played';
-  $('#btnVictoryCopySummary').style.display=resultAlreadyRecorded?'none':'';
-  $('#victoryActions').dataset.orapaMyludoResult=resultAlreadyRecorded?'false':'true';
+  $('#btnVictoryCopySummary').style.display=(resultAlreadyRecorded||isDailyLab())?'none':'';
+  $('#btnVictoryCopyId').textContent=isDailyLab()?'📋 Copier diagnostic':'📋 Copier ID';
+  $('#victoryActions').dataset.orapaMyludoResult=(resultAlreadyRecorded||isDailyLab())?'false':'true';
   $('#victoryModal').classList.add('open');
 }
 async function proposeSolution(){
@@ -3075,7 +3329,7 @@ async function proposeSolution(){
     saveState();renderAll();setTimeout(()=>openVictoryModal(),60);return;
   }
   state.soloAttempts++;
-  if(state.isDaily||state.soloAttempts>=2){
+  if(state.isDaily||isDailyLab()||state.soloAttempts>=2){
     state.soloOver=true;state.soloResult='lose';
     const elapsedMs=state.firstActionTime?(Date.now()-state.firstActionTime):0;state.finalTimeMs=elapsedMs;
     if(state.isDaily){
@@ -3194,12 +3448,14 @@ function snapPieceCenterWithinBounds(rawX, rawY, piece){
   // Les planètes d’Orapa Space ne sont pas toutes centrées autour de leur
   // point de rotation. On utilise donc leurs limites réelles plutôt qu’une
   // demi-largeur symétrique (indispensable pour poser le grand côté blanc au bord).
-  const polygonBounds=state.gameVariant==='space'||isEarthSky();
+  const labMustStayInside=isDailyLab()&&['spaceWhiteLarge','spaceBlackHole','spaceWormhole'].includes(piece.type);
+  const polygonBounds=state.gameVariant==='space'||isEarthSky()||labMustStayInside;
   const half=isEarthSky()?earthSkyHalfBounds(piece):{minY:0,maxY:ROWS};
-  const minX = polygonBounds ? -bounds.minX : (state.isDaily ? -hw+0.5 : hw);
-  const maxX = polygonBounds ? COLS-bounds.maxX : (state.isDaily ? COLS+hw-0.5 : COLS-hw);
-  const minY = polygonBounds ? half.minY-bounds.minY : (state.isDaily ? -hh+0.5 : hh);
-  const maxY = polygonBounds ? half.maxY-bounds.maxY : (state.isDaily ? ROWS+hh-0.5 : ROWS-hh);
+  const allowsPartial=state.isDaily||isDailyLab();
+  const minX = polygonBounds ? -bounds.minX : (allowsPartial ? -hw+0.5 : hw);
+  const maxX = polygonBounds ? COLS-bounds.maxX : (allowsPartial ? COLS+hw-0.5 : COLS-hw);
+  const minY = polygonBounds ? half.minY-bounds.minY : (allowsPartial ? -hh+0.5 : hh);
+  const maxY = polygonBounds ? half.maxY-bounds.maxY : (allowsPartial ? ROWS+hh-0.5 : ROWS-hh);
   return {
     x: clampOnLattice(rawX, minX, maxX, fracX),
     y: clampOnLattice(rawY, minY, maxY, fracY)
@@ -3424,7 +3680,7 @@ function labelLocationFromText(value){
 }
 function spaceBlackHoleExitMode(pieces){
   const list=pieces||(state.mode==='solo'?state.secretPieces:state.pieces);
-  return (state.gameVariant==='space'||isEarthSky())&&Array.isArray(list)&&list.some(piece=>piece.type==='spaceBlackHole'&&piece.center);
+  return (state.gameVariant==='space'||isEarthSky()||isDailyLab())&&Array.isArray(list)&&list.some(piece=>piece.type==='spaceBlackHole'&&piece.center);
 }
 function applyBeamLabelResult(side,index,result,pieces){
   state.labelExitMarker=state.labelExitMarker||{top:{},bottom:{},left:{},right:{}};
@@ -3517,6 +3773,7 @@ async function activeAttemptChoice(message){
 }
 function activeGridLabel(){
   if(state.isDaily)return 'Le défi du jour';
+  if(isDailyLab())return 'Un défi expérimental';
   if(state.gameVariant==='lost')return 'Une grille Gemme perdue';
   if(state.gameVariant==='space')return 'Une grille Orapa Space';
   if(state.gameVariant==='earthSky')return 'Une grille Terre et Ciel';
@@ -3801,7 +4058,7 @@ function renderPalette(){
   const inPalette = state.pieces.filter(p=>!p.center);
   paletteEl.classList.toggle('earth-sky-solo-reserve',isEarthSky()&&state.mode==='solo');
   paletteEl.classList.toggle('empty', inPalette.length===0);
-  paletteEl.dataset.emptyLabel=isEarthSky()?'Toutes les gemmes et tous les astres sont placés.':(state.gameVariant==='space'?'Toutes les planètes sont placées sur la carte.':'Toutes les gemmes sont placées sur la grille.');
+  paletteEl.dataset.emptyLabel=isDailyLab()?'Toutes les pièces sont placées sur la grille.':(isEarthSky()?'Toutes les gemmes et tous les astres sont placés.':(state.gameVariant==='space'?'Toutes les planètes sont placées sur la carte.':'Toutes les gemmes sont placées sur la grille.'));
   const showPalette = piecesEditable();
   const showCheckboxes = state.mode==='gm' && !state.started && state.gameVariant!=='lost';
   if(state.mode==='gm'&&state.gameVariant!=='space'){
@@ -3835,7 +4092,7 @@ function renderPalette(){
   }
   $('#setupOptions').style.display = showCheckboxes?'flex':'none';
   $('#setupHint').style.display = showPalette&&state.mode==='gm'?'block':'none';
-  const subject=isEarthSky()?'élément':(state.gameVariant==='space'?'planète':'gemme');
+  const subject=(isEarthSky()||isDailyLab())?'élément':(state.gameVariant==='space'?'planète':'gemme');
   $('#setupHint').textContent = state.mode==='solo'
     ? `Place tes ${subject}s comme tu penses que la grille secrète est composée · tape pour pivoter · reste appuyé pour retourner en miroir · clique un bord ou une case pour indice`
     : isEarthSky()
@@ -4083,12 +4340,14 @@ function renderModePill(){
     else if(state.soloOver){
       if(state.isDaily){
         text = state.soloResult==='win' ? `📅 Défi du jour — ${formatDailyDate(state.dailyDate)} — Victoire !` : `📅 Défi du jour — ${formatDailyDate(state.dailyDate)} — Défaite`;
+      } else if(isDailyLab()){
+        text=`🧪 Défi expérimental — ${state.soloResult==='win'?'Réussi !':'Échec'}`;
       } else {
         text = state.gameVariant==='lost' ? `💎 Gemme perdue — ${state.soloResult==='win'?'Victoire !':'Défaite'}` : (state.gameVariant==='space'?`🚀 Orapa Space — ${state.soloResult==='win'?'Victoire !':'Défaite'}`:(isEarthSky()?`🌍☁️ Terre et Ciel — ${state.soloResult==='win'?'Victoire !':'Défaite'}`:`🎲 Grille aléatoire — ${state.soloResult==='win'?'Victoire !':'Défaite'}`));
       }
       cls = state.soloResult==='win' ? 'win' : 'lose';
     } else {
-      text = state.isDaily ? `📅 Défi du jour — ${formatDailyDate(state.dailyDate)}` : (state.gameVariant==='lost'?'💎 Gemme perdue':(state.gameVariant==='space'?'🚀 Orapa Space':(isEarthSky()?'🌍☁️ Terre et Ciel':'🎲 Grille aléatoire')));
+      text = state.isDaily ? `📅 Défi du jour — ${formatDailyDate(state.dailyDate)}` : (isDailyLab()?`🧪 Défi expérimental — ${state.labReference}`:(state.gameVariant==='lost'?'💎 Gemme perdue':(state.gameVariant==='space'?'🚀 Orapa Space':(isEarthSky()?'🌍☁️ Terre et Ciel':'🎲 Grille aléatoire'))));
       cls = 'live';
     }
   } else {
@@ -4101,11 +4360,12 @@ function renderModePill(){
 function renderControls(){
   const isSpace=state.gameVariant==='space';
   const earthSky=isEarthSky();
-  $('#appGameTitle').textContent=earthSky?'🌍☁️ Terre et Ciel':(isSpace?'🪐 Orapa Space':'💎 Orapa Mine');
-  $('#paletteTitle').textContent=earthSky?(state.mode==='solo'?'Gemmes et astres à placer':(state.earthSkyMineOnTop==null?'Gemmes et astres à placer':(state.earthSkyMineOnTop?'Gemmes à placer':'Astres à placer'))):(isSpace?'Planètes à placer':'Gemmes à placer');
-  $('#boardSectionTitle').textContent=earthSky?'Double grille Terre et Ciel':(isSpace?'Carte spatiale':'Plateau de la mine');
-  $('#masterSubtitle').textContent=earthSky?'Entre mine et espace':(isSpace?'Console de l’explorateur':'Console du maître du jeu');
-  $('#masterSubtitle').style.display=state.isDaily?'none':'';
+  const lab=isDailyLab();
+  $('#appGameTitle').textContent=lab?'🧪 Orapa Laboratoire':(earthSky?'🌍☁️ Terre et Ciel':(isSpace?'🪐 Orapa Space':'💎 Orapa Mine'));
+  $('#paletteTitle').textContent=lab?'Pièces à placer':(earthSky?(state.mode==='solo'?'Gemmes et astres à placer':(state.earthSkyMineOnTop==null?'Gemmes et astres à placer':(state.earthSkyMineOnTop?'Gemmes à placer':'Astres à placer'))):(isSpace?'Planètes à placer':'Gemmes à placer'));
+  $('#boardSectionTitle').textContent=lab?'Grille expérimentale':(earthSky?'Double grille Terre et Ciel':(isSpace?'Carte spatiale':'Plateau de la mine'));
+  $('#masterSubtitle').textContent=lab?'Expérience temporaire':(earthSky?'Entre mine et espace':(isSpace?'Console de l’explorateur':'Console du maître du jeu'));
+  $('#masterSubtitle').style.display=(state.isDaily||lab)?'none':'';
   // Ces options ne servent qu'à préparer une grille classique côté maître du jeu.
   // Elles ne doivent jamais réapparaître lors du rendu d'une partie en cours.
   const showSetupOptions=state.mode==='gm'&&!state.started&&state.gameVariant!=='lost';
@@ -4144,16 +4404,16 @@ function renderControls(){
   $('#btnToggleSecret').style.display = soloReveal ? '' : 'none';
   $('#btnToggleGuess').textContent = (state.soloShowGuess?'👁 ':'🚫 ') + (earthSky?'Ma grille':(isSpace?'Mes planètes':'Mes gemmes'));
   $('#btnToggleSecret').textContent = (state.soloShowSecret?'👁 ':'🚫 ') + (earthSky?'Grille à trouver':(isSpace?'Planètes à trouver':'Gemmes à trouver'));
-  const showGridId = soloReveal && state.gridId;
+  const showGridId = lab || (soloReveal && state.gridId);
   $('#gridIdRow').style.display = showGridId ? 'flex' : 'none';
   if(showGridId){
-    $('#gridIdText').textContent = publicGridId(state.gridId);
-    $('#btnCopyGridId').textContent = '📋 Copier';
+    $('#gridIdText').textContent = lab?state.labReference:publicGridId(state.gridId);
+    $('#btnCopyGridId').textContent = lab?'📋 Diagnostic':'📋 Copier';
   }
   $('#btnReplayVictory').style.display = (state.mode==='solo' && state.soloOver) ? '' : 'none';
   $('#btnReset').style.display = state.isDaily ? 'none' : '';
   const proposeButton=$('#btnPropose');
-  const showAttemptCounter=state.mode==='solo'&&!state.soloOver&&!state.isDaily&&state.gameVariant!=='lost'&&!tutorialActive;
+  const showAttemptCounter=state.mode==='solo'&&!state.soloOver&&!state.isDaily&&!lab&&state.gameVariant!=='lost'&&!tutorialActive;
   proposeButton.classList.toggle('has-attempt-counter',showAttemptCounter);
   if(state.gameVariant==='lost')proposeButton.textContent='💎 Choisir la gemme perdue';
   else if(showAttemptCounter){
@@ -4442,8 +4702,8 @@ function onPieceDown(ev, piece, el){
       }
       const {hw,hh} = boundingHalfExtents(piece);
       const {x:cx,y:cy} = snapPieceCenterWithinBounds(rawX, rawY, piece);
-      const marginX = state.isDaily ? hw*cellsz : 0;
-      const marginY = state.isDaily ? hh*cellsz : 0;
+      const marginX = (state.isDaily||isDailyLab()) ? hw*cellsz : 0;
+      const marginY = (state.isDaily||isDailyLab()) ? hh*cellsz : 0;
       const withinBoard = e.clientX>=rect.left-marginX && e.clientX<=rect.right+marginX && e.clientY>=rect.top-marginY && e.clientY<=rect.bottom+marginY;
       piece.center = withinBoard ? {x:cx,y:cy} : null;
       if(isEarthSky()&&!state.pieces.some(candidate=>candidate.center))state.earthSkyMineOnTop=null;
@@ -5174,6 +5434,11 @@ $('#btnToggleGuess').addEventListener('click', ()=>{ state.soloShowGuess = !stat
 $('#btnToggleSecret').addEventListener('click', ()=>{ state.soloShowSecret = !state.soloShowSecret; saveState(); renderControls(); renderPieces(); });
 $('#btnReplayVictory').addEventListener('click', ()=> openVictoryModal());
 $('#btnCopyGridId').addEventListener('click', async()=>{
+  if(isDailyLab()){
+    if(navigator.clipboard)await navigator.clipboard.writeText(dailyLabDiagnostic());
+    showToast('Diagnostic de l’expérience copié !');
+    return;
+  }
   if(!state.gridId || !navigator.clipboard) return;
   if(state.mode==='gm'){
     try{
@@ -5201,6 +5466,11 @@ $('#btnReset').addEventListener('click', async()=>{
     }
     if(state.gameVariant==='lost'){
       startLostGame();
+      return;
+    }
+    if(isDailyLab()){
+      const result=await startDailyLabChallenge();
+      if(!result.ok)showErrorToast('Impossible de générer une nouvelle expérience. Réessaie.');
       return;
     }
     if(state.gameVariant==='space'){$('#spaceOptBlackHole').checked=!!state.includeBlackHole;$('#spaceOptWormhole').checked=!!state.includeWormhole;$('#spaceIntroModal').classList.add('open');return;}
@@ -5358,6 +5628,36 @@ $('#soloChoiceDaily').addEventListener('click', async()=>{
   document.body.classList.add('solo-menu-open');
   $('#dailyRulesModal').classList.add('open');
 });
+function closeDailyLabRules(){
+  $('#dailyLabRulesModal').classList.remove('open');
+  document.body.classList.remove('solo-menu-open');
+}
+$('#soloChoiceDailyLab').addEventListener('click',()=>{
+  closeSoloChoiceModal();
+  $('#dailyLabReference').value='';
+  $('#dailyLabReferenceError').style.display='none';
+  document.body.classList.add('solo-menu-open');
+  $('#dailyLabRulesModal').classList.add('open');
+});
+$('#closeDailyLabRules').addEventListener('click',()=>{closeDailyLabRules();openSoloChoiceModal();});
+$('#cancelDailyLabRules').addEventListener('click',()=>{closeDailyLabRules();openSoloChoiceModal();});
+$('#dailyLabRulesModal').addEventListener('click',event=>{if(event.target.id==='dailyLabRulesModal'){closeDailyLabRules();openSoloChoiceModal();}});
+$('#startDailyLab').addEventListener('click',async()=>{
+  const raw=$('#dailyLabReference').value.trim();
+  const error=$('#dailyLabReferenceError');
+  error.style.display='none';
+  if(raw&&!normalizeDailyLabReference(raw)){
+    error.textContent='Référence invalide. Format attendu : LAB1- suivi de 6 à 10 lettres ou chiffres.';
+    error.style.display='block';
+    return;
+  }
+  const button=$('#startDailyLab');button.disabled=true;
+  try{
+    const result=await startDailyLabChallenge(raw||null);
+    if(!result.ok){error.textContent=result.reason==='reference'?'Référence invalide.':'Cette référence n’a pas pu générer de grille. Essaie une nouvelle expérience.';error.style.display='block';}
+    else closeDailyLabRules();
+  }finally{button.disabled=false;}
+});
 $('#closeTriforcePrerequisite').addEventListener('click',closeTriforcePrerequisiteModal);
 $('#triforcePrerequisiteClose').addEventListener('click',closeTriforcePrerequisiteModal);
 $('#triforcePrerequisiteModal').addEventListener('click',e=>{if(e.target.id==='triforcePrerequisiteModal')closeTriforcePrerequisiteModal();});
@@ -5495,8 +5795,11 @@ function syncOptionalPiece(type, include, flagName, requiredCount=1){
 $('#helpFab').addEventListener('click', ()=>{
   const isSpace=state.gameVariant==='space';
   const earthSky=isEarthSky();
-  $('#helpModal h2').textContent=isSpace?'Rappels Orapa Space':(earthSky?'Rappels Terre et Ciel':'Rappels');
-  $('#helpDirectReachReminder').textContent=isSpace
+  const lab=isDailyLab();
+  $('#helpModal h2').textContent=lab?'Rappels du défi expérimental':(isSpace?'Rappels Orapa Space':(earthSky?'Rappels Terre et Ciel':'Rappels'));
+  $('#helpDirectReachReminder').textContent=lab
+    ? 'Chaque pièce doit pouvoir être atteinte directement par au moins une onde, sans rebond. Les exceptions de placement sont déjà intégrées à cette grille.'
+    : isSpace
     ? 'Chaque astre doit pouvoir être atteint directement par au moins une onde, sans rebond.'
     : (earthSky?'Chaque gemme et chaque astre doivent pouvoir être atteints directement par au moins une onde, sans rebond.':'Chaque gemme doit pouvoir être atteinte directement par au moins une onde, sans rebond.');
   buildMixBoard();
@@ -5509,6 +5812,10 @@ $('#updatesModal').addEventListener('click',event=>{if(event.target.id==='update
 $('#closeVictory').addEventListener('click', ()=> $('#victoryModal').classList.remove('open'));
 $('#victoryModal').addEventListener('click', e=>{ if(e.target.id==='victoryModal') $('#victoryModal').classList.remove('open'); });
 $('#btnVictoryCopyId').addEventListener('click', ()=>{
+  if(isDailyLab()){
+    if(navigator.clipboard)navigator.clipboard.writeText(dailyLabDiagnostic()).then(()=>showToast('Diagnostic de l’expérience copié !'));
+    return;
+  }
   if(state.isDaily){
     const text = `Défi du jour (${formatDailyDate(state.dailyDate)})`;
     if(navigator.clipboard) navigator.clipboard.writeText(text).then(()=> showToast('Copié : '+text));

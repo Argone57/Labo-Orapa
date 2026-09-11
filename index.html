@@ -700,9 +700,33 @@ body.app-loading .app,body.app-loading .account-fab,body.app-loading .rankings-f
     </div></section>
     <section class="choice-zone"><h3 class="choice-zone-title">🪐 Orapa Space</h3><button id="soloChoiceSpace" class="ghost solo-choice-card solo-choice-space"><span class="choice-icon">🚀</span><span class="choice-copy"><strong>Aléatoire</strong><em>Explore l’espace avec les nouvelles planètes et le trou noir optionnel.</em></span></button></section>
     <section class="choice-zone earth-sky-preview" hidden><h3 class="choice-zone-title">🌍☁️ Terre et Ciel</h3><button id="soloChoiceEarthSky" class="ghost solo-choice-card solo-choice-space"><span class="choice-icon">🌗</span><span class="choice-copy"><strong>Aléatoire</strong><em>Explore la mine et l’espace sur une double grille.</em></span></button></section>
+    <section class="choice-zone"><h3 class="choice-zone-title">🧪 Laboratoire</h3><button id="soloChoiceDailyLab" class="ghost solo-choice-card solo-choice-space"><span class="choice-icon">🧬</span><span class="choice-copy"><strong>Défi expérimental</strong><em>Teste les règles spéciales avec un mélange de gemmes et d’astres.</em><small>Sans classement · nouvelles grilles illimitées</small></span></button></section>
     <section class="choice-zone"><h3 class="choice-zone-title">🔑 Grille partagée</h3><button id="soloChoiceById" class="ghost solo-choice-card solo-choice-by-id"><span class="choice-icon">🔑</span><span class="choice-copy"><strong>Par identifiant</strong><em>Rejoins automatiquement une grille Mine, Gemme perdue ou Space.</em></span></button></section>
     <div class="solo-choice-footer"><div id="dailyStatusLine" style="display:none;text-align:center;font-size:.75rem;color:var(--text-faint);margin-top:-4px;"></div><div class="controls" style="justify-content:flex-end;">
       <button id="soloChoiceCancel" class="ghost">Annuler</button></div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="dailyLabRulesModal">
+  <div class="modal">
+    <button class="close-x" id="closeDailyLabRules" aria-label="Fermer">×</button>
+    <h2>🧪 Défi expérimental</h2>
+    <p>Une grille de 5 à 8 pièces mélange les gemmes et les astres. Tu ne disposes que d’une seule proposition.</p>
+    <ul>
+      <li>Deux pièces au maximum par couleur.</li>
+      <li>Au plus un mécanisme noir : corps noir, trou noir ou paire de trous de ver. La paire compte pour deux pièces.</li>
+      <li>Une pièce peut dépasser partiellement de la grille et/ou partager exceptionnellement un côté.</li>
+      <li>Le trou noir et les trous de ver restent entièrement dans la grille et ne participent jamais au contact par un côté.</li>
+      <li>Le grand côté de la grande planète blanche reste entièrement posé contre un bord.</li>
+    </ul>
+    <p>Ce mode n’enregistre aucun score, classement, succès ou export Myludo.</p>
+    <label for="dailyLabReference" style="display:block;margin-top:12px;color:var(--text-dim);font-size:.75rem;">Référence à reproduire (facultatif)</label>
+    <input id="dailyLabReference" autocomplete="off" spellcheck="false" placeholder="LAB1-…" style="margin-top:5px;text-transform:uppercase;font-family:ui-monospace,monospace;">
+    <p id="dailyLabReferenceError" class="account-error" style="display:none;"></p>
+    <div class="controls" style="justify-content:flex-end;margin-top:16px;">
+      <button class="ghost" id="cancelDailyLabRules">Annuler</button>
+      <button class="primary" id="startDailyLab">Lancer l’expérience</button>
     </div>
   </div>
 </div>
@@ -848,6 +872,6 @@ body.app-loading .app,body.app-loading .account-fab,body.app-loading .rankings-f
   </div>
 </div>
 
-<script src="boot.js?v=20260911-0001"></script>
+<script src="boot.js?v=20260911-0002"></script>
 </body>
 </html>
