@@ -3399,8 +3399,14 @@ function pieceVertices(piece){
 function beamEdges(piece){
   if(CONFIG.PIECES[piece.type]?.isRing){
     // Le losange et les deux parties de l'anneau suivent leur silhouette
-    // visible. Les barres parallèles à l'onde restent naturellement ignorées.
-    return pieceCollisionPolygons(piece).flatMap(poly=>poly.map((point,index)=>[point,poly[(index+1)%poly.length]]));
+    // visible. Chaque partie est découpée séparément au bord du plateau :
+    // lorsque le losange dépasse, la coupe forme la même paroi réfléchissante
+    // que pour toutes les autres pièces partiellement hors de la grille.
+    const boardPoly=ensureCCW([{x:0,y:0},{x:COLS,y:0},{x:COLS,y:activeRows()},{x:0,y:activeRows()}]);
+    return pieceCollisionPolygons(piece).flatMap(poly=>{
+      const clipped=clipPolygon(ensureCCW(poly),boardPoly);
+      return clipped.length<2?[]:clipped.map((point,index)=>[point,clipped[(index+1)%clipped.length]]);
+    });
   }
   const boardPoly = ensureCCW([{x:0,y:0},{x:COLS,y:0},{x:COLS,y:activeRows()},{x:0,y:activeRows()}]);
   const clipped = clipPolygon(ensureCCW(pieceVertices(piece)), boardPoly);
