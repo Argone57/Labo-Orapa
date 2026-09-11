@@ -2479,18 +2479,27 @@ function generateDailyLayout(dateKey){
 // donc à reproduire une grille sans créer d'identifiant public ni écrire dans
 // Supabase.
 // ---------------------------------------------------------------------
-const DAILY_LAB_VERSION='LAB1';
+const DAILY_LAB_VERSION='LAB2';
+const DAILY_LAB_REFERENCE_CHARS='ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // sans 0/O/1/I/L
 const DAILY_LAB_REGULAR_TYPES=['red','yellow','blue','white','rhombus','gray','sapphire','spaceWhiteLarge','spaceRedLarge','spaceBlue','spaceYellow','spaceRing'];
 const DAILY_LAB_BLACK_TYPES=['onyx','spaceBlackHole','spaceWormhole'];
 function normalizeDailyLabReference(value){
   const text=String(value||'').trim().toUpperCase().replace(/\s+/g,'');
-  return new RegExp(`^${DAILY_LAB_VERSION}-[0-9A-Z]{6,10}$`).test(text)?text:null;
+  if(/^LAB1-[0-9A-Z]{6,10}$/.test(text))return text;
+  return new RegExp(`^${DAILY_LAB_VERSION}-[${DAILY_LAB_REFERENCE_CHARS}]{6,10}$`).test(text)?text:null;
 }
 function newDailyLabReference(){
-  let value;
-  if(globalThis.crypto?.getRandomValues){const data=new Uint32Array(2);crypto.getRandomValues(data);value=(BigInt(data[0])<<32n)|BigInt(data[1]);}
-  else value=BigInt(Date.now())*1000000n+BigInt(Math.floor(Math.random()*1000000));
-  return `${DAILY_LAB_VERSION}-${value.toString(36).toUpperCase().padStart(10,'0').slice(-10)}`;
+  const bytes=new Uint8Array(10);
+  if(globalThis.crypto?.getRandomValues)crypto.getRandomValues(bytes);
+  else for(let index=0;index<bytes.length;index++)bytes[index]=Math.floor(Math.random()*256);
+  const suffix=Array.from(bytes,value=>DAILY_LAB_REFERENCE_CHARS[value%DAILY_LAB_REFERENCE_CHARS.length]).join('');
+  return `${DAILY_LAB_VERSION}-${suffix}`;
+}
+function dailyLabAuditReference(index){
+  const base=DAILY_LAB_REFERENCE_CHARS.length;
+  let value=Math.max(0,Number(index)||0),suffix='';
+  do{suffix=DAILY_LAB_REFERENCE_CHARS[value%base]+suffix;value=Math.floor(value/base);}while(value>0);
+  return `${DAILY_LAB_VERSION}-${suffix.padStart(6,DAILY_LAB_REFERENCE_CHARS[0])}`;
 }
 function dailyLabColorKeys(type){
   if(type==='gray')return ['gray'];
@@ -2646,7 +2655,17 @@ function tryDailyLabLayout(rngFn,fixedTarget=null){
 function generateDailyLabLayout(reference){
   const normalized=normalizeDailyLabReference(reference);
   if(!normalized)return null;
-  const rngFn=mulberry32(seedFromString(`DAILY-LAB-V1-${normalized}`));
+  const legacy=normalized.startsWith('LAB1-');
+  const rngFn=mulberry32(seedFromString(`${legacy?'DAILY-LAB-V1':'DAILY-LAB-V2'}-${normalized}`));
+  if(legacy){
+    // LAB1 conserve son ancien tirage de taille à chaque essai afin que les
+    // références déjà communiquées restent reproductibles.
+    for(let attempt=0;attempt<180;attempt++){
+      const result=tryDailyLabLayout(rngFn,null);
+      if(result)return result;
+    }
+    return null;
+  }
   let target=5+Math.floor(rngFn()*4);
   for(let attempt=0;attempt<180;attempt++){
     // La taille tirée reste prioritaire pendant plusieurs compositions et
@@ -2706,7 +2725,7 @@ window.runDailyLabGeneratorAudit=function(samples=80){
   const failures=[],counts={partialOut:0,sideTouch:0,both:0,blackBody:0,blackHole:0,wormhole:0,noBlack:0};
   const signature=layout=>JSON.stringify({types:layout?.types,exceptionRule:layout?.exceptionRule,exceptionType:layout?.exceptionType,touchTypes:layout?.touchTypes,pieces:layout?.pieces.map(piece=>({type:piece.type,center:piece.center,rotation:piece.rotation,flipped:piece.flipped}))});
   for(let index=0;index<samples;index++){
-    const reference=`LAB1-${index.toString(36).toUpperCase().padStart(6,'0')}`;
+    const reference=dailyLabAuditReference(index);
     const first=generateDailyLabLayout(reference),second=generateDailyLabLayout(reference);
     if(!first){failures.push({reference,reason:'generation'});continue;}
     if(signature(first)!==signature(second))failures.push({reference,reason:'non-deterministe'});
@@ -3083,8 +3102,9 @@ async function startDailyChallenge(resumeAttempt=null){
   renderAll();
 }
 function dailyLabDiagnostic(){
+  const generatorVersion=String(state.labReference||'').split('-')[0]||DAILY_LAB_VERSION;
   return JSON.stringify({
-    schema:'orapa-daily-lab-v1',reference:state.labReference,
+    schema:`orapa-daily-lab-${generatorVersion.toLowerCase()}`,generatorVersion,reference:state.labReference,
     rules:{exceptionRule:state.labExceptionRule,exceptionType:state.labExceptionType,touchTypes:state.labTouchTypes},
     pieces:(state.secretPieces||[]).map(piece=>({type:piece.type,center:piece.center,rotation:piece.rotation,flipped:piece.flipped})),
     play:{result:state.soloResult,attempts:state.soloAttempts,cost:state.moveCost,rayCount:state.rayCount,coordCount:state.coordCount,history:state.history}
@@ -5658,7 +5678,7 @@ $('#startDailyLab').addEventListener('click',async()=>{
   const error=$('#dailyLabReferenceError');
   error.style.display='none';
   if(raw&&!normalizeDailyLabReference(raw)){
-    error.textContent='Référence invalide. Format attendu : LAB1- suivi de 6 à 10 lettres ou chiffres.';
+    error.textContent='Référence invalide. Formats acceptés : ancienne référence LAB1 ou nouvelle référence LAB2.';
     error.style.display='block';
     return;
   }
