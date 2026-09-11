@@ -2498,8 +2498,8 @@ function dailyLabColorKeys(type){
   const definition=CONFIG.PIECES[type]||{};
   return definition.colorKey?[definition.colorKey]:[];
 }
-function createDailyLabTypePlan(rngFn){
-  const target=5+Math.floor(rngFn()*4);
+function createDailyLabTypePlan(rngFn,fixedTarget=null){
+  const target=fixedTarget==null?5+Math.floor(rngFn()*4):fixedTarget;
   const blackRoll=rngFn();
   const blackType=blackRoll<.55?DAILY_LAB_BLACK_TYPES[Math.floor(rngFn()*DAILY_LAB_BLACK_TYPES.length)]:null;
   const blackEntries=blackType==='spaceWormhole'?['spaceWormhole','spaceWormhole']:(blackType?[blackType]:[]);
@@ -2583,8 +2583,8 @@ function dailyLabPlace(entry,placed,rngFn,mode='inside',allowSideWith=null){
   }
   return null;
 }
-function tryDailyLabLayout(rngFn){
-  const types=createDailyLabTypePlan(rngFn);
+function tryDailyLabLayout(rngFn,fixedTarget=null){
+  const types=createDailyLabTypePlan(rngFn,fixedTarget);
   if(!types)return null;
   const entries=types.map((type,index)=>({type,key:`lab_${index}_${type}`}));
   const modes=['partialOut','sideTouch','both'];
@@ -2647,8 +2647,13 @@ function generateDailyLabLayout(reference){
   const normalized=normalizeDailyLabReference(reference);
   if(!normalized)return null;
   const rngFn=mulberry32(seedFromString(`DAILY-LAB-V1-${normalized}`));
+  let target=5+Math.floor(rngFn()*4);
   for(let attempt=0;attempt<180;attempt++){
-    const result=tryDailyLabLayout(rngFn);
+    // La taille tirée reste prioritaire pendant plusieurs compositions et
+    // placements. Cela évite qu'une grille dense soit aussitôt remplacée par
+    // une plus petite au premier échec, tout en conservant un repli aléatoire.
+    if(attempt>0&&attempt%30===0)target=5+Math.floor(rngFn()*4);
+    const result=tryDailyLabLayout(rngFn,target);
     if(result)return result;
   }
   return null;
@@ -5505,7 +5510,7 @@ function renderDailyStatusLine(status){
   if(status?.alreadyPlayed){
     const abandoned=status.attempt?.result==='abandoned';
     if(status.canReview&&!abandoned)button.classList.add('review-available');
-    detail.textContent=abandoned?'Tentative abandonnée':(status.canReview?'Revoir la grille':'Défi déjà terminé');
+    detail.textContent=abandoned?'Tentative abandonnée':(status.canReview?'Revoir la grille':'Déjà joué');
     line.textContent=abandoned
       ? 'La tentative du jour a été abandonnée — reviens demain.'
       : `Défi du jour déjà joué aujourd'hui (${status.attempt.result==='win'?'réussi 🏆':'raté 💥'}) — reviens demain.`;
