@@ -82,6 +82,7 @@ const EARTH_SKY_RIGHT_LABELS=Array.from({length:EARTH_SKY_ROWS},(_,i)=>String(11
 const EARTH_SKY_BOTTOM_LABELS=Array.from({length:COLS},(_,i)=>String.fromCharCode(81+i)); // Q..Z
 function isEarthSky(){return state.gameVariant==='earthSky';}
 function isDailyLab(){return state.gameVariant==='dailyLab';}
+function isDailyRemix(){return state.isDaily&&state.dailyKind==='remix';}
 function activeRows(){return isEarthSky()?EARTH_SKY_ROWS:ROWS;}
 function activeBottomLabels(){return isEarthSky()?EARTH_SKY_BOTTOM_LABELS:BOTTOM_LABELS;}
 function activeLeftLabels(){return isEarthSky()?EARTH_SKY_LEFT_LABELS:LEFT_LABELS;}
@@ -189,6 +190,7 @@ let state = {
   selectedMissingType:null,
   placementBonus:false,
   dailyDate:null,
+  dailyKind:null,
   labReference:null,
   labTypes:[],
   labExceptionRule:null,
@@ -341,11 +343,11 @@ function registerSoloAction(kind){
 }
 let activeAttempt=null,attemptSyncPromise=null,activeAttemptRefreshIssue=null,activeAttemptRefreshStatus=null;
 const pendingAttemptActions=[];
-function attemptKindForState(){return state.isDaily?'daily':(isEarthSky()?'earthSky':state.gameVariant||'classic');}
+function attemptKindForState(){return isDailyRemix()?'dailyRemix':(state.isDaily?'daily':(isEarthSky()?'earthSky':state.gameVariant||'classic'));}
 function attemptReferenceForState(){return state.isDaily?state.dailyDate:state.gridId;}
 function attemptContextForState(){
   return state.isDaily
-    ? {option_mask:(state.includeGray?1:0)+(state.includeOnyx?2:0)+(state.includeSapphire?4:0)}
+    ? (isDailyRemix()?dailyRemixContextFromState():{option_mask:(state.includeGray?1:0)+(state.includeOnyx?2:0)+(state.includeSapphire?4:0)})
     : (state.gameVariant==='space'
       ? {has_black_hole:!!state.includeBlackHole,has_wormhole:!!state.includeWormhole}
       : (isEarthSky()?{mine_on_top:state.earthSkyMineOnTop!==false,option_flags:earthSkyOptionFlags()}:{}));
@@ -395,11 +397,12 @@ async function prepareNewActiveAttempt(target,ranked=true){
   let current=activeAttempt;
   if(!current)try{current=await fetchActiveAttempt();}catch(error){showErrorToast('Impossible de vérifier la partie en cours. Vérifie ta connexion puis réessaie.');return {ok:false};}
   if(current&&!attemptMatches(target,current)){
+    const currentIsDisplayed=attemptMatches({kind:attemptKindForState(),reference:attemptReferenceForState()},current);
     const choice=await activeAttemptChoice(`Une partie ${activeAttemptSentenceLabel(current)} est en cours. Celle-ci sera perdue si vous démarrez une nouvelle grille.`);
     if(choice!=='abandon')return {ok:false,resume:true};
     try{if(!await abandonServerAttempt(current))return {ok:false};}
     catch(error){showErrorToast('Impossible d’abandonner la partie en cours. Vérifie ta connexion puis réessaie.');return {ok:false};}
-    markLocalAttemptAbandoned();
+    if(currentIsDisplayed)markLocalAttemptAbandoned();
   }
   if(!ranked)return {ok:true,attempt:null};
   try{
@@ -440,9 +443,9 @@ async function abandonCurrentLocalAttempt(){
   }catch(error){showErrorToast('Impossible d’abandonner la partie en cours. Vérifie ta connexion puis réessaie.');return false;}
 }
 function activeAttemptTypeLabel(attempt){
-  return attempt?.game_kind==='daily'?'Défi du jour':attempt?.game_kind==='lost'?'Gemme perdue':attempt?.game_kind==='space'?'Orapa Space':attempt?.game_kind==='earthSky'?'Terre et Ciel':'Orapa Mine';
+  return attempt?.game_kind==='dailyRemix'?'Défi du jour remix':attempt?.game_kind==='daily'?'Défi du jour classique':attempt?.game_kind==='lost'?'Gemme perdue':attempt?.game_kind==='space'?'Orapa Space':attempt?.game_kind==='earthSky'?'Terre et Ciel':'Orapa Mine';
 }
-function activeAttemptSentenceLabel(attempt){return attempt?.game_kind==='daily'?'du Défi du jour':attempt?.game_kind==='lost'?'de Gemme perdue':attempt?.game_kind==='space'?'d’Orapa Space':attempt?.game_kind==='earthSky'?'de Terre et Ciel':'d’Orapa Mine';}
+function activeAttemptSentenceLabel(attempt){return attempt?.game_kind==='dailyRemix'?'du Défi du jour remix':attempt?.game_kind==='daily'?'du Défi du jour classique':attempt?.game_kind==='lost'?'de Gemme perdue':attempt?.game_kind==='space'?'d’Orapa Space':attempt?.game_kind==='earthSky'?'de Terre et Ciel':'d’Orapa Mine';}
 function queueActiveAttemptAction(kind){
   if(!activeAttempt?.attempt_id||state.mode!=='solo'||state.soloOver||(!state.gridRanked&&!state.isDaily))return;
   pendingAttemptActions.push({kind,actionId:crypto.randomUUID(),attemptId:activeAttempt.attempt_id,progress:activeAttemptProgress()});
@@ -485,7 +488,7 @@ async function refreshCurrentActiveAttemptProgress(render=false){
     if(!attemptMatches(target,serverAttempt)){
       activeAttemptRefreshIssue='missing';
       if(state.isDaily){
-        const status=await refreshDailyStatusFromSupabase(true);
+        const status=await refreshDailyStatusFromSupabase(true,state.dailyKind||'classic');
         if(status.alreadyPlayed){activeAttemptRefreshIssue='completed_elsewhere';activeAttemptRefreshStatus=status;}
       }
       return false;
@@ -497,7 +500,7 @@ async function refreshCurrentActiveAttemptProgress(render=false){
       if(!attemptMatches(target,serverAttempt)){
         activeAttemptRefreshIssue='missing';
         if(state.isDaily){
-          const status=await refreshDailyStatusFromSupabase(true);
+          const status=await refreshDailyStatusFromSupabase(true,state.dailyKind||'classic');
           if(status.alreadyPlayed){activeAttemptRefreshIssue='completed_elsewhere';activeAttemptRefreshStatus=status;}
         }
         return false;
@@ -516,7 +519,7 @@ async function refreshCurrentActiveAttemptProgress(render=false){
   }
 }
 async function leaveCompletedDailyAttempt(message){
-  const status=activeAttemptRefreshStatus||dailyStatusToday();
+  const status=activeAttemptRefreshStatus||dailyStatusToday(state.dailyKind||'classic');
   const result=status.attempt?.result||'lose';
   activeAttempt=null;
   state.soloOver=true;
@@ -535,7 +538,7 @@ function formatShareText(e){
     ? formatDailyDate(e.dailyDate)
     : new Date(e.date).toLocaleDateString('fr-FR');
   if(e.isDaily){
-    return `Orapa Mine · Défi du jour · ${d}\n${e.name||'Anonyme'} - ${e.success===false?'😞':'🏅'} - ${e.cost} pts (${e.rayCount||0}🔦/${e.coordCount||0}📍)\nhttps://argone57.github.io/Orapa-Mine/`;
+    return `Orapa Mine · Défi du jour ${e.dailyKind==='remix'?'remix':'classique'} · ${d}\n${e.name||'Anonyme'} - ${e.success===false?'😞':'🏅'} - ${e.cost} pts (${e.rayCount||0}🔦/${e.coordCount||0}📍)\nhttps://argone57.github.io/Orapa-Mine/`;
   }
   const sharedGridId=publicGridId(e.gridId)||'?';
   const decoded = e.gridId ? decodeGridId(e.gridId) : null;
@@ -566,10 +569,14 @@ function gridChallengeText(gridId){
 const DAILY_ATTEMPT_KEY = `${LOCAL_STORAGE_PREFIX}DailyAttemptV1`;
 const DAILY_RANKINGS_KEY = `${LOCAL_STORAGE_PREFIX}DailyRankingsV1`;
 const DAILY_FINAL_SNAPSHOTS_KEY = `${LOCAL_STORAGE_PREFIX}DailyFinalSnapshotsV1`;
+const DAILY_REMIX_ATTEMPT_KEY = `${LOCAL_STORAGE_PREFIX}DailyRemixAttemptV1`;
+const DAILY_REMIX_RANKINGS_KEY = `${LOCAL_STORAGE_PREFIX}DailyRemixRankingsV1`;
+const DAILY_REMIX_FINAL_SNAPSHOTS_KEY = `${LOCAL_STORAGE_PREFIX}DailyRemixFinalSnapshotsV1`;
 // Instantané local des mises à jour déjà consultées. Il est volontairement
 // indépendant du compte : chaque navigateur garde sa propre dernière visite.
 const UPDATES_READ_KEY = `${LOCAL_STORAGE_PREFIX}UpdatesReadV2`;
 const GAME_UPDATES = [
+  {id:'daily-remix-20260912',date:'12/09/2026',title:'Nouveau mode de jeu : Défi du jour remix'},
   {id:'myludo2-20260910',date:'10/09/2026',title:'L\'extension Firefox est en ligne.'},
   {id:'myludo-20260907',date:'07/09/2026',title:'Export Myludo possible via l\'extension Chrome et Firefox Orapa2Myludo, direction vos options (encore en attente de validation sur Firefox)'},
   {id:'wormhole-20260901',date:'01/09/2026',title:'Trou de ver pour Space et Terre et Ciel'},
@@ -611,34 +618,38 @@ function openUpdatesModal(history=false){
 }
 let remoteDailyStatusCache = null;
 let remoteDailyStatusPromise = null;
-function loadDailyAttempt(){
-  try{ const raw = localStorage.getItem(DAILY_ATTEMPT_KEY); return raw ? JSON.parse(raw) : null; }catch(e){ return null; }
+let remoteDailyRemixStatusCache = null;
+let remoteDailyRemixStatusPromise = null;
+let dailyActiveAttemptCache={classic:null,remix:null};
+function dailyStorageKey(kind,classicKey,remixKey){return kind==='remix'?remixKey:classicKey;}
+function loadDailyAttempt(kind='classic'){
+  try{ const raw = localStorage.getItem(dailyStorageKey(kind,DAILY_ATTEMPT_KEY,DAILY_REMIX_ATTEMPT_KEY)); return raw ? JSON.parse(raw) : null; }catch(e){ return null; }
 }
-function saveDailyAttempt(a){ try{ localStorage.setItem(DAILY_ATTEMPT_KEY, JSON.stringify(a)); }catch(e){} }
+function saveDailyAttempt(a,kind=state.dailyKind||'classic'){ try{ localStorage.setItem(dailyStorageKey(kind,DAILY_ATTEMPT_KEY,DAILY_REMIX_ATTEMPT_KEY), JSON.stringify(a)); }catch(e){} }
 function dailyAttemptAccountKey(){ return String(currentPlayerAccount?.id || currentPlayerAccount?.display_name || 'local'); }
 function dailySnapshotAccountKey(){
   return String(currentPlayerAccount?.id || currentPlayerAccount?.display_name || 'local');
 }
-function dailySnapshotKey(dateKey){ return `${dailySnapshotAccountKey()}::${dateKey}`; }
-function loadDailyFinalSnapshots(){
-  try{ const raw=localStorage.getItem(DAILY_FINAL_SNAPSHOTS_KEY); return raw?JSON.parse(raw):{}; }catch(e){ return {}; }
+function dailySnapshotKey(dateKey,kind='classic'){ return kind==='remix'?`${dailySnapshotAccountKey()}::remix::${dateKey}`:`${dailySnapshotAccountKey()}::${dateKey}`; }
+function loadDailyFinalSnapshots(kind='classic'){
+  try{ const raw=localStorage.getItem(dailyStorageKey(kind,DAILY_FINAL_SNAPSHOTS_KEY,DAILY_REMIX_FINAL_SNAPSHOTS_KEY)); return raw?JSON.parse(raw):{}; }catch(e){ return {}; }
 }
 function saveDailyFinalSnapshot(){
   if(!state.isDaily || !state.dailyDate || !state.soloOver) return;
   try{
-    const snapshots=loadDailyFinalSnapshots();
-    snapshots[dailySnapshotKey(state.dailyDate)]={state:JSON.parse(JSON.stringify(state)),lastScoreResult:JSON.parse(JSON.stringify(lastScoreResult))};
-    localStorage.setItem(DAILY_FINAL_SNAPSHOTS_KEY,JSON.stringify(snapshots));
+    const kind=state.dailyKind||'classic',snapshots=loadDailyFinalSnapshots(kind);
+    snapshots[dailySnapshotKey(state.dailyDate,kind)]={state:JSON.parse(JSON.stringify(state)),lastScoreResult:JSON.parse(JSON.stringify(lastScoreResult))};
+    localStorage.setItem(dailyStorageKey(kind,DAILY_FINAL_SNAPSHOTS_KEY,DAILY_REMIX_FINAL_SNAPSHOTS_KEY),JSON.stringify(snapshots));
   }catch(e){}
 }
-function loadDailyFinalSnapshot(dateKey){
-  const snapshot=loadDailyFinalSnapshots()[dailySnapshotKey(dateKey)];
+function loadDailyFinalSnapshot(dateKey,kind='classic'){
+  const snapshot=loadDailyFinalSnapshots(kind)[dailySnapshotKey(dateKey,kind)];
   return snapshot?.state?.isDaily && snapshot.state.soloOver ? snapshot : null;
 }
-function loadDailyBoards(){
-  try{ const raw = localStorage.getItem(DAILY_RANKINGS_KEY); return raw ? JSON.parse(raw) : {}; }catch(e){ return {}; }
+function loadDailyBoards(kind='classic'){
+  try{ const raw = localStorage.getItem(dailyStorageKey(kind,DAILY_RANKINGS_KEY,DAILY_REMIX_RANKINGS_KEY)); return raw ? JSON.parse(raw) : {}; }catch(e){ return {}; }
 }
-function saveDailyBoards(b){ try{ localStorage.setItem(DAILY_RANKINGS_KEY, JSON.stringify(b)); }catch(e){} }
+function saveDailyBoards(b,kind='classic'){ try{ localStorage.setItem(dailyStorageKey(kind,DAILY_RANKINGS_KEY,DAILY_REMIX_RANKINGS_KEY), JSON.stringify(b)); }catch(e){} }
 // Ne garde que le défi d'aujourd'hui et celui d'hier (verrouillé, visible jusqu'à ce soir 23h59).
 function pruneDailyBoards(boards){
   const todayKey = parisDateKey();
@@ -646,8 +657,8 @@ function pruneDailyBoards(boards){
   Object.keys(boards).forEach(k=>{ if(k!==todayKey && k!==yesterdayKey) delete boards[k]; });
   return boards;
 }
-function recordDailyScore(name, dateKey, success, elapsedMsOverride){
-  const boards = pruneDailyBoards(loadDailyBoards());
+function recordDailyScore(name, dateKey, success, elapsedMsOverride,kind=state.dailyKind||'classic'){
+  const boards = pruneDailyBoards(loadDailyBoards(kind));
   if(!boards[dateKey]) boards[dateKey] = [];
   const elapsedMs = elapsedMsOverride!=null ? elapsedMsOverride : (state.firstActionTime ? (Date.now() - state.firstActionTime) : 0);
   const entry = {
@@ -660,7 +671,7 @@ function recordDailyScore(name, dateKey, success, elapsedMsOverride){
   };
   boards[dateKey].push(entry);
   boards[dateKey].sort((a,b)=> (b.success-a.success) || (a.cost-b.cost) || (a.timeMs-b.timeMs));
-  saveDailyBoards(boards);
+  saveDailyBoards(boards,kind);
   const rank = boards[dateKey].indexOf(entry) + 1;
   return { entry, rank, board: boards[dateKey] };
 }
@@ -680,7 +691,7 @@ let currentPlayerAccount = loadPlayerAccount();
 let scoreIdentityResolver = null;
 const DEFAULT_MYLUDO_PREFERENCES=Object.freeze({
   player_mode:'default',custom_player_name:'',challenge_game_id:96014,lost_game_id:96014,
-  daily_game_id:96014,earth_sky_game_id:96014,fill_score:false,
+  daily_game_id:96014,daily_remix_game_id:96014,earth_sky_game_id:96014,fill_score:false,
   location_mode:'default',custom_location:'',exclude_from_statistics:false,auto_submit:false,
   duplicate_detection:true
 });
@@ -693,7 +704,7 @@ function normalizeMyludoPreferences(value={}){
     player_mode:value.player_mode==='custom'?'custom':'default',
     custom_player_name:String(value.custom_player_name||'').trim().slice(0,80),
     challenge_game_id:mineGameId(value.challenge_game_id),lost_game_id:mineGameId(value.lost_game_id),
-    daily_game_id:mineGameId(value.daily_game_id),earth_sky_game_id:earthSkyGameId(value.earth_sky_game_id),
+    daily_game_id:mineGameId(value.daily_game_id),daily_remix_game_id:earthSkyGameId(value.daily_remix_game_id),earth_sky_game_id:earthSkyGameId(value.earth_sky_game_id),
     fill_score:!!value.fill_score,location_mode:value.location_mode==='custom'?'custom':'default',
     custom_location:String(value.custom_location||'').trim().slice(0,80),
     exclude_from_statistics:!!value.exclude_from_statistics,auto_submit:!!value.auto_submit,
@@ -878,16 +889,20 @@ async function loadMyAccountStats(){
   if(!currentPlayerAccount) return null;
   return supabaseRpc('orapa_my_stats',{p_session_token:currentPlayerAccount.session_token});
 }
-function accountStatisticsHtml(st,gridStats,lostStats,spaceStats,earthSkyStats,achievementRows){
+function dailyAccountStatisticsPanel(st,id,hidden=false){
   const rate=st?.participations?Math.round((st.wins||0)/st.participations*100):0;
-  const visibleUnlocked=(achievementRows||[]).filter(row=>row.unlocked&&row.visibility!=='hidden');
-  return `<h3 class="account-section-title">📅 Défis du jour</h3><div class="account-stats-grid">
+  return `<div id="${id}" class="account-daily-stats-panel"${hidden?' hidden':''}><div class="account-stats-grid">
     <div class="account-stat"><b>${st?.participations||0}</b>défis</div>
     <div class="account-stat"><b>${st?.wins||0}</b>réussites</div>
     <div class="account-stat"><b>${rate}%</b>réussite</div>
     <div class="account-stat"><b>${st?.best_score==null?'—':st.best_score+' pts'}</b>meilleur score</div>
     <div class="account-stat"><b>${st?.best_time_ms==null?'—':formatDuration(st.best_time_ms)}</b>meilleur temps</div>
-  </div>
+  </div></div>`;
+}
+function accountStatisticsHtml(st,remixStats,gridStats,lostStats,spaceStats,earthSkyStats,achievementRows){
+  const visibleUnlocked=(achievementRows||[]).filter(row=>row.unlocked&&row.visibility!=='hidden');
+  return `<h3 class="account-section-title">📅 Défis du jour</h3><div class="daily-kind-tabs"><button id="accountStatsDailyClassic" class="ghost active">Classique</button><button id="accountStatsDailyRemix" class="ghost">Remix</button></div>
+  ${dailyAccountStatisticsPanel(st,'accountDailyClassicStats')}${dailyAccountStatisticsPanel(remixStats,'accountDailyRemixStats',true)}
   ${gridStats?`<h3 class="account-section-title">🧩 Grilles classiques</h3><div class="account-stats-grid">
     <div class="account-stat"><b>${gridStats.played||0}</b>jouées</div>
     <div class="account-stat"><b>${gridStats.played?Math.round((gridStats.wins||0)/gridStats.played*100):0}%</b>réussite</div>
@@ -908,15 +923,25 @@ async function openAccountStatistics(){
   content.innerHTML='<div class="history-empty">Chargement des statistiques…</div>';
   try{
     await refreshAchievements();
-    const [st,gridStats,lostStats,spaceStats,earthSkyStats,achievementRows]=await Promise.all([
+    const [st,remixStats,gridStats,lostStats,spaceStats,earthSkyStats,achievementRows]=await Promise.all([
       loadMyAccountStats(),
+      supabaseRpc('orapa_my_daily_remix_stats',{p_session_token:currentPlayerAccount.session_token}).catch(()=>null),
       supabaseRpc('orapa_my_grid_stats',{p_session_token:currentPlayerAccount.session_token}).catch(()=>null),
       supabaseRpc('orapa_my_lost_stats',{p_session_token:currentPlayerAccount.session_token}).catch(()=>null),
       supabaseRpc('orapa_my_space_stats',{p_session_token:currentPlayerAccount.session_token}).catch(()=>null),
       supabaseRpc('orapa_my_earth_sky_stats',{p_session_token:currentPlayerAccount.session_token}).catch(()=>null),
       getAchievementCatalog(true).catch(()=>[])
     ]);
-    content.innerHTML=accountStatisticsHtml(st,gridStats,lostStats,spaceStats,earthSkyStats,achievementRows);
+    content.innerHTML=accountStatisticsHtml(st,remixStats,gridStats,lostStats,spaceStats,earthSkyStats,achievementRows);
+    const selectDailyStats=kind=>{
+      const remix=kind==='remix';
+      $('#accountStatsDailyClassic').classList.toggle('active',!remix);
+      $('#accountStatsDailyRemix').classList.toggle('active',remix);
+      $('#accountDailyClassicStats').hidden=remix;
+      $('#accountDailyRemixStats').hidden=!remix;
+    };
+    $('#accountStatsDailyClassic').onclick=()=>selectDailyStats('classic');
+    $('#accountStatsDailyRemix').onclick=()=>selectDailyStats('remix');
   }catch(e){content.innerHTML=`<div class="account-error" style="display:block">${escapeHtml(e.message)}</div>`;}
 }
 function showAccountLogin(){
@@ -1031,7 +1056,8 @@ async function openMyludoOptions(){
       <section class="myludo-settings-section"><h3>Choix de la fiche Myludo</h3>
         <div class="myludo-setting-row"><label for="myludoChallengeGame">Orapa Mine</label><select id="myludoChallengeGame" class="ranking-select">${myludoMineGameOptions(pref.challenge_game_id)}</select></div>
         <div class="myludo-setting-row"><label for="myludoSpaceGame">Orapa Space</label><select id="myludoSpaceGame" class="ranking-select"><option value="89980">Orapa Space 🇬🇧 (89980)</option></select></div>
-        <div class="myludo-setting-row"><label for="myludoDailyGame">Défi du jour</label><select id="myludoDailyGame" class="ranking-select">${myludoMineGameOptions(pref.daily_game_id)}</select></div>
+        <div class="myludo-setting-row"><label for="myludoDailyGame">Défi du jour classique</label><select id="myludoDailyGame" class="ranking-select">${myludoMineGameOptions(pref.daily_game_id)}</select></div>
+        <div class="myludo-setting-row"><label for="myludoDailyRemixGame">Défi du jour remix</label><select id="myludoDailyRemixGame" class="ranking-select">${myludoEarthSkyGameOptions(pref.daily_remix_game_id)}</select></div>
         <div class="myludo-setting-row"><label for="myludoLostGame">Gemme perdue</label><select id="myludoLostGame" class="ranking-select">${myludoMineGameOptions(pref.lost_game_id)}</select></div>
         <div class="myludo-setting-row"><label for="myludoEarthSkyGame">Terre et Ciel</label><select id="myludoEarthSkyGame" class="ranking-select">${myludoEarthSkyGameOptions(pref.earth_sky_game_id)}</select></div>
       </section>
@@ -1050,7 +1076,7 @@ async function openMyludoOptions(){
     $('#myludoPlayerMode').onchange=updateCustomFields;$('#myludoLocationMode').onchange=updateCustomFields;updateCustomFields();
     $('#cancelMyludoOptions').onclick=closeMyludoOptions;
     $('#saveMyludoOptions').onclick=async()=>{
-      const next=normalizeMyludoPreferences({player_mode:$('#myludoPlayerMode').value,custom_player_name:$('#myludoPlayerName').value,challenge_game_id:$('#myludoChallengeGame').value,lost_game_id:$('#myludoLostGame').value,daily_game_id:$('#myludoDailyGame').value,earth_sky_game_id:$('#myludoEarthSkyGame').value,fill_score:$('#myludoScoreMode').value==='fill',location_mode:$('#myludoLocationMode').value,custom_location:$('#myludoLocation').value,exclude_from_statistics:$('#myludoExcludeStats').value==='yes',auto_submit:$('#myludoSubmitMode').value==='automatic',duplicate_detection:$('#myludoDuplicateDetection').value==='yes'});
+      const next=normalizeMyludoPreferences({player_mode:$('#myludoPlayerMode').value,custom_player_name:$('#myludoPlayerName').value,challenge_game_id:$('#myludoChallengeGame').value,lost_game_id:$('#myludoLostGame').value,daily_game_id:$('#myludoDailyGame').value,daily_remix_game_id:$('#myludoDailyRemixGame').value,earth_sky_game_id:$('#myludoEarthSkyGame').value,fill_score:$('#myludoScoreMode').value==='fill',location_mode:$('#myludoLocationMode').value,custom_location:$('#myludoLocation').value,exclude_from_statistics:$('#myludoExcludeStats').value==='yes',auto_submit:$('#myludoSubmitMode').value==='automatic',duplicate_detection:$('#myludoDuplicateDetection').value==='yes'});
       if(next.player_mode==='custom'&&!next.custom_player_name){accountError('#myludoOptionsError','Saisis le nom personnalisé à utiliser sur Myludo.');return;}
       if(next.location_mode==='custom'&&!next.custom_location){accountError('#myludoOptionsError','Saisis le lieu personnalisé à utiliser sur Myludo.');return;}
       const button=$('#saveMyludoOptions');button.disabled=true;
@@ -1294,39 +1320,32 @@ async function openMyEarthSkyGridHistory(){
   };
   try{bindTabs();bindHistoryOptionFilters('accountHistoryEarthSkyFilters',optionFilters,()=>render());$('#accountHistoryEarthSkySort').onchange=()=>render();$('#accountHistoryEarthSkyReverse').onclick=()=>{list.reverse=!list.reverse;$('#accountHistoryEarthSkyReverse').textContent=list.reverse?'↑':'↓';render();};await render();}catch(error){$('#gridDataContent').innerHTML=`<div class="account-error" style="display:block">${escapeHtml(error.message)}</div>`;}
 }
-async function openMyDailyHistory(){
-  if(!currentPlayerAccount) return;
-  openGridDataShell('📅 Historique des défis','<p>Défis du jour joués avec ce compte, chargés par 10.</p>',true);
+async function openMyDailyHistory(kind='classic'){
+  if(!currentPlayerAccount)return;
+  kind=kind==='remix'?'remix':'classic';
+  openGridDataShell('📅 Historique des défis',`<div class="daily-kind-tabs"><button id="accountDailyClassic" class="ghost${kind==='classic'?' active':''}">Classique</button><button id="accountDailyRemix" class="ghost${kind==='remix'?' active':''}">Remix</button></div><p>Défis du jour ${kind==='remix'?'remix':'classiques'} joués avec ce compte, chargés par 10.</p>`,true);
+  $('#accountDailyClassic').onclick=()=>openMyDailyHistory('classic');$('#accountDailyRemix').onclick=()=>openMyDailyHistory('remix');
   const dailyState={rows:[],hasMore:true};
-  const loadPage=async()=>{
-    const page=await supabaseRpc('orapa_my_daily_history',{p_session_token:currentPlayerAccount.session_token,p_limit:11,p_offset:dailyState.rows.length});
-    const pageRows=Array.isArray(page)?page:[];
-    dailyState.rows.push(...pageRows.slice(0,10));
-    dailyState.hasMore=pageRows.length>10;
-  };
+  const loadPage=async()=>{const page=await supabaseRpc(kind==='remix'?'orapa_my_daily_remix_history':'orapa_my_daily_history',{p_session_token:currentPlayerAccount.session_token,p_limit:11,p_offset:dailyState.rows.length});const pageRows=Array.isArray(page)?page:[];dailyState.rows.push(...pageRows.slice(0,10));dailyState.hasMore=pageRows.length>10;};
   try{
     await loadPage();
-    if(!dailyState.rows.length){ $('#gridDataContent').innerHTML='<div class="history-empty">Aucun défi du jour joué avec ce compte.</div>'; return; }
     const renderDaily=()=>{
       const rows=dailyState.rows;
       const rowsHtml=rows.map((row,i)=>{
-        const key=`daily-history:${row.id}`,expanded=expandedScores.has(key);
-        const dateKey=String(row.daily_date).slice(0,10);
-        const layout=generateDailyLayout(dateKey);
-        const gems=layout?gemFlagsEmojiLine(layout.flags.gray,layout.flags.onyx,layout.flags.sapphire):'';
+        const key=`daily-${kind}-history:${row.id}`,expanded=expandedScores.has(key),dateKey=String(row.daily_date).slice(0,10);
+        const layout=kind==='remix'?generateDailyLabLayout(dailyRemixReference(dateKey)):generateDailyLayout(dateKey);
+        const pieces=kind==='remix'?remixPieceTypesHtml(Array.isArray(row.piece_types)&&row.piece_types.length?row.piece_types:(layout?.types||[]),16):(layout?gemFlagsEmojiLine(layout.flags.gray,layout.flags.onyx,layout.flags.sapphire):'');
         const outcome=row.abandoned?'Tentative abandonnée · ':'';
-        const myludoAttribute=row.abandoned?'':myludoHistoryEntryAttribute(row,'classic',{isDaily:true,dailyDate:dateKey,includeGray:!!layout?.flags?.gray,includeOnyx:!!layout?.flags?.onyx,includeSapphire:!!layout?.flags?.sapphire});
-        return `<div class="ranking-row account-daily-row${expanded?' expanded':''}" data-daily-index="${i}"><div class="ranking-row-top"><span class="account-result-position"><span class="solo-result-mark ${row.success?'win':'fail'}">${row.success?'✓':'✕'}</span><b>#${row.rank}</b></span><span class="ranking-date">${shortFrenchDate(dateKey)}</span><span class="ranking-gems">${gems}</span><span class="ranking-points">${row.cost} pts</span></div>${expanded?`<div class="ranking-row-detail">${outcome}${row.ray_count} 🔦 + ${row.coord_count} 📍 · ${formatDuration(row.time_ms)}</div><div class="controls ranking-compact-actions daily-history-actions"${myludoAttribute}><button class="daily-history-summary ghost" data-daily-index="${i}">📋 Résumé</button></div>`:''}</div>`;
+        const extra=kind==='remix'?{isDaily:true,dailyDate:dateKey,dailyKind:'remix',includeGray:!!layout?.types?.includes('gray'),includeOnyx:!!layout?.types?.includes('onyx'),includeSapphire:!!layout?.types?.includes('sapphire'),includeBlackHole:!!layout?.types?.includes('spaceBlackHole'),includeWormhole:!!layout?.types?.includes('spaceWormhole')}:{isDaily:true,dailyDate:dateKey,dailyKind:'classic',includeGray:!!layout?.flags?.gray,includeOnyx:!!layout?.flags?.onyx,includeSapphire:!!layout?.flags?.sapphire};
+        const myludoAttribute=row.abandoned?'':myludoHistoryEntryAttribute(row,kind==='remix'?'dailyLab':'classic',extra);
+        return `<div class="ranking-row account-daily-row${expanded?' expanded':''}" data-daily-index="${i}"><div class="ranking-row-top"><span class="account-result-position"><span class="solo-result-mark ${row.success?'win':'fail'}">${row.success?'✓':'✕'}</span><b>#${row.rank}</b></span><span class="ranking-date">${shortFrenchDate(dateKey)}</span><span class="ranking-gems">${pieces}</span><span class="ranking-points">${row.cost} pts</span></div>${expanded?`<div class="ranking-row-detail">${outcome}${row.ray_count} 🔦 + ${row.coord_count} 📍 · ${formatDuration(row.time_ms)}</div><div class="controls ranking-compact-actions daily-history-actions"${myludoAttribute}><button class="daily-history-summary ghost" data-daily-index="${i}">📋 Résumé</button></div>`:''}</div>`;
       }).join('');
-      const more=dailyState.hasMore?'<button id="dailyHistoryLoadMore" class="ghost solo-load-more">Afficher les résultats suivants</button>':'';
-      $('#gridDataContent').innerHTML=rowsHtml+more;
-      $('#gridDataContent').querySelectorAll('.account-daily-row').forEach(el=>el.onclick=ev=>{if(ev.target.closest('button'))return;const row=rows[Number(el.dataset.dailyIndex)],key=`daily-history:${row.id}`;expandedScores.has(key)?expandedScores.delete(key):expandedScores.add(key);renderDaily();});
-      $('#gridDataContent').querySelectorAll('.daily-history-summary').forEach(btn=>btn.onclick=()=>{const row=rows[Number(btn.dataset.dailyIndex)];navigator.clipboard?.writeText(formatShareText({name:currentPlayerAccount.display_name,cost:row.cost,rayCount:row.ray_count,coordCount:row.coord_count,timeMs:row.time_ms,dailyDate:String(row.daily_date).slice(0,10),isDaily:true,date:new Date(row.played_at).getTime(),success:row.success})).then(()=>showToast('Résumé copié !'));});
-      const loadMore=$('#dailyHistoryLoadMore');
-      if(loadMore) loadMore.onclick=async()=>{loadMore.disabled=true;loadMore.textContent='Chargement…';try{await loadPage();renderDaily();}catch(e){showErrorToast(`Chargement impossible : ${e.message}`);loadMore.disabled=false;loadMore.textContent='Afficher les résultats suivants';}};
-    };
-    renderDaily();
-  }catch(e){ $('#gridDataContent').innerHTML=`<div class="account-error" style="display:block">${escapeHtml(e.message)}</div>`; }
+      $('#gridDataContent').innerHTML=(rowsHtml||`<div class="history-empty">Aucun défi du jour ${kind==='remix'?'remix':'classique'} joué avec ce compte.</div>`)+(dailyState.hasMore?'<button id="dailyHistoryLoadMore" class="ghost solo-load-more">Afficher les résultats suivants</button>':'');
+      $('#gridDataContent').querySelectorAll('.account-daily-row').forEach(el=>el.onclick=ev=>{if(ev.target.closest('button'))return;const row=rows[Number(el.dataset.dailyIndex)],key=`daily-${kind}-history:${row.id}`;expandedScores.has(key)?expandedScores.delete(key):expandedScores.add(key);renderDaily();});
+      $('#gridDataContent').querySelectorAll('.daily-history-summary').forEach(btn=>btn.onclick=()=>{const row=rows[Number(btn.dataset.dailyIndex)];navigator.clipboard?.writeText(formatShareText({name:currentPlayerAccount.display_name,cost:row.cost,rayCount:row.ray_count,coordCount:row.coord_count,timeMs:row.time_ms,dailyDate:String(row.daily_date).slice(0,10),dailyKind:kind,isDaily:true,date:new Date(row.played_at).getTime(),success:row.success})).then(()=>showToast('Résumé copié !'));});
+      const more=$('#dailyHistoryLoadMore');if(more)more.onclick=async()=>{more.disabled=true;more.textContent='Chargement…';try{await loadPage();renderDaily();}catch(error){showErrorToast(`Chargement impossible : ${error.message}`);more.disabled=false;more.textContent='Afficher les résultats suivants';}};
+    };renderDaily();
+  }catch(error){$('#gridDataContent').innerHTML=`<div class="account-error" style="display:block">${escapeHtml(error.message)}</div>`;}
 }
 let blockedCreatorGridId=null;
 function readOnlyGridSvg(decoded){
@@ -1601,10 +1620,11 @@ async function requestScoreIdentity(title='Enregistrer le score'){
     renderScoreAccountPrompt(resolve);
   });
 }
-async function requestDailyIdentity(){ return requestScoreIdentity('Enregistrer le défi du jour'); }
+async function requestDailyIdentity(){ return requestScoreIdentity(`Enregistrer le défi du jour ${isDailyRemix()?'remix':'classique'}`); }
 async function requestGridIdentity(){ return requestScoreIdentity('Enregistrer ce score'); }
 let globalRankingLoading = false;
 let globalRankingCache = {};
+let globalRemixRankingCache = {};
 
 function loadGlobalScoreIds(){
   try{ return JSON.parse(localStorage.getItem(GLOBAL_SCORE_IDS_KEY) || '{}'); }
@@ -1651,6 +1671,26 @@ async function submitGlobalDailyScore(entry, identity){
     showErrorToast(`⚠️ Envoi global impossible : ${err.message}`);
     return null;
   }
+}
+async function submitGlobalDailyRemixScore(entry,identity){
+  if(!entry?.dailyDate||!identity?.sessionToken)return null;
+  try{
+    await flushActiveAttemptActions();
+    const row=await supabaseRpc('orapa_submit_daily_remix_score',{p_session_token:identity.sessionToken,p_daily_date:entry.dailyDate,p_success:!!entry.success,p_cost:Number(entry.cost)||0,p_ray_count:Number(entry.rayCount)||0,p_coord_count:Number(entry.coordCount)||0,p_time_ms:Math.max(0,Math.round(Number(entry.timeMs)||0)),p_context:dailyRemixContextFromState()});
+    if(row?.accepted||row?.reason==='already_played')await finishActiveAttempt();
+    if(row?.accepted===false&&row?.reason==='already_played'){showToast('Ce défi du jour remix est déjà enregistré avec ce compte.');return row;}
+    delete globalRemixRankingCache[entry.dailyDate];globalAllRemixScoresCache=null;
+    showToast('🌍 Score ajouté au classement du défi du jour remix');
+    if(row?.accepted){
+      achievementCatalogCache=null;
+      const keys=Array.isArray(row.new_keys)?row.new_keys:[];
+      if(keys.includes('welcome'))showWelcomeAchievement();
+      const regular=keys.filter(key=>key!=='welcome');
+      if(regular.length&&!row.hide_notifications)queueAchievementNotifications(regular);
+      refreshAchievements();
+    }
+    return row;
+  }catch(error){console.error('Envoi du score remix impossible :',error);showErrorToast(`⚠️ Envoi global impossible : ${error.message}`);return null;}
 }
 async function shareGridGlobally(gridId){
   if(!gridId) return null;
@@ -1771,9 +1811,18 @@ async function fetchGlobalDailyScores(dateKey, force=false){
   globalRankingCache[dateKey] = rows;
   return rows;
 }
+async function fetchGlobalDailyRemixScores(dateKey,force=false){
+  if(!force&&globalRemixRankingCache[dateKey])return globalRemixRankingCache[dateKey];
+  const query=new URLSearchParams({select:'id,daily_date,player_id,player_name,success,cost,ray_count,coord_count,time_ms,created_at',daily_date:`eq.${dateKey}`,order:'success.desc,cost.asc,time_ms.asc,created_at.asc',limit:'100'});
+  const response=await fetch(`${SUPABASE_URL}/rest/v1/daily_remix_scores?${query}`,{headers:supabaseHeaders()});
+  if(!response.ok)throw new Error(`HTTP ${response.status}`);
+  const rows=await response.json();globalRemixRankingCache[dateKey]=rows;return rows;
+}
 let globalAllScoresCache = null;
-async function fetchAllGlobalScores(force=false){
-  if(!force && globalAllScoresCache) return globalAllScoresCache;
+let globalAllRemixScoresCache=null;
+async function fetchAllGlobalScores(force=false,kind=dailyRankingKind){
+  const remix=kind==='remix',cache=remix?globalAllRemixScoresCache:globalAllScoresCache;
+  if(!force && cache) return cache;
   const all=[];
   const pageSize=1000;
   for(let start=0;;start+=pageSize){
@@ -1781,7 +1830,7 @@ async function fetchAllGlobalScores(force=false){
       select:'id,daily_date,player_id,player_name,success,cost,ray_count,coord_count,time_ms,created_at',
       order:'daily_date.desc,created_at.asc'
     });
-    const response=await fetch(`${SUPABASE_URL}/rest/v1/daily_scores?${query}`,{
+    const response=await fetch(`${SUPABASE_URL}/rest/v1/${remix?'daily_remix_scores':'daily_scores'}?${query}`,{
       headers:supabaseHeaders({Range:`${start}-${start+pageSize-1}`})
     });
     if(!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -1789,7 +1838,7 @@ async function fetchAllGlobalScores(force=false){
     all.push(...rows);
     if(rows.length<pageSize) break;
   }
-  globalAllScoresCache=all;
+  if(remix)globalAllRemixScoresCache=all;else globalAllScoresCache=all;
   return all;
 }
 
@@ -1901,6 +1950,7 @@ function loadState(){
     if(state.finalTimeMs === undefined) state.finalTimeMs = null;
     if(state.isDaily === undefined) state.isDaily = false;
     if(state.dailyDate === undefined) state.dailyDate = null;
+    if(state.dailyKind === undefined) state.dailyKind = state.isDaily?'classic':null;
     if(state.labReference === undefined) state.labReference = null;
     if(!Array.isArray(state.labTypes)) state.labTypes = [];
     if(state.labExceptionRule === undefined) state.labExceptionRule = null;
@@ -1932,7 +1982,7 @@ function resetAll(){
   state = { mode:'gm', gameVariant:'classic',missingType:null,selectedMissingType:null,placementBonus:false,started:false, includeGray:g, includeOnyx:o, includeSapphire:s2, includeBlackHole:false,includeWormhole:false,earthSkyMineOnTop:true, pieces:[], secretPieces:[],
             soloAttempts:0, soloOver:false, soloResult:null, soloShowGuess:true, soloShowSecret:true, history:[], historyHintShown:false,
             gridId:null, gridAlias:null, gridRanked:true, moveCost:0, firstActionTime:null, finalTimeMs:null, rayCount:0, coordCount:0,
-            isDaily:false, dailyDate:null, labReference:null, labTypes:[], labExceptionRule:null, labExceptionType:null, labTouchTypes:[],
+            isDaily:false, dailyDate:null, dailyKind:null, labReference:null, labTypes:[], labExceptionRule:null, labExceptionType:null, labTouchTypes:[],
             labelColor:{top:{},bottom:{},left:{},right:{}}, labelBounce:{top:{},bottom:{},left:{},right:{}},
             labelPair:{top:{},bottom:{},left:{},right:{}},
             labelPartner:{top:{},bottom:{},left:{},right:{}},
@@ -2677,6 +2727,18 @@ function generateDailyLabLayout(reference){
   }
   return null;
 }
+function dailyRemixReference(dateKey){
+  const rngFn=mulberry32(seedFromString(`DAILY-REMIX-V1-${dateKey}`));
+  let suffix='';
+  for(let index=0;index<10;index++)suffix+=DAILY_LAB_REFERENCE_CHARS[Math.floor(rngFn()*DAILY_LAB_REFERENCE_CHARS.length)];
+  return `${DAILY_LAB_VERSION}-${suffix}`;
+}
+function dailyRemixContext(layout){
+  return {generator_version:'REMIX1',piece_types:(layout?.types||[]).slice(),special_rules:{partial_out:layout?.exceptionRule==='partialOut'||layout?.exceptionRule==='both',side_touch:layout?.exceptionRule==='sideTouch'||layout?.exceptionRule==='both'}};
+}
+function dailyRemixContextFromState(){
+  return {generator_version:'REMIX1',piece_types:(state.labTypes||[]).slice(),special_rules:{partial_out:state.labExceptionRule==='partialOut'||state.labExceptionRule==='both',side_touch:state.labExceptionRule==='sideTouch'||state.labExceptionRule==='both'}};
+}
 
 // Audit de génération sans effet sur le tirage : les signatures ignorent les
 // identifiants temporaires, dont l'incrémentation ne participe pas au hasard.
@@ -2860,6 +2922,7 @@ async function startSoloGame(explicitId,creatorRetry=0){
   lastScoreResult = null;
   state.isDaily = false;
   state.dailyDate = null;
+  state.dailyKind = null;
   state.history = [];
   resetHistoryDisclosure();
   state.labelColor = {top:{},bottom:{},left:{},right:{}};
@@ -2987,41 +3050,45 @@ async function startLostGame(explicitId=null,creatorRetry=0){
   if(gridStatus?.already_played)setTimeout(openAlreadyPlayedGridModal,60);
 }
 
-function dailyStatusToday(){
+function dailyStatusToday(kind='classic'){
   const dateKey = parisDateKey();
-  const attempt = loadDailyAttempt();
+  const attempt = loadDailyAttempt(kind);
   const accountKey=dailyAttemptAccountKey();
   const localAttempt=attempt && attempt.date===dateKey
     && (attempt.accountId===accountKey || (!attempt.accountId && accountKey==='local')) ? attempt : null;
-  const remoteAttempt=remoteDailyStatusCache?.dateKey===dateKey && remoteDailyStatusCache.accountKey===accountKey
-    ? remoteDailyStatusCache.attempt : null;
+  const cache=kind==='remix'?remoteDailyRemixStatusCache:remoteDailyStatusCache;
+  const remoteAttempt=cache?.dateKey===dateKey && cache.accountKey===accountKey ? cache.attempt : null;
   const currentAttempt=localAttempt||remoteAttempt;
-  return {dateKey,alreadyPlayed:!!currentAttempt,attempt:currentAttempt,canReview:!!loadDailyFinalSnapshot(dateKey)};
+  return {dateKey,kind,alreadyPlayed:!!currentAttempt,attempt:currentAttempt,canReview:!!loadDailyFinalSnapshot(dateKey,kind)};
 }
-async function refreshDailyStatusFromSupabase(force=false){
-  if(!currentPlayerAccount?.session_token) return dailyStatusToday();
+async function refreshDailyStatusFromSupabase(force=false,kind='classic'){
+  if(!currentPlayerAccount?.session_token) return dailyStatusToday(kind);
   const dateKey=parisDateKey(),accountKey=dailyAttemptAccountKey();
-  if(!force && remoteDailyStatusCache?.dateKey===dateKey && remoteDailyStatusCache.accountKey===accountKey && Date.now()-remoteDailyStatusCache.checkedAt<30000){
-    return dailyStatusToday();
+  const cache=kind==='remix'?remoteDailyRemixStatusCache:remoteDailyStatusCache;
+  if(!force && cache?.dateKey===dateKey && cache.accountKey===accountKey && Date.now()-cache.checkedAt<30000){
+    return dailyStatusToday(kind);
   }
-  if(remoteDailyStatusPromise) return remoteDailyStatusPromise;
-  remoteDailyStatusPromise=(async()=>{
-    const response=await supabaseRpc('orapa_my_daily_history',{p_session_token:currentPlayerAccount.session_token,p_limit:1,p_offset:0});
+  const existing=kind==='remix'?remoteDailyRemixStatusPromise:remoteDailyStatusPromise;
+  if(existing)return existing;
+  const promise=(async()=>{
+    const response=await supabaseRpc(kind==='remix'?'orapa_my_daily_remix_history':'orapa_my_daily_history',{p_session_token:currentPlayerAccount.session_token,p_limit:1,p_offset:0});
     const row=(Array.isArray(response)?response:[]).find(item=>String(item.daily_date).slice(0,10)===dateKey);
-    remoteDailyStatusCache={
+    const next={
       dateKey,accountKey,checkedAt:Date.now(),
       attempt:row?{date:dateKey,result:row.abandoned?'abandoned':(row.success?'win':'lose'),accountId:accountKey,source:'supabase'}:null
     };
-    return dailyStatusToday();
+    if(kind==='remix')remoteDailyRemixStatusCache=next;else remoteDailyStatusCache=next;
+    return dailyStatusToday(kind);
   })();
-  try{return await remoteDailyStatusPromise;}finally{remoteDailyStatusPromise=null;}
+  if(kind==='remix')remoteDailyRemixStatusPromise=promise;else remoteDailyStatusPromise=promise;
+  try{return await promise;}finally{if(kind==='remix')remoteDailyRemixStatusPromise=null;else remoteDailyStatusPromise=null;}
 }
 function formatDailyDate(dateKey){
   const match=String(dateKey||'').match(/^(\d{4})-(\d{2})-(\d{2})$/);
   return match ? `${match[3]}/${match[2]}/${match[1]}` : String(dateKey||'');
 }
-function reviewDailyFinalGrid(dateKey){
-  const snapshot=loadDailyFinalSnapshot(dateKey);
+function reviewDailyFinalGrid(dateKey,kind='classic'){
+  const snapshot=loadDailyFinalSnapshot(dateKey,kind);
   if(!snapshot){ showErrorToast('La grille finale n’est plus disponible sur ce navigateur.'); return; }
   state=JSON.parse(JSON.stringify(snapshot.state));
   lastScoreResult=snapshot.lastScoreResult?JSON.parse(JSON.stringify(snapshot.lastScoreResult)):null;
@@ -3033,7 +3100,7 @@ function reviewDailyFinalGrid(dateKey){
 }
 function openCompletedDailyStatus(status){
   if(status?.attempt?.result==='abandoned'){showToast('Cette tentative a été abandonnée.');return;}
-  if(status?.canReview){reviewDailyFinalGrid(status.dateKey);return;}
+  if(status?.canReview){reviewDailyFinalGrid(status.dateKey,status.kind||'classic');return;}
   showToast('Ce défi a été terminé sur un autre navigateur.');
 }
 async function startDailyChallenge(resumeAttempt=null){
@@ -3073,6 +3140,8 @@ async function startDailyChallenge(resumeAttempt=null){
   state.gridRanked = false;
   state.isDaily = true;
   state.dailyDate = dateKey;
+  state.dailyKind = 'classic';
+  state.dailyAlreadyRecorded = false;
   state.soloAttempts = 0;
   state.soloOver = false;
   state.soloResult = null;
@@ -3101,29 +3170,27 @@ async function startDailyChallenge(resumeAttempt=null){
   showGame();
   renderAll();
 }
-function dailyLabDiagnostic(){
-  const generatorVersion=String(state.labReference||'').split('-')[0]||DAILY_LAB_VERSION;
-  return JSON.stringify({
-    schema:`orapa-daily-lab-${generatorVersion.toLowerCase()}`,generatorVersion,reference:state.labReference,
-    rules:{exceptionRule:state.labExceptionRule,exceptionType:state.labExceptionType,touchTypes:state.labTouchTypes},
-    pieces:(state.secretPieces||[]).map(piece=>({type:piece.type,center:piece.center,rotation:piece.rotation,flipped:piece.flipped})),
-    play:{result:state.soloResult,attempts:state.soloAttempts,cost:state.moveCost,rayCount:state.rayCount,coordCount:state.coordCount,history:state.history}
-  },null,2);
-}
-async function startDailyLabChallenge(reference=null){
-  const normalized=reference?normalizeDailyLabReference(reference):newDailyLabReference();
-  if(!normalized)return {ok:false,reason:'reference'};
+async function startDailyLabChallenge(resumeAttempt=null){
+  const dateKey=resumeAttempt?.reference||parisDateKey();
+  const normalized=dailyRemixReference(dateKey);
   const layout=generateDailyLabLayout(normalized);
   if(!layout)return {ok:false,reason:'generation'};
+  if(resumeAttempt)activeAttempt=resumeAttempt;
+  const attemptStart=resumeAttempt?{ok:true,attempt:resumeAttempt,resumed:true}:await prepareNewActiveAttempt({kind:'dailyRemix',reference:dateKey,context:dailyRemixContext(layout)},true);
+  if(!attemptStart.ok){
+    if(attemptStart.reason==='already_played')openCompletedDailyStatus(await refreshDailyStatusFromSupabase(true,'remix'));
+    else if(attemptStart.reason==='remix_prerequisites_required')openDailyRemixPrerequisiteModal(false);
+    return attemptStart;
+  }
   setHintMode(false);
   Object.assign(state,{
     mode:'solo',gameVariant:'dailyLab',started:false,secretPieces:layout.pieces,
     labReference:normalized,labTypes:layout.types.slice(),labExceptionRule:layout.exceptionRule,
     labExceptionType:layout.exceptionType,labTouchTypes:layout.touchTypes.slice(),
     pieces:layout.types.map(type=>newPiece(type)),gridId:null,gridAlias:null,gridRanked:false,
-    gridUnrankedReason:'daily_lab',soloAttempts:0,soloOver:false,soloResult:null,
+    gridUnrankedReason:null,soloAttempts:0,soloOver:false,soloResult:null,dailyAlreadyRecorded:false,
     soloShowGuess:true,soloShowSecret:true,moveCost:0,firstActionTime:null,finalTimeMs:null,
-    rayCount:0,coordCount:0,isDaily:false,dailyDate:null,history:[],
+    rayCount:0,coordCount:0,isDaily:true,dailyDate:dateKey,dailyKind:'remix',history:[],
     labelColor:{top:{},bottom:{},left:{},right:{}},labelBounce:{top:{},bottom:{},left:{},right:{}},
     labelPair:{top:{},bottom:{},left:{},right:{}},labelPartner:{top:{},bottom:{},left:{},right:{}},
     labelExitMarker:{top:{},bottom:{},left:{},right:{}},cellUsed:{},traces:[],emptyMarks:[],occupiedMarks:[],coordDots:[]
@@ -3133,7 +3200,7 @@ async function startDailyLabChallenge(reference=null){
   state.includeSapphire=layout.types.includes('sapphire');
   state.includeBlackHole=layout.types.includes('spaceBlackHole');
   state.includeWormhole=layout.types.includes('spaceWormhole');
-  activeAttempt=null;lastScoreResult=null;resetHistoryDisclosure();saveState();
+  activeAttempt=attemptStart.attempt;lastScoreResult=null;resetHistoryDisclosure();applyActiveAttemptProgress(attemptStart.attempt);saveState();
   closeSoloChoiceModal();document.body.classList.remove('solo-menu-open');showGame();renderAll();
   return {ok:true};
 }
@@ -3212,6 +3279,7 @@ function currentEntryForDisplay(){
     gameVariant:state.gameVariant||'classic',
     placementBonus:!!state.placementBonus,
     dailyDate: state.dailyDate,
+    dailyKind: state.dailyKind||'classic',
     success: state.soloResult==='win',
     firstTry: state.soloResult==='win'&&state.soloAttempts===0,
     date: (lastScoreResult && lastScoreResult.entry.date) || Date.now()
@@ -3223,7 +3291,7 @@ function localDateKey(value){
 }
 function myludoGameIdForEntry(entry,preferences){
   if(entry.gameVariant==='space')return 89980;
-  if(entry.isDaily)return preferences.daily_game_id;
+  if(entry.isDaily)return entry.dailyKind==='remix'?preferences.daily_remix_game_id:preferences.daily_game_id;
   if(entry.gameVariant==='lost')return preferences.lost_game_id;
   if(entry.gameVariant==='earthSky')return preferences.earth_sky_game_id;
   return preferences.challenge_game_id;
@@ -3238,7 +3306,7 @@ function myludoPayloadForEntry(entry,preferences,providedOptionSource=null){
     gameId,
     gameVariant:entry.gameVariant||'classic',
     isDaily:!!entry.isDaily,
-    dedupeReference:entry.isDaily?`daily:${entry.dailyDate||localDateKey(entry.date)}`:(publicGridId(entry.gridId)||''),
+    dedupeReference:entry.isDaily?`daily:${entry.dailyKind==='remix'?'remix':'classic'}:${entry.dailyDate||localDateKey(entry.date)}`:(publicGridId(entry.gridId)||''),
     solo:true,
     online:true,
     win:!!entry.success,
@@ -3267,7 +3335,7 @@ function currentMyludoPayload(preferences){
   return myludoPayloadForEntry(entry,preferences,decoded||state);
 }
 document.addEventListener('orapa:myludo-request',async()=>{
-  if(!state.soloOver||!state.soloResult||state.gridUnrankedReason==='already_played'||isDailyLab())return;
+  if(!state.soloOver||!state.soloResult||state.gridUnrankedReason==='already_played')return;
   let preferences=normalizeMyludoPreferences(DEFAULT_MYLUDO_PREFERENCES);
   try{preferences=await loadMyludoPreferences();}catch(error){console.error('Chargement des options Myludo impossible :',error);}
   document.dispatchEvent(new CustomEvent('orapa:myludo-result',{detail:JSON.stringify(currentMyludoPayload(preferences))}));
@@ -3288,7 +3356,7 @@ function openVictoryModal(){
   const won = state.soloResult==='win';
   $('#resultModalTitle').textContent = won ? '🏆 Victoire !' : '💥 Défaite';
   $('#victoryMessage').textContent = won
-    ? (isDailyLab()?'Expérience réussie : tu as retrouvé la disposition exacte !':(state.gameVariant==='lost'?(state.placementBonus?'Tu as identifié la gemme perdue et reconstitué toute la grille !':'Tu as identifié la gemme perdue !'):(state.gameVariant==='space'?'Tu as retrouvé la disposition exacte des planètes !':(isEarthSky()?'Tu as retrouvé la disposition exacte des gemmes et des astres !':'Tu as retrouvé la disposition exacte !'))))
+    ? (isDailyLab()?'Tu as retrouvé la disposition exacte des gemmes et des astres !':(state.gameVariant==='lost'?(state.placementBonus?'Tu as identifié la gemme perdue et reconstitué toute la grille !':'Tu as identifié la gemme perdue !'):(state.gameVariant==='space'?'Tu as retrouvé la disposition exacte des planètes !':(isEarthSky()?'Tu as retrouvé la disposition exacte des gemmes et des astres !':'Tu as retrouvé la disposition exacte !'))))
     : ((state.isDaily||isDailyLab())
       ? 'Solution incorrecte : la grille secrète est révélée ci-dessous.'
       : (state.gameVariant==='lost'
@@ -3302,12 +3370,13 @@ function openVictoryModal(){
       : (state.isDaily ? '' : (state.gridUnrankedReason==='creator_protected'
       ? '⭐ Cette grille est la vôtre et ne peut pas être résolue avec ce compte.'
       : '')));
-  $('#victoryGridId').textContent = state.isDaily ? `Défi du jour (${formatDailyDate(state.dailyDate)})` : (isDailyLab()?`Expérience ${state.labReference}`:`${state.gameVariant==='lost'?'Gemme perdue · ':(state.gameVariant==='space'?'Orapa Space · ':(isEarthSky()?'Terre et Ciel · ':''))}${publicGridId(state.gridId)||''}`);
-  $('#btnVictoryGridRanking').style.display=(!state.isDaily&&state.gridId)?'':'none';
+  $('#victoryGridId').textContent = state.isDaily ? `Défi du jour ${isDailyRemix()?'remix':'classique'} (${formatDailyDate(state.dailyDate)})` : `${state.gameVariant==='lost'?'Gemme perdue · ':(state.gameVariant==='space'?'Orapa Space · ':(isEarthSky()?'Terre et Ciel · ':''))}${publicGridId(state.gridId)||''}`;
+  $('#btnVictoryGridRanking').style.display=(state.isDaily||state.gridId)?'':'none';
   const resultAlreadyRecorded=state.gridUnrankedReason==='already_played';
-  $('#btnVictoryCopySummary').style.display=(resultAlreadyRecorded||isDailyLab())?'none':'';
-  $('#btnVictoryCopyId').textContent=isDailyLab()?'📋 Copier diagnostic':'📋 Copier ID';
-  $('#victoryActions').dataset.orapaMyludoResult=(resultAlreadyRecorded||isDailyLab())?'false':'true';
+  $('#btnVictoryCopySummary').style.display=resultAlreadyRecorded?'none':'';
+  $('#btnVictoryCopyId').style.display=isDailyRemix()?'none':'';
+  $('#btnVictoryCopyId').textContent='📋 Copier ID';
+  $('#victoryActions').dataset.orapaMyludoResult=resultAlreadyRecorded?'false':'true';
   $('#victoryModal').classList.add('open');
 }
 async function proposeSolution(){
@@ -3328,15 +3397,16 @@ async function proposeSolution(){
       const identity=await requestDailyIdentity();
       if(!identity){ state.soloOver=false; state.soloResult=null; return; }
       const candidate={...currentEntryForDisplay(),name:identity.name||'Invité',success:true,gridId:null,isDaily:true,dailyDate:state.dailyDate};
-      const globalResult=identity.saveGlobal!==false?await submitGlobalDailyScore(candidate,identity):null;
+      candidate.dailyKind=state.dailyKind||'classic';
+      const globalResult=identity.saveGlobal!==false?(isDailyRemix()?await submitGlobalDailyRemixScore(candidate,identity):await submitGlobalDailyScore(candidate,identity)):null;
       state.dailyAlreadyRecorded=globalResult?.accepted===false&&globalResult?.reason==='already_played';
       if(state.dailyAlreadyRecorded){
-        lastScoreResult={key:'Défi du jour',entry:candidate,rank:null,madeList:false,alreadyPlayed:true};
+        lastScoreResult={key:`Défi du jour ${isDailyRemix()?'remix':'classique'}`,entry:candidate,rank:null,madeList:false,alreadyPlayed:true};
       }else{
-        const daily=recordDailyScore(identity.name||'Invité',state.dailyDate,true,elapsedMs);
-        lastScoreResult={key:'Défi du jour',entry:{...daily.entry,gridId:null,isDaily:true,dailyDate:state.dailyDate},rank:globalResult?.rank||daily.rank,madeList:true};
+        const daily=recordDailyScore(identity.name||'Invité',state.dailyDate,true,elapsedMs,state.dailyKind||'classic');
+        lastScoreResult={key:`Défi du jour ${isDailyRemix()?'remix':'classique'}`,entry:{...daily.entry,gridId:null,isDaily:true,dailyDate:state.dailyDate,dailyKind:state.dailyKind||'classic'},rank:globalResult?.rank||daily.rank,madeList:true};
       }
-      saveDailyAttempt({date:state.dailyDate,result:'win',accountId:dailyAttemptAccountKey()});
+      saveDailyAttempt({date:state.dailyDate,result:'win',accountId:dailyAttemptAccountKey()},state.dailyKind||'classic');
     }else if(state.gridRanked){
       const identity=await requestGridIdentity();
       if(!identity){ state.soloOver=false; state.soloResult=null; return; }
@@ -3361,10 +3431,11 @@ async function proposeSolution(){
       const identity=await requestDailyIdentity();
       if(!identity){ state.soloOver=false;state.soloResult=null;state.soloAttempts--;return; }
       const candidate={...currentEntryForDisplay(),name:identity.name||'Invité',success:false,gridId:null,isDaily:true,dailyDate:state.dailyDate};
-      const globalResult=identity.saveGlobal!==false?await submitGlobalDailyScore(candidate,identity):null;
+      candidate.dailyKind=state.dailyKind||'classic';
+      const globalResult=identity.saveGlobal!==false?(isDailyRemix()?await submitGlobalDailyRemixScore(candidate,identity):await submitGlobalDailyScore(candidate,identity)):null;
       state.dailyAlreadyRecorded=globalResult?.accepted===false&&globalResult?.reason==='already_played';
-      if(!state.dailyAlreadyRecorded) recordDailyScore(identity.name||'Invité',state.dailyDate,false,elapsedMs);
-      saveDailyAttempt({date:state.dailyDate,result:'lose',accountId:dailyAttemptAccountKey()});
+      if(!state.dailyAlreadyRecorded) recordDailyScore(identity.name||'Invité',state.dailyDate,false,elapsedMs,state.dailyKind||'classic');
+      saveDailyAttempt({date:state.dailyDate,result:'lose',accountId:dailyAttemptAccountKey()},state.dailyKind||'classic');
     }else if(state.gridRanked){
       const identity=await requestGridIdentity();
       if(!identity){ state.soloOver=false;state.soloResult=null;state.soloAttempts--;return; }
@@ -3803,8 +3874,7 @@ async function activeAttemptChoice(message){
   return result===true?'continue':(result===false?'abandon':'dismiss');
 }
 function activeGridLabel(){
-  if(state.isDaily)return 'Le défi du jour';
-  if(isDailyLab())return 'Un défi expérimental';
+  if(state.isDaily)return `Le défi du jour ${isDailyRemix()?'remix':'classique'}`;
   if(state.gameVariant==='lost')return 'Une grille Gemme perdue';
   if(state.gameVariant==='space')return 'Une grille Orapa Space';
   if(state.gameVariant==='earthSky')return 'Une grille Terre et Ciel';
@@ -4370,15 +4440,13 @@ function renderModePill(){
     if(tutorialActive){text='Tutoriel guidé';cls='live';}
     else if(state.soloOver){
       if(state.isDaily){
-        text = state.soloResult==='win' ? `📅 Défi du jour — ${formatDailyDate(state.dailyDate)} — Victoire !` : `📅 Défi du jour — ${formatDailyDate(state.dailyDate)} — Défaite`;
-      } else if(isDailyLab()){
-        text=`🧪 Défi expérimental — ${state.soloResult==='win'?'Réussi !':'Échec'}`;
+        text = state.soloResult==='win' ? `📅 Défi du jour ${isDailyRemix()?'remix':'classique'} — ${formatDailyDate(state.dailyDate)} — Victoire !` : `📅 Défi du jour ${isDailyRemix()?'remix':'classique'} — ${formatDailyDate(state.dailyDate)} — Défaite`;
       } else {
         text = state.gameVariant==='lost' ? `💎 Gemme perdue — ${state.soloResult==='win'?'Victoire !':'Défaite'}` : (state.gameVariant==='space'?`🚀 Orapa Space — ${state.soloResult==='win'?'Victoire !':'Défaite'}`:(isEarthSky()?`🌍☁️ Terre et Ciel — ${state.soloResult==='win'?'Victoire !':'Défaite'}`:`🎲 Grille aléatoire — ${state.soloResult==='win'?'Victoire !':'Défaite'}`));
       }
       cls = state.soloResult==='win' ? 'win' : 'lose';
     } else {
-      text = state.isDaily ? `📅 Défi du jour — ${formatDailyDate(state.dailyDate)}` : (isDailyLab()?`🧪 Défi expérimental — ${state.labReference}`:(state.gameVariant==='lost'?'💎 Gemme perdue':(state.gameVariant==='space'?'🚀 Orapa Space':(isEarthSky()?'🌍☁️ Terre et Ciel':'🎲 Grille aléatoire'))));
+      text = state.isDaily ? `📅 Défi du jour ${isDailyRemix()?'remix':'classique'} — ${formatDailyDate(state.dailyDate)}` : (state.gameVariant==='lost'?'💎 Gemme perdue':(state.gameVariant==='space'?'🚀 Orapa Space':(isEarthSky()?'🌍☁️ Terre et Ciel':'🎲 Grille aléatoire')));
       cls = 'live';
     }
   } else {
@@ -4392,10 +4460,10 @@ function renderControls(){
   const isSpace=state.gameVariant==='space';
   const earthSky=isEarthSky();
   const lab=isDailyLab();
-  $('#appGameTitle').textContent=lab?'🧪 Orapa Laboratoire':(earthSky?'🌍☁️ Terre et Ciel':(isSpace?'🪐 Orapa Space':'💎 Orapa Mine'));
+  $('#appGameTitle').textContent=lab?'🧬 Orapa Remix':(earthSky?'🌍☁️ Terre et Ciel':(isSpace?'🪐 Orapa Space':'💎 Orapa Mine'));
   $('#paletteTitle').textContent=lab?'Pièces à placer':(earthSky?(state.mode==='solo'?'Gemmes et astres à placer':(state.earthSkyMineOnTop==null?'Gemmes et astres à placer':(state.earthSkyMineOnTop?'Gemmes à placer':'Astres à placer'))):(isSpace?'Planètes à placer':'Gemmes à placer'));
-  $('#boardSectionTitle').textContent=lab?'Grille expérimentale':(earthSky?'Double grille Terre et Ciel':(isSpace?'Carte spatiale':'Plateau de la mine'));
-  $('#masterSubtitle').textContent=lab?'Expérience temporaire':(earthSky?'Entre mine et espace':(isSpace?'Console de l’explorateur':'Console du maître du jeu'));
+  $('#boardSectionTitle').textContent=lab?'Grille du défi remix':(earthSky?'Double grille Terre et Ciel':(isSpace?'Carte spatiale':'Plateau de la mine'));
+  $('#masterSubtitle').textContent=lab?'Défi du jour remix':(earthSky?'Entre mine et espace':(isSpace?'Console de l’explorateur':'Console du maître du jeu'));
   $('#masterSubtitle').style.display=(state.isDaily||lab)?'none':'';
   // Ces options ne servent qu'à préparer une grille classique côté maître du jeu.
   // Elles ne doivent jamais réapparaître lors du rendu d'une partie en cours.
@@ -4433,13 +4501,13 @@ function renderControls(){
   const soloReveal = state.mode==='solo' && state.soloOver;
   $('#btnToggleGuess').style.display = soloReveal ? '' : 'none';
   $('#btnToggleSecret').style.display = soloReveal ? '' : 'none';
-  $('#btnToggleGuess').textContent = (state.soloShowGuess?'👁 ':'🚫 ') + (earthSky?'Ma grille':(isSpace?'Mes planètes':'Mes gemmes'));
-  $('#btnToggleSecret').textContent = (state.soloShowSecret?'👁 ':'🚫 ') + (earthSky?'Grille à trouver':(isSpace?'Planètes à trouver':'Gemmes à trouver'));
-  const showGridId = lab || (soloReveal && state.gridId);
+  $('#btnToggleGuess').textContent = (state.soloShowGuess?'👁 ':'🚫 ') + (lab?'Mes pièces':(earthSky?'Ma grille':(isSpace?'Mes planètes':'Mes gemmes')));
+  $('#btnToggleSecret').textContent = (state.soloShowSecret?'👁 ':'🚫 ') + (lab?'Pièces à trouver':(earthSky?'Grille à trouver':(isSpace?'Planètes à trouver':'Gemmes à trouver')));
+  const showGridId = soloReveal && !!state.gridId && !lab;
   $('#gridIdRow').style.display = showGridId ? 'flex' : 'none';
   if(showGridId){
-    $('#gridIdText').textContent = lab?state.labReference:publicGridId(state.gridId);
-    $('#btnCopyGridId').textContent = lab?'📋 Diagnostic':'📋 Copier';
+    $('#gridIdText').textContent = publicGridId(state.gridId);
+    $('#btnCopyGridId').textContent = '📋 Copier';
   }
   $('#btnReplayVictory').style.display = (state.mode==='solo' && state.soloOver) ? '' : 'none';
   $('#btnReset').style.display = state.isDaily ? 'none' : '';
@@ -4466,6 +4534,8 @@ function renderAll(){
 
 function shapeIconSVG(type, size){
   size = size||22;
+  if(type==='spaceBlackHole')return `<svg class="mix-icon" width="${size}" height="${size}" viewBox="0 0 24 24" aria-label="Trou noir"><circle cx="12" cy="12" r="9" fill="#050407" stroke="#8d6ec4" stroke-width="2"/><circle cx="12" cy="12" r="4" fill="#000" stroke="#6caed6" stroke-width="1.5"/></svg>`;
+  if(type==='spaceWormhole')return `<svg class="mix-icon" width="${size}" height="${size}" viewBox="0 0 24 24" aria-label="Trou de ver"><circle cx="12" cy="12" r="9" fill="#08060c" stroke="#8d6ec4" stroke-width="2"/><circle cx="12" cy="12" r="5.5" fill="none" stroke="#75b6db" stroke-width="1.5"/><circle cx="12" cy="12" r="2" fill="#111827"/></svg>`;
   const shape = SHAPES[type];
   const pts = shape.pts.map(v=> transformVertex(v,false,0,{x:0,y:0}));
   const xs=pts.map(p=>p.x), ys=pts.map(p=>p.y);
@@ -4477,6 +4547,9 @@ function shapeIconSVG(type, size){
   return `<svg class="mix-icon" width="${size}" height="${size}" viewBox="${minX-pad} ${minY-pad} ${(maxX-minX)+2*pad} ${(maxY-minY)+2*pad}">
     <polygon points="${polyPointsAttr(pts)}" fill="${fill}" stroke="${stroke}" stroke-width="0.05"/>
   </svg>`;
+}
+function remixPieceTypesHtml(types,size=18){
+  return `<span class="remix-piece-list">${(types||[]).map(type=>shapeIconSVG(type,size)).join('')}</span>`;
 }
 function lostGemChoiceMarkup(type,selected){
   const shape=SHAPES[type],def=CONFIG.PIECES[type],points=shape.pts.map(([x,y])=>`${50+x*20},${50+y*20}`).join(' ');
@@ -4880,6 +4953,7 @@ function showGame(){
 async function resumeServerAttempt(attempt){
   if(!attempt)return;
   activeAttempt=attempt;
+  if(attempt.game_kind==='dailyRemix')return startDailyLabChallenge(attempt);
   if(attempt.game_kind==='daily')return startDailyChallenge(attempt);
   if(attempt.game_kind==='lost')return startLostGame(attempt.reference);
   if(attempt.game_kind==='space')return startSpaceSoloGame(attempt.reference);
@@ -4902,27 +4976,26 @@ async function enterSolo(){
     if(state.isDaily){
       try{
         await flushActiveAttemptActions();
-        const [status,serverAttempt]=await Promise.all([refreshDailyStatusFromSupabase(true),fetchActiveAttempt()]);
+        const dailyKind=state.dailyKind||'classic';
+        const displayedTarget={kind:dailyKind==='remix'?'dailyRemix':'daily',reference:state.dailyDate};
+        const [status,serverAttempt]=await Promise.all([refreshDailyStatusFromSupabase(true,dailyKind),fetchActiveAttempt()]);
         if(status.alreadyPlayed){
-          activeAttempt=null;
           state.soloOver=true;
           state.soloResult=status.attempt?.result==='win'?'win':'lose';
           saveState();
-          openSoloChoiceModal();
-          return;
+          if(attemptMatches(displayedTarget,serverAttempt)){activeAttempt=serverAttempt;await finishActiveAttempt();openSoloChoiceModal();return;}
         }
-        if(!serverAttempt){
-          activeAttempt=null;
+        if(!attemptMatches(displayedTarget,serverAttempt)){
           state.soloOver=true;
           saveState();
-          openSoloChoiceModal();
+          if(!serverAttempt){openSoloChoiceModal();return;}
+          const choice=await activeAttemptChoice(`Une partie ${activeAttemptSentenceLabel(serverAttempt)} est en cours. Celle-ci sera perdue si vous démarrez une nouvelle grille.`);
+          if(choice==='continue')await resumeServerAttempt(serverAttempt);
+          else if(choice==='abandon')try{if(await abandonServerAttempt(serverAttempt))openSoloChoiceModal();}catch(error){showErrorToast('Impossible d’abandonner la partie en cours. Vérifie ta connexion puis réessaie.');}
           return;
         }
-        const choice=await activeAttemptChoice(`Une partie ${activeAttemptSentenceLabel(serverAttempt)} est en cours. Celle-ci sera perdue si vous démarrez une nouvelle grille.`);
-        if(choice==='continue')await resumeServerAttempt(serverAttempt);
-        else if(choice==='abandon')try{if(await abandonServerAttempt(serverAttempt))openSoloChoiceModal();}catch(error){showErrorToast('Impossible d’abandonner la partie en cours. Vérifie ta connexion puis réessaie.');}
-      }catch(error){showErrorToast('Impossible de vérifier le défi du jour. Vérifie ta connexion puis réessaie.');}
-      return;
+        activeAttempt=serverAttempt;
+      }catch(error){showErrorToast('Impossible de vérifier le défi du jour. Vérifie ta connexion puis réessaie.');return;}
     }
     const choice=await activeAttemptChoice(`Une partie ${activeAttemptSentenceLabel({game_kind:attemptKindForState()})} est en cours. Celle-ci sera perdue si vous démarrez une nouvelle grille.`);
     if(choice==='continue')showGame();
@@ -5465,11 +5538,6 @@ $('#btnToggleGuess').addEventListener('click', ()=>{ state.soloShowGuess = !stat
 $('#btnToggleSecret').addEventListener('click', ()=>{ state.soloShowSecret = !state.soloShowSecret; saveState(); renderControls(); renderPieces(); });
 $('#btnReplayVictory').addEventListener('click', ()=> openVictoryModal());
 $('#btnCopyGridId').addEventListener('click', async()=>{
-  if(isDailyLab()){
-    if(navigator.clipboard)await navigator.clipboard.writeText(dailyLabDiagnostic());
-    showToast('Diagnostic de l’expérience copié !');
-    return;
-  }
   if(!state.gridId || !navigator.clipboard) return;
   if(state.mode==='gm'){
     try{
@@ -5526,32 +5594,57 @@ $('#btnReset').addEventListener('click', async()=>{
   }
 });
 
-let dailyTriforceState={checked:false,unlocked:false,error:false};
+let dailyTriforceState={checked:false,unlocked:false,spaceStudentChecked:false,spaceStudentUnlocked:false,error:false};
 let prerequisiteModalContext='triforce';
-function renderDailyStatusLine(status){
+function renderDailyStatusLine(status,kind=status?.kind||'classic'){
   const line=$('#dailyStatusLine');
-  const button=$('#soloChoiceDaily');
+  const button=$(kind==='remix'?'#soloChoiceDailyLab':'#soloChoiceDaily');
   const detail=button.querySelector('small');
-  button.classList.remove('review-available','already-played','prerequisite-locked','prerequisite-checking');
+  button.classList.remove('review-available','already-played','in-progress','prerequisite-locked','prerequisite-checking');
   if(status?.alreadyPlayed){
     const abandoned=status.attempt?.result==='abandoned';
     if(status.canReview&&!abandoned)button.classList.add('review-available');
     else button.classList.add('already-played');
     detail.textContent=abandoned?'Tentative abandonnée':(status.canReview?'Revoir la grille':'Déjà joué');
-    line.textContent=abandoned
-      ? 'La tentative du jour a été abandonnée — reviens demain.'
-      : `Défi du jour déjà joué aujourd'hui (${status.attempt.result==='win'?'réussi 🏆':'raté 💥'}) — reviens demain.`;
-    line.style.display='block';
   }else{
-    line.style.display='none';
-    if(!dailyTriforceState.checked){
+    if(!dailyTriforceState.checked||(kind==='remix'&&!dailyTriforceState.spaceStudentChecked)){
       button.classList.add('prerequisite-checking');
       detail.textContent='Vérification du prérequis…';
-    }else if(!dailyTriforceState.unlocked){
+    }else if(!dailyTriforceState.unlocked||(kind==='remix'&&!dailyTriforceState.spaceStudentUnlocked)){
       button.classList.add('prerequisite-locked');
-      detail.textContent=dailyTriforceState.error?'Vérification impossible':'🔒 Succès Triforce requis';
+      if(dailyTriforceState.error)detail.textContent='Vérification impossible';
+      else if(kind==='remix'){
+        const missing=[];
+        if(!dailyTriforceState.unlocked)missing.push('Triforce');
+        if(!dailyTriforceState.spaceStudentUnlocked)missing.push('Aspirant astronaute');
+        detail.textContent=`🔒 ${missing.join(' + ')} requis`;
+      }else detail.textContent='🔒 Succès Triforce requis';
     }else detail.textContent='Une seule tentative aujourd’hui';
   }
+  const messages=[];
+  for(const dailyKind of ['classic','remix']){
+    const current=dailyStatusToday(dailyKind);
+    if(!current.alreadyPlayed)continue;
+    const label=dailyKind==='remix'?'Remix':'Classique';
+    messages.push(current.attempt?.result==='abandoned'?`${label} : tentative abandonnée.`:`${label} : déjà joué (${current.attempt?.result==='win'?'réussi 🏆':'raté 💥'}).`);
+  }
+  line.textContent=messages.join(' · ');line.style.display=messages.length?'block':'none';
+}
+function renderDailyActiveAttemptLabels(){
+  for(const kind of ['classic','remix']){
+    if(!dailyActiveAttemptCache[kind]||dailyStatusToday(kind).alreadyPlayed)continue;
+    const button=$(kind==='remix'?'#soloChoiceDailyLab':'#soloChoiceDaily');button.classList.remove('prerequisite-checking','prerequisite-locked');button.classList.add('in-progress');button.querySelector('small').textContent='Continuer';
+  }
+}
+async function refreshDailyOverview(){
+  if(!currentPlayerAccount?.session_token)return;
+  const dateKey=parisDateKey(),accountKey=dailyAttemptAccountKey(),result=await supabaseRpc('orapa_daily_challenges_status',{p_session_token:currentPlayerAccount.session_token,p_daily_date:dateKey});
+  const statusAttempt=(score)=>score?{date:dateKey,result:score.abandoned?'abandoned':(score.success?'win':'lose'),accountId:accountKey,source:'supabase'}:null;
+  remoteDailyStatusCache={dateKey,accountKey,checkedAt:Date.now(),attempt:statusAttempt(result?.classic_score)};
+  remoteDailyRemixStatusCache={dateKey,accountKey,checkedAt:Date.now(),attempt:statusAttempt(result?.remix_score)};
+  dailyActiveAttemptCache={classic:result?.classic_attempt||null,remix:result?.remix_attempt||null};
+  dailyTriforceState={checked:true,unlocked:!!result?.triforce_unlocked,spaceStudentChecked:true,spaceStudentUnlocked:!!result?.space_student_unlocked,error:false};
+  renderDailyStatusLine(dailyStatusToday('classic'),'classic');renderDailyStatusLine(dailyStatusToday('remix'),'remix');renderDailyActiveAttemptLabels();
 }
 function openTriforcePrerequisiteModal(checkError=false){
   prerequisiteModalContext='triforce';
@@ -5559,6 +5652,19 @@ function openTriforcePrerequisiteModal(checkError=false){
   $('#triforcePrerequisiteText').innerHTML=checkError
     ? 'Impossible de vérifier le succès <b>Triforce</b>. Vérifie ta connexion puis réessaie.'
     : 'Pour accéder aux défis du jour, débloque d’abord le succès <b>Triforce</b> en remportant une grille aléatoire comprenant les trois gemmes optionnelles : Diamant, Corps noir et Saphir bleu ciel.';
+  $('#triforcePrerequisiteAchievement').style.display=checkError?'none':'';
+  $('#triforcePrerequisiteRetry').style.display=checkError?'':'none';
+  $('#triforcePrerequisiteModal').classList.add('open');
+}
+function openDailyRemixPrerequisiteModal(checkError=false){
+  prerequisiteModalContext='daily_remix';
+  $('#triforcePrerequisiteTitle').textContent=checkError?'⚠️ Vérification impossible':'🔒 Défi du jour remix verrouillé';
+  const missing=[];
+  if(!dailyTriforceState.unlocked)missing.push('<b>Triforce</b>');
+  if(!dailyTriforceState.spaceStudentUnlocked)missing.push('<b>Aspirant astronaute</b>');
+  $('#triforcePrerequisiteText').innerHTML=checkError
+    ? 'Impossible de vérifier les succès requis. Vérifie ta connexion puis réessaie.'
+    : `Pour accéder au défi du jour remix, débloque d’abord ${missing.length?missing.join(' et '):'les succès <b>Triforce</b> et <b>Aspirant astronaute</b>'}.`;
   $('#triforcePrerequisiteAchievement').style.display=checkError?'none':'';
   $('#triforcePrerequisiteRetry').style.display=checkError?'':'none';
   $('#triforcePrerequisiteModal').classList.add('open');
@@ -5585,19 +5691,43 @@ function openEarthSkyPrerequisiteModal(checkError=false){
 }
 function closeTriforcePrerequisiteModal(){$('#triforcePrerequisiteModal').classList.remove('open');}
 async function verifyTriforcePrerequisite(showModal=false){
+  if(dailyTriforceState.checked&&!dailyTriforceState.error){if(showModal&&!dailyTriforceState.unlocked)openTriforcePrerequisiteModal(false);return dailyTriforceState.unlocked;}
   if(!currentPlayerAccount?.session_token){
-    dailyTriforceState={checked:true,unlocked:false,error:true};
+    dailyTriforceState={checked:true,unlocked:false,spaceStudentChecked:false,spaceStudentUnlocked:false,error:true};
     if(showModal)openTriforcePrerequisiteModal(true);
     return false;
   }
   try{
     const result=await refreshAchievements();
     if(!result?.triforce_check_ok)throw new Error('Vérification indisponible');
-    dailyTriforceState={checked:true,unlocked:!!result.triforce_unlocked,error:false};
-  }catch(error){dailyTriforceState={checked:true,unlocked:false,error:true};}
-  renderDailyStatusLine(dailyStatusToday());
+    dailyTriforceState={...dailyTriforceState,checked:true,unlocked:!!result.triforce_unlocked,error:false};
+  }catch(error){dailyTriforceState={...dailyTriforceState,checked:true,unlocked:false,error:true};}
+  renderDailyStatusLine(dailyStatusToday('classic'),'classic');renderDailyStatusLine(dailyStatusToday('remix'),'remix');
   if(showModal&&!dailyTriforceState.unlocked)openTriforcePrerequisiteModal(dailyTriforceState.error);
   return dailyTriforceState.unlocked;
+}
+async function verifyDailyRemixPrerequisites(showModal=false){
+  if(dailyTriforceState.checked&&dailyTriforceState.spaceStudentChecked&&!dailyTriforceState.error){
+    const unlocked=dailyTriforceState.unlocked&&dailyTriforceState.spaceStudentUnlocked;
+    if(showModal&&!unlocked)openDailyRemixPrerequisiteModal(false);
+    return unlocked;
+  }
+  if(!currentPlayerAccount?.session_token){
+    dailyTriforceState={checked:true,unlocked:false,spaceStudentChecked:true,spaceStudentUnlocked:false,error:true};
+    if(showModal)openDailyRemixPrerequisiteModal(true);
+    return false;
+  }
+  try{
+    const achievementResult=await refreshAchievements();
+    if(!achievementResult?.triforce_check_ok)throw new Error('Vérification indisponible');
+    const catalog=await getAchievementCatalog(true);
+    const unlockedKeys=new Set((catalog||[]).filter(row=>row.unlocked).map(row=>row.achievement_key));
+    dailyTriforceState={checked:true,unlocked:!!achievementResult.triforce_unlocked,spaceStudentChecked:true,spaceStudentUnlocked:unlockedKeys.has('space_student'),error:false};
+  }catch(error){dailyTriforceState={checked:true,unlocked:false,spaceStudentChecked:true,spaceStudentUnlocked:false,error:true};}
+  renderDailyStatusLine(dailyStatusToday('classic'),'classic');renderDailyStatusLine(dailyStatusToday('remix'),'remix');
+  const unlocked=dailyTriforceState.unlocked&&dailyTriforceState.spaceStudentUnlocked;
+  if(showModal&&!unlocked)openDailyRemixPrerequisiteModal(dailyTriforceState.error);
+  return unlocked;
 }
 async function verifySpaceStudentPrerequisite(showModal=false){
   if(!currentPlayerAccount?.session_token){
@@ -5627,21 +5757,21 @@ async function verifyEarthSkyPrerequisites(showModal=false){
 async function openSoloChoiceModal(){
   document.body.classList.add('solo-menu-open');
   const line = $('#dailyStatusLine');
-  dailyTriforceState={checked:false,unlocked:false,error:false};
-  renderDailyStatusLine(dailyStatusToday());
+  dailyTriforceState={checked:false,unlocked:false,spaceStudentChecked:false,spaceStudentUnlocked:false,error:false};
+  renderDailyStatusLine(dailyStatusToday('classic'),'classic');renderDailyStatusLine(dailyStatusToday('remix'),'remix');
   $('#soloChoiceModal').classList.add('open');
   document.querySelectorAll('#soloChoiceModal .earth-sky-preview').forEach(zone=>zone.hidden=!canPreviewEarthSky());
-  if(!dailyStatusToday().alreadyPlayed && currentPlayerAccount){
+  if(currentPlayerAccount){
     line.textContent='Vérification du défi du jour…';
     line.style.display='block';
     try{
-      const status=await refreshDailyStatusFromSupabase(true);
-      if($('#soloChoiceModal').classList.contains('open')) renderDailyStatusLine(status);
+      await refreshDailyOverview();
     }catch(error){
-      if($('#soloChoiceModal').classList.contains('open')) renderDailyStatusLine(dailyStatusToday());
+      if($('#soloChoiceModal').classList.contains('open')){renderDailyStatusLine(dailyStatusToday('classic'),'classic');renderDailyStatusLine(dailyStatusToday('remix'),'remix');}
     }
   }
-  if(!dailyStatusToday().alreadyPlayed&&$('#soloChoiceModal').classList.contains('open'))await verifyTriforcePrerequisite(false);
+  if(!dailyStatusToday('classic').alreadyPlayed&&$('#soloChoiceModal').classList.contains('open'))await verifyTriforcePrerequisite(false);
+  if(!dailyStatusToday('remix').alreadyPlayed&&$('#soloChoiceModal').classList.contains('open'))await verifyDailyRemixPrerequisites(false);
 }
 function closeSoloChoiceModal(){ $('#soloChoiceModal').classList.remove('open'); document.body.classList.remove('solo-menu-open'); }
 $('#closeSoloChoice').addEventListener('click',closeSoloChoiceModal);
@@ -5656,6 +5786,7 @@ $('#soloChoiceDaily').addEventListener('click', async()=>{
   }
   if(!await verifyTriforcePrerequisite(true))return;
   if(!await ensureCurrentAppVersion(true,true)) return;
+  if(dailyActiveAttemptCache.classic?.reference===parisDateKey()){closeSoloChoiceModal();await startDailyChallenge(dailyActiveAttemptCache.classic);return;}
   closeSoloChoiceModal();
   document.body.classList.add('solo-menu-open');
   $('#dailyRulesModal').classList.add('open');
@@ -5664,10 +5795,14 @@ function closeDailyLabRules(){
   $('#dailyLabRulesModal').classList.remove('open');
   document.body.classList.remove('solo-menu-open');
 }
-$('#soloChoiceDailyLab').addEventListener('click',()=>{
+$('#soloChoiceDailyLab').addEventListener('click',async()=>{
+  try{await refreshDailyStatusFromSupabase(false,'remix');}catch(error){}
+  const status=dailyStatusToday('remix');
+  if(status.alreadyPlayed){openCompletedDailyStatus(status);return;}
+  if(!await verifyDailyRemixPrerequisites(true))return;
+  if(!await ensureCurrentAppVersion(true,true))return;
+  if(dailyActiveAttemptCache.remix?.reference===parisDateKey()){closeSoloChoiceModal();await startDailyLabChallenge(dailyActiveAttemptCache.remix);return;}
   closeSoloChoiceModal();
-  $('#dailyLabReference').value='';
-  $('#dailyLabReferenceError').style.display='none';
   document.body.classList.add('solo-menu-open');
   $('#dailyLabRulesModal').classList.add('open');
 });
@@ -5675,18 +5810,10 @@ $('#closeDailyLabRules').addEventListener('click',()=>{closeDailyLabRules();open
 $('#cancelDailyLabRules').addEventListener('click',()=>{closeDailyLabRules();openSoloChoiceModal();});
 $('#dailyLabRulesModal').addEventListener('click',event=>{if(event.target.id==='dailyLabRulesModal'){closeDailyLabRules();openSoloChoiceModal();}});
 $('#startDailyLab').addEventListener('click',async()=>{
-  const raw=$('#dailyLabReference').value.trim();
-  const error=$('#dailyLabReferenceError');
-  error.style.display='none';
-  if(raw&&!normalizeDailyLabReference(raw)){
-    error.textContent='Référence invalide. Formats acceptés : ancienne référence LAB1 ou nouvelle référence LAB2.';
-    error.style.display='block';
-    return;
-  }
   const button=$('#startDailyLab');button.disabled=true;
   try{
-    const result=await startDailyLabChallenge(raw||null);
-    if(!result.ok){error.textContent=result.reason==='reference'?'Référence invalide.':'Cette référence n’a pas pu générer de grille. Essaie une nouvelle expérience.';error.style.display='block';}
+    const result=await startDailyLabChallenge();
+    if(!result.ok)showErrorToast('Impossible de démarrer le défi du jour remix. Réessaie.');
     else closeDailyLabRules();
   }finally{button.disabled=false;}
 });
@@ -5699,6 +5826,8 @@ $('#triforcePrerequisiteRetry').addEventListener('click',async()=>{
     if(await verifyEarthSkyPrerequisites(true))showToast('Prérequis Terre et Ciel vérifiés.');
   }else if(prerequisiteModalContext==='space_student'){
     if(await verifySpaceStudentPrerequisite(true))showToast('Succès Aspirant astronaute vérifié.');
+  }else if(prerequisiteModalContext==='daily_remix'){
+    if(await verifyDailyRemixPrerequisites(true))showToast('Prérequis du défi remix vérifiés.');
   }else if(await verifyTriforcePrerequisite(true))showToast('Succès Triforce vérifié.');
 });
 $('#triforcePrerequisiteAchievement').addEventListener('click',async()=>{
@@ -5828,7 +5957,7 @@ $('#helpFab').addEventListener('click', ()=>{
   const isSpace=state.gameVariant==='space';
   const earthSky=isEarthSky();
   const lab=isDailyLab();
-  $('#helpModal h2').textContent=lab?'Rappels du défi expérimental':(isSpace?'Rappels Orapa Space':(earthSky?'Rappels Terre et Ciel':'Rappels'));
+  $('#helpModal h2').textContent=lab?'Rappels du défi du jour remix':(isSpace?'Rappels Orapa Space':(earthSky?'Rappels Terre et Ciel':'Rappels'));
   $('#helpDirectReachReminder').textContent=lab
     ? 'Chaque pièce doit pouvoir être atteinte directement par au moins une onde, sans rebond. Les exceptions de placement sont déjà intégrées à cette grille.'
     : isSpace
@@ -5844,12 +5973,8 @@ $('#updatesModal').addEventListener('click',event=>{if(event.target.id==='update
 $('#closeVictory').addEventListener('click', ()=> $('#victoryModal').classList.remove('open'));
 $('#victoryModal').addEventListener('click', e=>{ if(e.target.id==='victoryModal') $('#victoryModal').classList.remove('open'); });
 $('#btnVictoryCopyId').addEventListener('click', ()=>{
-  if(isDailyLab()){
-    if(navigator.clipboard)navigator.clipboard.writeText(dailyLabDiagnostic()).then(()=>showToast('Diagnostic de l’expérience copié !'));
-    return;
-  }
   if(state.isDaily){
-    const text = `Défi du jour (${formatDailyDate(state.dailyDate)})`;
+    const text = `Défi du jour classique (${formatDailyDate(state.dailyDate)})`;
     if(navigator.clipboard) navigator.clipboard.writeText(text).then(()=> showToast('Copié : '+text));
     return;
   }
@@ -5860,7 +5985,7 @@ $('#btnVictoryCopySummary').addEventListener('click', ()=>{
   const text = formatShareText(currentEntryForDisplay());
   if(navigator.clipboard) navigator.clipboard.writeText(text).then(()=> showToast('Résumé copié !'));
 });
-$('#btnVictoryGridRanking').addEventListener('click',()=>openGridRanking(state.gridId,false,true));
+$('#btnVictoryGridRanking').addEventListener('click',()=>state.isDaily?openDailyRankingView(state.dailyKind||'classic',state.dailyDate):openGridRanking(state.gridId,false,true));
 function closeGridDataModal(returnToOrigin=true){
   $('#gridDataModal').classList.remove('open');
   achievementExpanded.clear();
@@ -5880,6 +6005,7 @@ $('#nestedGridRankingModal').addEventListener('click',e=>{if(e.target.id==='nest
 $('#helpModal').addEventListener('click', e=>{ if(e.target.id==='helpModal') $('#helpModal').classList.remove('open'); });
 
 let rankingView = 'solo';
+let dailyRankingKind='classic';
 function shiftDateKey(dateKey, days){
   const [year,month,day] = dateKey.split('-').map(Number);
   const date = new Date(Date.UTC(year, month-1, day + days));
@@ -6062,11 +6188,11 @@ async function searchGridCatalog(input){
   }catch(error){gridCatalogState.searched=null;gridCatalogState.searchError='Recherche impossible : '+error.message;renderGridCatalog();}
 }
 function rankingMedal(i){ return ['🥇','🥈','🥉'][i] || `#${i+1}`; }
-function globalEntryToLocal(e){
+function globalEntryToLocal(e,kind=dailyRankingKind){
   return {
     id:e.id, accountId:e.player_id, name:e.player_name, success:e.success, cost:e.cost,
     rayCount:e.ray_count, coordCount:e.coord_count, timeMs:e.time_ms,
-    date:new Date(e.created_at).getTime(), dailyDate:e.daily_date, isDaily:true
+    date:new Date(e.created_at).getTime(), dailyDate:e.daily_date, dailyKind:kind, isDaily:true
   };
 }
 async function renderGlobalRanking(dateKey, force=false){
@@ -6076,24 +6202,24 @@ async function renderGlobalRanking(dateKey, force=false){
   globalRankingLoading = true;
   el.innerHTML = '<div class="history-empty">🌍 Chargement du classement global…</div>';
   try{
-    const rows = await fetchGlobalDailyScores(dateKey, force);
+    const rows = dailyRankingKind==='remix'?await fetchGlobalDailyRemixScores(dateKey,force):await fetchGlobalDailyScores(dateKey, force);
     if(el.dataset.renderToken!==token || rankingView!=='global') return;
     const myAccountId = currentPlayerAccount?.id;
-    const layout = generateDailyLayout(dateKey);
-    const gems = layout ? gemFlagsEmojiLine(layout.flags.gray, layout.flags.onyx, layout.flags.sapphire) : '';
+    const layout = dailyRankingKind==='remix'?generateDailyLabLayout(dailyRemixReference(dateKey)):generateDailyLayout(dateKey);
+    const gems = dailyRankingKind==='remix'?remixPieceTypesHtml(layout?.types||[],17):(layout ? gemFlagsEmojiLine(layout.flags.gray, layout.flags.onyx, layout.flags.sapphire) : '');
     if(rows.length===0){
-      el.innerHTML = '<div class="history-empty">Aucun score global enregistré pour ce défi.</div>';
+      el.innerHTML = `${gems?`<div class="global-ranking-summary daily-ranking-summary"><span>${dailyRankingKind==='remix'?'Pièces du jour':'Configuration du jour'}</span><span class="summary-gems">${gems}</span></div>`:''}<div class="history-empty">Aucun score global enregistré pour ce défi.</div>`;
       return;
     }
     const wins = rows.filter(r=>r.success).length;
     el.innerHTML = `<div class="global-ranking-summary daily-ranking-summary"><span class="summary-stat" title="Participants"><b>${rows.length}</b> 👥</span><span class="summary-separator">·</span><span class="summary-stat"><b>${wins}</b> réussite${wins>1?'s':''}</span><span class="summary-gems">${gems}</span></div>` + rows.map((raw,i)=>{
-      const e=globalEntryToLocal(raw);
+      const e=globalEntryToLocal(raw,dailyRankingKind);
       const mine=!!myAccountId&&String(e.accountId)===String(myAccountId);
       const failTag=e.success ? '' : '<span class="ranking-fail">Échec</span>';
       return `<div class="ranking-row global-row one-line-ranking${mine?' ranking-mine':''}" data-global-idx="${i}"><div class="ranking-row-top"><span class="ranking-player-cell"><span class="ranking-rank${i===0?' top1':''}">${rankingMedal(i)}</span><span class="ranking-name">${escapeHtml(e.name||'Anonyme')}</span>${failTag}</span><span class="ranking-query-cell">${e.rayCount} 🔦 + ${e.coordCount} 📍</span><span class="ranking-points">${e.cost} pts</span><span class="ranking-time">${formatDuration(e.timeMs)}</span></div></div>`;
     }).join('');
     el.querySelectorAll('.global-row').forEach(row=>row.addEventListener('click',()=>{
-      const entry=globalEntryToLocal(rows[Number(row.dataset.globalIdx)]);
+      const entry=globalEntryToLocal(rows[Number(row.dataset.globalIdx)],dailyRankingKind);
       navigator.clipboard?.writeText(formatShareText(entry)).then(()=>showToast('Résumé copié !'));
     }));
   }catch(err){
@@ -6210,10 +6336,10 @@ async function renderGlobalStatsView(force=false){
   try{
     if(globalStatsMode==='daily'){
       const dateKey=dateSelect.value || parisDateKey();
-      const rows=await fetchGlobalDailyScores(dateKey,force);
+      const rows=dailyRankingKind==='remix'?await fetchGlobalDailyRemixScores(dateKey,force):await fetchGlobalDailyScores(dateKey,force);
       if(!modal.classList.contains('open')) return;
       globalStatsRows=rows;
-      content.innerHTML=`<div class="stats-daily-heading"><h3>Défi du ${formatStatsDate(dateKey)}</h3><div class="stats-daily-nav"><button id="globalStatsDatePrevious" class="ranking-date-step" type="button" aria-label="Jour précédent">&lt;</button><button id="globalStatsDateNext" class="ranking-date-step" type="button" aria-label="Jour suivant"${dateKey>=parisDateKey()?' disabled':''}>&gt;</button><label class="ranking-date-picker-wrap stats-date-picker-wrap" aria-label="Choisir une autre date"><span aria-hidden="true">&#128197;</span><input id="globalStatsDatePicker" class="ranking-date-picker" type="date" value="${dateKey}" max="${parisDateKey()}"></label></div></div>${rows.length ? statsSummaryCards(rows)+statsDetails(rows)+statsPlayerButtons(rows,true) : '<div class="history-empty">Aucune participation pour cette date.</div>'}`;
+      content.innerHTML=`<div class="stats-daily-heading"><h3>Défi du jour ${dailyRankingKind==='remix'?'remix':'classique'} du ${formatStatsDate(dateKey)}</h3><div class="stats-daily-nav"><button id="globalStatsDatePrevious" class="ranking-date-step" type="button" aria-label="Jour précédent">&lt;</button><button id="globalStatsDateNext" class="ranking-date-step" type="button" aria-label="Jour suivant"${dateKey>=parisDateKey()?' disabled':''}>&gt;</button><label class="ranking-date-picker-wrap stats-date-picker-wrap" aria-label="Choisir une autre date"><span aria-hidden="true">&#128197;</span><input id="globalStatsDatePicker" class="ranking-date-picker" type="date" value="${dateKey}" max="${parisDateKey()}"></label></div></div>${rows.length ? statsSummaryCards(rows)+statsDetails(rows)+statsPlayerButtons(rows,true) : '<div class="history-empty">Aucune participation pour cette date.</div>'}`;
       const changeStatsDate=nextDate=>{if(nextDate>parisDateKey())return;if(![...dateSelect.options].some(option=>option.value===nextDate))dateSelect.add(new Option(formatStatsDate(nextDate),nextDate));dateSelect.value=nextDate;renderGlobalStatsView();};
       $('#globalStatsDatePrevious').onclick=()=>changeStatsDate(shiftDateKey(dateKey,-1));
       $('#globalStatsDateNext').onclick=()=>changeStatsDate(shiftDateKey(dateKey,1));
@@ -6225,7 +6351,7 @@ async function renderGlobalStatsView(force=false){
         renderGlobalStatsView();
       });
     }else{
-      const rows=await fetchAllGlobalScores(force);
+      const rows=await fetchAllGlobalScores(force,dailyRankingKind);
       if(!modal.classList.contains('open')) return;
       globalStatsRows=rows;
       const uniquePlayers=aggregatePlayers(rows).length;
@@ -6426,6 +6552,8 @@ $('#rankingTabSolo').addEventListener('click', ()=> setRankingView('solo'));
 $('#rankingTabDaily').addEventListener('click', ()=> setRankingView('grids'));
 $('#rankingTabGlobal').addEventListener('click', ()=> setRankingView('global'));
 $('#rankingTabAchievements').addEventListener('click', ()=> setRankingView('achievements'));
+$('#dailyRankingClassic').addEventListener('click',()=>{dailyRankingKind='classic';$('#dailyRankingClassic').classList.add('active');$('#dailyRankingRemix').classList.remove('active');renderRankingList();});
+$('#dailyRankingRemix').addEventListener('click',()=>{dailyRankingKind='remix';$('#dailyRankingRemix').classList.add('active');$('#dailyRankingClassic').classList.remove('active');renderRankingList();});
 $('#achievementListTab').addEventListener('click',()=>{achievementMode='list';renderAchievementsRankingView();});
 $('#achievementRankingTab').addEventListener('click',()=>{achievementMode='ranking';renderAchievementsRankingView();});
 $('#gridModeClassic').addEventListener('click',()=>{gridDisplayMode='classic';gridCatalogState={popular:null,searched:null,searchError:'',accountId:null};$('#gridModeClassic').classList.add('active');$('#gridModeLost').classList.remove('active');$('#gridModeSpace').classList.remove('active');$('#gridModeEarthSky').classList.remove('active');renderGridCatalog(true);});
@@ -6456,6 +6584,12 @@ $('#rankingsFab').addEventListener('click', ()=>{
   setRankingView('global');
   $('#rankingsModal').classList.add('open');
 });
+function openDailyRankingView(kind='classic',dateKey=parisDateKey()){
+  dailyRankingKind=kind==='remix'?'remix':'classic';
+  $('#dailyRankingClassic').classList.toggle('active',dailyRankingKind==='classic');
+  $('#dailyRankingRemix').classList.toggle('active',dailyRankingKind==='remix');
+  setRankingView('global');selectGlobalRankingDate(dateKey);$('#rankingsModal').classList.add('open');
+}
 function closeRankingsModal(){achievementExpanded.clear();expandedScores.clear();$('#rankingsModal').classList.remove('open');}
 function closeAchievementDetailModal(){achievementExpanded.clear();$('#achievementDetailModal').classList.remove('open');$('#achievementDetailToolbar').innerHTML='';}
 $('#closeRankings').addEventListener('click',closeRankingsModal);
