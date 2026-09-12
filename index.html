@@ -202,7 +202,7 @@ button:disabled{opacity:.35;cursor:not-allowed;}
 .ranking-mine{background:rgba(230,194,122,.11);box-shadow:inset 3px 0 0 var(--gold);}
 .global-ranking-summary{display:flex;align-items:center;gap:5px;padding:8px 10px;margin-bottom:4px;border-bottom:1px solid var(--vein);font-size:.73rem;color:var(--text-dim);}
 .global-ranking-summary span{margin-left:auto;font-size:.9rem;}
-.daily-ranking-summary{gap:10px}.daily-ranking-summary .summary-stat{display:inline-flex;align-items:center;gap:4px;margin-left:0;font-size:.73rem;white-space:nowrap}.daily-ranking-summary .summary-gems{margin-left:auto;font-size:.9rem;white-space:nowrap}
+.daily-ranking-summary{box-sizing:border-box;height:34px;gap:10px}.daily-ranking-summary>span:first-child,.daily-ranking-summary .summary-stat,.daily-ranking-summary .summary-separator{display:inline-flex;height:17px;align-items:center;line-height:17px}.daily-ranking-summary .summary-stat{gap:4px;margin-left:0;font-size:.73rem;white-space:nowrap}.daily-ranking-summary .summary-gems{margin-left:auto;font-size:.9rem;white-space:nowrap}
 .daily-kind-tabs{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:8px 0 10px}.daily-kind-tabs button.active{border-color:var(--gold);color:var(--gold-bright);background:rgba(230,194,122,.1)}.remix-piece-list{display:inline-flex;align-items:center;justify-content:center;gap:2px;max-width:100%;white-space:nowrap}.remix-piece-list .mix-icon{flex:0 0 auto}.remix-rules{font-size:.62rem;color:var(--text-faint);white-space:nowrap}
 .daily-ranking-summary .summary-separator{margin-left:0;font-size:.73rem;color:var(--text-faint)}
 @media(max-width:600px){.daily-ranking-summary{padding-left:6px;padding-right:6px;gap:7px}.daily-ranking-summary .summary-gems{font-size:.8rem}}
@@ -718,15 +718,13 @@ body.app-loading .app,body.app-loading .account-fab,body.app-loading .rankings-f
   <div class="modal">
     <button class="close-x" id="closeDailyLabRules" aria-label="Fermer">×</button>
     <h2>🧬 Défi du jour remix</h2>
-    <p>Une grille de 5 à 8 pièces mélange les gemmes et les astres. Tu ne disposes que d’une seule proposition.</p>
+    <p>Une grille quotidienne de 5 à 8 pièces mêlant gemmes et astres. Tu ne disposes que d’une seule proposition.</p>
     <ul>
-      <li>Deux pièces au maximum par couleur.</li>
-      <li>Au plus un mécanisme noir : corps noir, trou noir ou paire de trous de ver. La paire compte pour deux pièces.</li>
-      <li>Une pièce peut dépasser partiellement de la grille et/ou partager exceptionnellement un côté.</li>
-      <li>Le trou noir et les trous de ver restent entièrement dans la grille et ne participent jamais au contact par un côté.</li>
-      <li>Le grand côté de la grande planète blanche reste entièrement posé contre un bord.</li>
+      <li>Une même couleur ne peut apparaître plus de deux fois.</li>
+      <li>La grille comporte au maximum un mécanisme noir : corps noir, trou noir ou paire de trous de ver.</li>
+      <li>Comme dans le Défi du jour classique, les règles spéciales varient selon la grille : une pièce peut dépasser partiellement du plateau, deux pièces peuvent exceptionnellement partager un côté, ou ces deux particularités peuvent être présentes simultanément.</li>
+      <li>Le grand côté de la grande planète blanche doit toujours rester entièrement aligné sur un bord, même si une partie de la planète dépasse du plateau.</li>
     </ul>
-    <p>La grille est identique pour tous les joueurs pendant la journée.</p>
     <div class="controls" style="justify-content:flex-end;margin-top:16px;">
       <button class="ghost" id="cancelDailyLabRules">Annuler</button>
       <button class="primary" id="startDailyLab">Commencer</button>
