@@ -6208,11 +6208,11 @@ async function renderGlobalRanking(dateKey, force=false){
     const layout = dailyRankingKind==='remix'?generateDailyLabLayout(dailyRemixReference(dateKey)):generateDailyLayout(dateKey);
     const gems = dailyRankingKind==='remix'?remixPieceTypesHtml(layout?.types||[],17):(layout ? gemFlagsEmojiLine(layout.flags.gray, layout.flags.onyx, layout.flags.sapphire) : '');
     if(rows.length===0){
-      el.innerHTML = `${gems?`<div class="global-ranking-summary daily-ranking-summary"><span>${dailyRankingKind==='remix'?'Pièces du jour':'Configuration du jour'}</span><span class="summary-gems">${gems}</span></div>`:''}<div class="history-empty">Aucun score global enregistré pour ce défi.</div>`;
+      el.innerHTML = `${gems?`<div class="global-ranking-summary daily-ranking-summary ${dailyRankingKind==='remix'?'remix-summary':'classic-summary'}"><span>${dailyRankingKind==='remix'?'Pièces du jour':'Configuration du jour'}</span><span class="summary-gems">${gems}</span></div>`:''}<div class="history-empty">Aucun score global enregistré pour ce défi.</div>`;
       return;
     }
     const wins = rows.filter(r=>r.success).length;
-    el.innerHTML = `<div class="global-ranking-summary daily-ranking-summary"><span class="summary-stat" title="Participants"><b>${rows.length}</b> 👥</span><span class="summary-separator">·</span><span class="summary-stat"><b>${wins}</b> réussite${wins>1?'s':''}</span><span class="summary-gems">${gems}</span></div>` + rows.map((raw,i)=>{
+    el.innerHTML = `<div class="global-ranking-summary daily-ranking-summary ${dailyRankingKind==='remix'?'remix-summary':'classic-summary'}"><span class="summary-stat" title="Participants"><b>${rows.length}</b> 👥</span><span class="summary-separator">·</span><span class="summary-stat"><b>${wins}</b> réussite${wins>1?'s':''}</span><span class="summary-gems">${gems}</span></div>` + rows.map((raw,i)=>{
       const e=globalEntryToLocal(raw,dailyRankingKind);
       const mine=!!myAccountId&&String(e.accountId)===String(myAccountId);
       const failTag=e.success ? '' : '<span class="ranking-fail">Échec</span>';
