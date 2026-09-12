@@ -5532,10 +5532,11 @@ function renderDailyStatusLine(status){
   const line=$('#dailyStatusLine');
   const button=$('#soloChoiceDaily');
   const detail=button.querySelector('small');
-  button.classList.remove('review-available','prerequisite-locked','prerequisite-checking');
+  button.classList.remove('review-available','already-played','prerequisite-locked','prerequisite-checking');
   if(status?.alreadyPlayed){
     const abandoned=status.attempt?.result==='abandoned';
     if(status.canReview&&!abandoned)button.classList.add('review-available');
+    else button.classList.add('already-played');
     detail.textContent=abandoned?'Tentative abandonnée':(status.canReview?'Revoir la grille':'Déjà joué');
     line.textContent=abandoned
       ? 'La tentative du jour a été abandonnée — reviens demain.'
