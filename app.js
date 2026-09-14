@@ -5685,6 +5685,15 @@ $('#btnReset').addEventListener('click', async()=>{
 
 let dailyTriforceState={checked:false,unlocked:false,spaceStudentChecked:false,spaceStudentUnlocked:false,error:false};
 let prerequisiteModalContext='triforce';
+function updateSoloChoiceViewportHeight(){
+  const backdrop=$('#soloChoiceModal'),modal=backdrop?.querySelector('.modal');
+  if(!backdrop?.classList.contains('open')||!modal)return;
+  modal.classList.remove('fill-viewport');
+  requestAnimationFrame(()=>{
+    if(!backdrop.classList.contains('open'))return;
+    modal.classList.toggle('fill-viewport',modal.scrollHeight>modal.clientHeight+1);
+  });
+}
 function renderDailyStatusLine(status,kind=status?.kind||'classic'){
   const line=$('#dailyStatusLine');
   const button=$(kind==='remix'?'#soloChoiceDailyLab':'#soloChoiceDaily');
@@ -5717,7 +5726,9 @@ function renderDailyStatusLine(status,kind=status?.kind||'classic'){
     const label=dailyKind==='remix'?'Remix':'Classique';
     messages.push(current.attempt?.result==='abandoned'?`${label} : tentative abandonnée.`:`${label} : déjà joué (${current.attempt?.result==='win'?'réussi 🏆':'raté 💥'}).`);
   }
-  line.textContent=messages.join(' · ');line.style.display=messages.length?'block':'none';
+  line.innerHTML=messages.map(message=>`<span class="daily-status-item">${escapeHtml(message)}</span>`).join('');
+  line.style.display=messages.length?'block':'none';
+  if($('#soloChoiceModal').classList.contains('open'))updateSoloChoiceViewportHeight();
 }
 function renderDailyActiveAttemptLabels(){
   for(const kind of ['classic','remix']){
@@ -5850,6 +5861,7 @@ async function openSoloChoiceModal(){
   renderDailyStatusLine(dailyStatusToday('classic'),'classic');renderDailyStatusLine(dailyStatusToday('remix'),'remix');
   $('#soloChoiceModal').classList.add('open');
   document.querySelectorAll('#soloChoiceModal .earth-sky-preview').forEach(zone=>zone.hidden=!canPreviewEarthSky());
+  updateSoloChoiceViewportHeight();
   if(currentPlayerAccount){
     line.textContent='Vérification du défi du jour…';
     line.style.display='block';
@@ -5861,11 +5873,14 @@ async function openSoloChoiceModal(){
   }
   if(!dailyStatusToday('classic').alreadyPlayed&&$('#soloChoiceModal').classList.contains('open'))await verifyTriforcePrerequisite(false);
   if(!dailyStatusToday('remix').alreadyPlayed&&$('#soloChoiceModal').classList.contains('open'))await verifyDailyRemixPrerequisites(false);
+  updateSoloChoiceViewportHeight();
 }
-function closeSoloChoiceModal(){ $('#soloChoiceModal').classList.remove('open'); document.body.classList.remove('solo-menu-open'); }
+function closeSoloChoiceModal(){ $('#soloChoiceModal').classList.remove('open');$('#soloChoiceModal .modal')?.classList.remove('fill-viewport');document.body.classList.remove('solo-menu-open'); }
 $('#closeSoloChoice').addEventListener('click',closeSoloChoiceModal);
 $('#soloChoiceCancel').addEventListener('click', closeSoloChoiceModal);
 $('#soloChoiceModal').addEventListener('click', e=>{ if(e.target.id==='soloChoiceModal') closeSoloChoiceModal(); });
+window.addEventListener('resize',updateSoloChoiceViewportHeight);
+window.visualViewport?.addEventListener('resize',updateSoloChoiceViewportHeight);
 $('#soloChoiceDaily').addEventListener('click', async()=>{
   try{await refreshDailyStatusFromSupabase();}catch(error){}
   const status=dailyStatusToday();
