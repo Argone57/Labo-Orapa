@@ -577,9 +577,9 @@ const DAILY_REMIX_FINAL_SNAPSHOTS_KEY = `${LOCAL_STORAGE_PREFIX}DailyRemixFinalS
 // indépendant du compte : chaque navigateur garde sa propre dernière visite.
 const UPDATES_READ_KEY = `${LOCAL_STORAGE_PREFIX}UpdatesReadV2`;
 const GAME_UPDATES = [
-  {id:'daily-remix-20260913',date:'13/09/2026',title:'Nouveau mode de jeu : Défi du jour remix'},
-  {id:'myludo2-20260910',date:'10/09/2026',title:'L\'extension Firefox est en ligne.'},
-  {id:'myludo-20260907',date:'07/09/2026',title:'Export Myludo possible via l\'extension Chrome et Firefox Orapa2Myludo, direction vos options (encore en attente de validation sur Firefox)'},
+  {id:'aides-20260914',date:'14/09/2026',title:'Légère correction du mode indice et ajout d\'un mode pour marquer les cases vides'},
+  {id:'daily-remix-20260913',date:'13/09/2026',title:'Nouveau mode de jeu : Défi du jour remix'},  
+  {id:'myludo-20260907',date:'07/09/2026',title:'Export Myludo possible via l\'extension Chrome et Firefox Orapa2Myludo, direction vos options'},
   {id:'wormhole-20260901',date:'01/09/2026',title:'Trou de ver pour Space et Terre et Ciel'},
   {id:'engine-20260901',date:'01/09/2026',title:'Nouveau moteur de jeu'},
   {id:'earth-sky-20260821',date:'21/08/2026',title:'Mode de jeu : Terre et Ciel'},
@@ -1213,7 +1213,7 @@ function gridRankingRows(rows){
 function gridRankingIntro(gridId,copyButtonId,playButtonId,returnToVictory=false){
   const decoded=decodeGridId(gridId);
   const gems=decoded?.variant==='lost'?'💎 Gemme perdue':(decoded?.variant==='space'?`🪐 Orapa Space · ${spaceFlagsEmojiLine(decoded)}`:(decoded?.variant==='earthSky'?`🌍☁️ Terre et Ciel · ${earthSkyFlagsEmojiLine(decoded)}`:(decoded?gemFlagsEmojiLine(decoded.includeGray,decoded.includeOnyx,decoded.includeSapphire):'')));
-  return `<div class="grid-ranking-idline"><p>Grille <b>${escapeHtml(publicGridId(gridId))}</b></p><span class="ranking-gems">${gems}</span></div><div class="controls ranked-grid-actions"><button id="${copyButtonId}" class="ghost">📋 Copier l’ID de la grille</button>${returnToVictory?'<button id="gridResultBack" class="ghost">← Retour au résultat</button>':''}<button id="${playButtonId}" class="primary ranked-grid-play">▶ Jouer cette grille</button></div>`;
+  return `<div class="grid-ranking-idline"><p>Grille <b>${escapeHtml(publicGridId(gridId))}</b></p><span class="ranking-gems">${gems}</span></div><div class="controls ranked-grid-actions"><button id="${copyButtonId}" class="ghost">📋 Copier ID</button>${returnToVictory?'<button id="gridResultBack" class="ghost">← Retour au résultat</button>':''}<button id="${playButtonId}" class="primary ranked-grid-play">▶ Jouer cette grille</button></div>`;
 }
 async function playGridFromRanking(gridId,button){
   const originalText=button.textContent;
