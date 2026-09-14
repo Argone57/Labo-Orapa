@@ -56,6 +56,7 @@ button.danger{border-color:#6b3a30;color:#e59c8c;}
 button.ghost{background:transparent;}
 button.ghost.active{background:linear-gradient(180deg,#3a2c17,#2a1f10);border-color:var(--gold);color:var(--gold-bright);}
 #btnHint.ghost.active{animation:hintPulse 1.4s infinite;}
+#btnDraft.ghost.active{border-color:var(--gold);color:var(--gold-bright);background:rgba(230,194,122,.1);}
 @keyframes hintPulse{0%,100%{box-shadow:0 0 0 0 rgba(230,194,122,.5)}50%{box-shadow:0 0 0 6px rgba(230,194,122,0)}}
 button:disabled{opacity:.35;cursor:not-allowed;}
 .setup-options{display:flex;gap:16px;justify-content:center;flex-wrap:wrap;margin:12px 0 4px;font-size:.8rem;color:var(--text-dim);}
@@ -104,6 +105,9 @@ button:disabled{opacity:.35;cursor:not-allowed;}
 .board{grid-row:2;grid-column:2;position:relative;background:#747d8c;border-radius:3px;box-shadow:inset 0 0 20px rgba(0,0,0,.35);touch-action:pan-x pan-y;}
 .board-bg-grid{position:absolute;inset:0;}
 .cellhit{position:absolute;}
+.cellhit.draft-empty{z-index:8;background:var(--bg);box-shadow:inset 0 0 0 1px rgba(230,194,122,.12);}
+.board.cell-tool-active .cellhit{z-index:9;cursor:crosshair;}
+.board.cell-tool-active .piece-poly.interactive{pointer-events:none;}
 .cellhit.queried{animation:flashCell .8s ease;}
 @keyframes flashCell{0%{background:rgba(255,255,255,.55)}100%{background:transparent}}
 .overlaysvg{position:absolute;inset:0;pointer-events:none;}
@@ -376,6 +380,7 @@ body.app-loading .app,body.app-loading .account-fab,body.app-loading .about-fab,
     <div id="startBlockMsg" aria-live="polite"></div>
     <div class="controls">
       <button id="btnHint" class="ghost" style="display:none;">🔍 Demander un indice</button>
+      <button id="btnDraft" class="ghost" style="display:none;">◻️ Marquer les cases vides</button>
       <button id="btnPropose" class="primary" style="display:none;">✅ Proposer une solution</button>
       <button id="btnToggleGuess" class="ghost" style="display:none;">👁 Mes gemmes</button>
       <button id="btnToggleSecret" class="ghost" style="display:none;">👁 Gemmes à trouver</button>
@@ -908,6 +913,6 @@ body.app-loading .app,body.app-loading .account-fab,body.app-loading .about-fab,
   </div>
 </div>
 
-<script src="boot.js?v=20260913-0006"></script>
+<script src="boot.js?v=20260914-0001"></script>
 </body>
 </html>
