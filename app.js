@@ -1210,10 +1210,22 @@ function gridRankingRows(rows){
   </div></div>`;
   }).join('');
 }
-function gridRankingIntro(gridId,copyButtonId,returnToVictory=false){
+function gridRankingIntro(gridId,copyButtonId,playButtonId,returnToVictory=false){
   const decoded=decodeGridId(gridId);
   const gems=decoded?.variant==='lost'?'💎 Gemme perdue':(decoded?.variant==='space'?`🪐 Orapa Space · ${spaceFlagsEmojiLine(decoded)}`:(decoded?.variant==='earthSky'?`🌍☁️ Terre et Ciel · ${earthSkyFlagsEmojiLine(decoded)}`:(decoded?gemFlagsEmojiLine(decoded.includeGray,decoded.includeOnyx,decoded.includeSapphire):'')));
-  return `<div class="grid-ranking-idline"><p>Grille <b>${escapeHtml(publicGridId(gridId))}</b></p><span class="ranking-gems">${gems}</span></div><div class="controls ranked-grid-actions"><button id="${copyButtonId}" class="ghost">📋 Copier l’ID de la grille</button>${returnToVictory?'<button id="gridResultBack" class="ghost">← Retour au résultat</button>':''}</div>`;
+  return `<div class="grid-ranking-idline"><p>Grille <b>${escapeHtml(publicGridId(gridId))}</b></p><span class="ranking-gems">${gems}</span></div><div class="controls ranked-grid-actions"><button id="${copyButtonId}" class="ghost">📋 Copier l’ID de la grille</button>${returnToVictory?'<button id="gridResultBack" class="ghost">← Retour au résultat</button>':''}<button id="${playButtonId}" class="primary ranked-grid-play">▶ Jouer cette grille</button></div>`;
+}
+async function playGridFromRanking(gridId,button){
+  const originalText=button.textContent;
+  button.disabled=true;button.textContent='Vérification…';
+  try{
+    const decoded=await resolveGridReference(String(gridId||'').trim().toUpperCase());
+    if(!decoded||!decodedGridLayoutIsValid(decoded)){openInvalidGridIdModal();return;}
+    ['nestedGridRankingModal','gridDataModal','rankingsModal','accountModal','victoryModal','sharedGridPreviewModal'].forEach(id=>$(`#${id}`)?.classList.remove('open'));
+    document.body.classList.remove('solo-menu-open');
+    await (decoded.variant==='lost'?startLostGame(decoded.id):(decoded.variant==='space'?startSpaceSoloGame(decoded.id):(decoded.variant==='earthSky'?startEarthSkySoloGame(decoded.id):startSoloGame(decoded.id))));
+  }catch(error){showErrorToast(`Impossible de lancer cette grille : ${error.message}`);}
+  finally{button.disabled=false;button.textContent=originalText;}
 }
 async function openGridRanking(gridId,returnToAccount=false,returnToVictory=false){
   if(!gridId) return;
@@ -1223,10 +1235,11 @@ async function openGridRanking(gridId,returnToAccount=false,returnToVictory=fals
   const rankingRpc=earthSky?'orapa_earth_sky_grid_ranking':(space?'orapa_space_grid_ranking':(lost?'orapa_lost_grid_ranking':'orapa_get_grid_scores'));
   const rankingArgs={p_grid_id:gridId,p_session_token:currentPlayerAccount?.session_token||''};
   if(returnToAccount&&$('#gridDataModal').classList.contains('open')){
-    $('#nestedGridRankingIntro').innerHTML=gridRankingIntro(gridId,'copyNestedRankedGridId');
+    $('#nestedGridRankingIntro').innerHTML=gridRankingIntro(gridId,'copyNestedRankedGridId','playNestedRankedGrid');
     $('#nestedGridRankingContent').innerHTML='<div class="history-empty">Chargement…</div>';
     $('#nestedGridRankingModal').classList.add('open');
     $('#copyNestedRankedGridId').onclick=()=>{const id=publicGridId(gridId);navigator.clipboard?.writeText(id).then(()=>showToast('Identifiant copié : '+id));};
+    $('#playNestedRankedGrid').onclick=event=>playGridFromRanking(gridId,event.currentTarget);
     try{
       const rows=await supabaseRpc(rankingRpc,rankingArgs);
       if(!$('#nestedGridRankingModal').classList.contains('open'))return;
@@ -1237,8 +1250,9 @@ async function openGridRanking(gridId,returnToAccount=false,returnToVictory=fals
     }
     return;
   }
-  openGridDataShell('🏆 Classement de la grille',gridRankingIntro(gridId,'copyRankedGridId',returnToVictory),returnToAccount,returnToVictory);
+  openGridDataShell('🏆 Classement de la grille',gridRankingIntro(gridId,'copyRankedGridId','playRankedGrid',returnToVictory),returnToAccount,returnToVictory);
   $('#copyRankedGridId').onclick=()=>{const id=publicGridId(gridId);navigator.clipboard?.writeText(id).then(()=>showToast('Identifiant copié : '+id));};
+  $('#playRankedGrid').onclick=event=>playGridFromRanking(gridId,event.currentTarget);
   if(returnToVictory) $('#gridResultBack').onclick=()=>closeGridDataModal(true);
   try{
     const rows=await supabaseRpc(rankingRpc,rankingArgs);
