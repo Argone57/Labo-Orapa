@@ -156,6 +156,7 @@ button:disabled{opacity:.35;cursor:not-allowed;}
 .modal h2{color:var(--gold-bright);font-size:1.05rem;margin-bottom:10px;}
 .modal p,.modal li{color:var(--text-dim);font-size:.83rem;line-height:1.55;}
 .modal .close-x{float:right;background:none;border:none;color:var(--text-dim);font-size:1.3rem;padding:0 4px;}
+.street-open{overflow:hidden}.street-prototype[hidden]{display:none!important}.street-prototype{position:fixed;inset:0;z-index:610;overflow:auto;background:radial-gradient(ellipse at 20% -10%,#2a2015 0%,transparent 55%),#120e0a;color:var(--text);padding:max(14px,env(safe-area-inset-top)) max(12px,env(safe-area-inset-right)) max(20px,env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left))}.street-shell{width:min(1180px,100%);margin:0 auto}.street-header{display:flex;align-items:center;gap:12px;padding:7px 0 13px;border-bottom:1px solid var(--vein)}.street-header-copy{min-width:0;flex:1}.street-header h2{color:var(--gold-bright);font-size:1.18rem}.street-header p{margin:3px 0 0;color:var(--text-dim);font-size:.74rem}.street-layout{display:grid;grid-template-columns:minmax(225px,290px) minmax(0,1fr);gap:16px;margin-top:16px}.street-panel{padding:13px;border:1px solid var(--vein);border-radius:12px;background:rgba(36,28,19,.82)}.street-panel h3{margin:0 0 10px;color:var(--gold);font-size:.8rem}.street-palette{display:grid;gap:7px}.street-piece-card{display:grid;grid-template-columns:18px minmax(0,1fr) auto;align-items:center;gap:8px;width:100%;padding:8px 9px;text-align:left;font-size:.7rem}.street-piece-card small{color:var(--text-faint);font-size:.58rem}.street-piece-card.selected{border-color:var(--gold);background:#342614}.street-piece-card.placed small{color:#a9d994}.street-piece-chip{width:15px;height:15px;background:var(--piece-color);clip-path:polygon(50% 0,100% 25%,100% 75%,50% 100%,0 75%,0 25%);box-shadow:inset 0 0 0 1px #fff5}.street-tools{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:10px}.street-tools button{min-width:0;padding:8px 5px;font-size:.65rem}.street-tool-tabs{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:12px 0 0}.street-tool-tabs button{padding:8px;font-size:.66rem}.street-tool-tabs button.active{border-color:var(--gold);color:var(--gold-bright);background:#342614}.street-message{margin:12px 0 0;color:var(--text-dim);font-size:.68rem;line-height:1.4}.street-message.error{color:#f0a79c}.street-board-panel{min-width:0}.street-board-wrap{overflow:auto;display:grid;place-items:center;min-height:520px;padding:8px;border:1px solid #59462f;border-radius:10px;background:#1a140e}.street-board{display:block;width:min(100%,800px);min-width:610px;max-height:72vh;touch-action:none;overflow:visible}.street-cell{fill:#747d8c;stroke:#4d5663;stroke-width:1}.street-cell:hover{fill:#818b9b}.street-label{fill:var(--gold-bright);font:700 12px 'Cinzel',serif;pointer-events:none}.street-ray-button{fill:#2b2116;stroke:#d0aa61;stroke-width:1.3;cursor:pointer}.street-ray-button:hover{fill:#d0aa61}.street-piece{cursor:grab;filter:drop-shadow(0 3px 4px #0008)}.street-piece polygon{stroke:#15100b;stroke-width:1.4}.street-piece.selected polygon{stroke:#f3d38d;stroke-width:3}.street-piece.invalid polygon{stroke:#ef6654;stroke-width:4}.street-wall{stroke-width:7;stroke-linecap:round;paint-order:stroke;filter:drop-shadow(0 1px 1px #000)}.street-trace{fill:none;stroke-width:4;stroke-linecap:round;stroke-linejoin:round;pointer-events:none;filter:drop-shadow(0 0 2px #000)}.street-bounce-number,.street-coordinate-mark{fill:#fff;font:800 11px system-ui,sans-serif;paint-order:stroke;stroke:#17110c;stroke-width:3;pointer-events:none}.street-coordinate-mark{fill:#f06d59;font-size:13px}.street-history{margin:8px 0 0;padding:0;list-style:none;max-height:175px;overflow:auto}.street-history li{padding:7px 4px;border-bottom:1px solid #5b463055;color:var(--text-dim);font-size:.68rem}.street-history li b{color:var(--gold-bright)}.street-history li.empty{font-style:italic;color:var(--text-faint)}.street-bottom-actions{display:flex;justify-content:flex-end;gap:7px;margin-top:10px}.street-bottom-actions button{padding:7px 10px;font-size:.65rem}@media(max-width:760px){.street-layout{grid-template-columns:1fr}.street-header{align-items:flex-start}.street-header .controls{gap:5px}.street-header button{padding:8px 10px;font-size:.7rem}.street-palette{grid-template-columns:repeat(2,minmax(0,1fr))}.street-piece-card{grid-template-columns:15px minmax(0,1fr);padding:7px}.street-piece-card small{grid-column:2}.street-board-wrap{display:block;min-height:0}.street-board{width:720px;max-height:none}}@media(max-width:430px){.street-palette{grid-template-columns:1fr}.street-header p{display:none}}
 .mix-board{background:#241a14;border:1px solid var(--vein);border-radius:10px;padding:12px;margin-top:10px;}
 .mix-quad{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
 .mix-block{padding:6px;}
@@ -812,8 +813,37 @@ body.app-loading .app,body.app-loading .account-fab,body.app-loading .about-fab,
       <button class="ghost" id="createLostMode">💎 Gemme perdue</button>
     </div></section><section class="choice-zone"><h3 class="choice-zone-title">🪐 Orapa Space</h3><div class="controls" style="justify-content:center;margin-top:10px;"><button class="ghost" id="createSpaceMode">🚀 Grille classique</button></div></section>
     <section class="choice-zone earth-sky-preview" hidden><h3 class="choice-zone-title">🌍☁️ Terre et Ciel</h3><div class="controls" style="justify-content:center;margin-top:10px;"><button class="ghost" id="createEarthSkyMode">🌗 Double grille</button></div></section>
+    <section class="choice-zone"><h3 class="choice-zone-title">🚧 Orapa Street — prototype</h3><p>Atelier local pour valider la grille triangulaire, les formes et leurs placements.</p><div class="controls" style="justify-content:center;margin-top:10px;"><button class="ghost" id="createStreetMode">🔺 Ouvrir l’atelier Street</button></div></section>
   </div>
 </div>
+
+<section class="street-prototype" id="streetPrototype" hidden aria-label="Prototype Orapa Street">
+  <div class="street-shell">
+    <div class="street-header">
+      <div class="street-header-copy"><h2>🚧 Orapa Street — atelier de création</h2><p>Prototype local sans identifiant, serveur, classement ni incidence sur les autres modes.</p></div>
+      <div class="controls"><button class="danger" id="streetReset">Recommencer</button><button class="primary" id="streetClose">← Retour à l’accueil</button></div>
+    </div>
+    <div class="street-layout">
+      <aside>
+        <section class="street-panel">
+          <h3>Les 7 pièces</h3>
+          <div class="street-palette" id="streetPalette"></div>
+          <div class="street-tools"><button id="streetRotate">↻ Rotation</button><button id="streetFlip">⇄ Miroir</button><button class="danger" id="streetRemove">Retirer</button></div>
+          <div class="street-tool-tabs"><button class="active" data-street-tool="pieces">🔺 Placement</button><button data-street-tool="coords">✚ Coordonnées</button></div>
+          <p class="street-message" id="streetMessage"></p>
+        </section>
+        <section class="street-panel" style="margin-top:12px">
+          <h3>Essais</h3>
+          <ul class="street-history" id="streetHistory"><li class="empty">Aucun test lancé.</li></ul>
+          <div class="street-bottom-actions"><button id="streetDiagnostic">📋 Copier le diagnostic</button><button id="streetClearTests">Effacer les essais</button></div>
+        </section>
+      </aside>
+      <main class="street-board-panel">
+        <div class="street-board-wrap"><svg class="street-board" id="streetBoard" role="img" aria-label="Grille triangulaire Orapa Street"></svg></div>
+      </main>
+    </div>
+  </div>
+</section>
 
 <div class="modal-backdrop" id="earthSkyIntroModal"><div class="modal"><button class="close-x" id="closeEarthSkyIntro">×</button><h2>🌍☁️ Terre et Ciel</h2><p>La mine et l’espace partagent une même carte de 10 × 16 cases. Les gemmes occupent une moitié et les astres l’autre ; leur position haute ou basse change à chaque grille.</p><p>La ligne pointillée sépare les deux univers pour le placement des pièces, mais les ondes la traversent librement. Elle peut servir de bord au grand côté de la grande planète blanche.</p><p>Deux pièces ne peuvent pas partager un côté, même si elles se trouvent de part et d’autre de cette ligne.</p><p>Choisis les éléments optionnels qui pourront accompagner les pièces de base.</p><div class="setup-options"><label><input type="checkbox" id="earthSkyOptGray"> Diamant</label><label><input type="checkbox" id="earthSkyOptOnyx"> Corps noir</label><label><input type="checkbox" id="earthSkyOptSapphire"> Saphir bleu ciel</label><label><input type="checkbox" id="earthSkyOptBlackHole"> 🕳️ Trou noir</label><label><input type="checkbox" id="earthSkyOptWormhole"> 🌀 Trous de ver</label></div><div class="controls" style="justify-content:flex-end"><button class="ghost" id="cancelEarthSkyIntro">Annuler</button><button class="primary" id="startEarthSkyGame">Commencer</button></div></div></div>
 
@@ -915,6 +945,6 @@ body.app-loading .app,body.app-loading .account-fab,body.app-loading .about-fab,
   </div>
 </div>
 
-<script src="boot.js?v=20260920-0001"></script>
+<script src="boot.js?v=20260922-0001"></script>
 </body>
 </html>

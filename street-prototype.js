@@ -1,0 +1,392 @@
+(function(){
+  'use strict';
+
+  const SVG_NS='http://www.w3.org/2000/svg';
+  const APP_VERSION=(()=>{try{return new URL(document.currentScript?.src||location.href,location.href).searchParams.get('v')||null;}catch(_error){return null;}})();
+  const EDGE=38;
+  const TRI_H=Math.sqrt(3)*EDGE/2;
+  const BOARD_ROWS=[
+    [4,18],[3,19],[2,20],[1,21],[0,20],[1,19],[2,18],[3,17]
+  ];
+  const COLORS={blue:'#2f6fd1',white:'#f5f1e8',yellow:'#e0a72e',red:'#d1293d'};
+  const LABELS=['5','6','7','8','9','10','11','12','13','14','N','M','L','K','J','I','H','G','F','E','D','C','B','A','1','2','3','4'];
+  const SAVE_KEY='orapa_street_prototype_v1';
+  const EPS=1e-6;
+
+  const PIECES=[
+    {id:'blueSmall',name:'Bleue — 1 triangle',color:'blue',poly:[[0,0],[1,0],[0,1]],walls:[]},
+    {id:'blueLarge',name:'Bleue — 4 triangles',color:'blue',poly:[[0,0],[1,0],[1,2],[0,2]],walls:[]},
+    {id:'whiteSmall',name:'Blanche — 2 triangles + mur',color:'white',poly:[[0,0],[1,0],[1,1],[0,1]],walls:[[[1,1],[1,2]]]},
+    {id:'whiteLarge',name:'Blanche — hexagone + mur',color:'white',poly:[[1,0],[0,1],[-1,1],[-1,0],[0,-1],[1,-1]],walls:[[[1,0],[2,0]]]},
+    {id:'yellowLarge',name:'Jaune — 4 triangles',color:'yellow',poly:[[0,0],[1,0],[1,2],[0,2]],walls:[]},
+    {id:'yellowBent',name:'Jaune — 6 triangles décalés',color:'yellow',poly:[[0,0],[2,0],[2,1],[1,1],[1,2],[0,2]],walls:[]},
+    {id:'redWall',name:'Rouge — 2 triangles + mur',color:'red',poly:[[0,0],[1,0],[1,1],[0,1]],walls:[[[1,0],[2,0]]]},
+  ];
+
+  const byId=id=>document.getElementById(id);
+  const svgEl=(name,attrs={})=>{
+    const el=document.createElementNS(SVG_NS,name);
+    Object.entries(attrs).forEach(([key,value])=>el.setAttribute(key,String(value)));
+    return el;
+  };
+  const keyPoint=p=>`${p.q},${p.r}`;
+  const screenPoint=p=>({x:p.q*EDGE/2,y:p.r*TRI_H});
+  const add=(a,b)=>({x:a.x+b.x,y:a.y+b.y});
+  const sub=(a,b)=>({x:a.x-b.x,y:a.y-b.y});
+  const mul=(a,n)=>({x:a.x*n,y:a.y*n});
+  const dot=(a,b)=>a.x*b.x+a.y*b.y;
+  const cross=(a,b)=>a.x*b.y-a.y*b.x;
+  const norm=a=>{const n=Math.hypot(a.x,a.y)||1;return {x:a.x/n,y:a.y/n};};
+  const midpoint=(a,b)=>({x:(a.x+b.x)/2,y:(a.y+b.y)/2});
+  const samePoint=(a,b,e=.02)=>Math.hypot(a.x-b.x,a.y-b.y)<e;
+  const pairKey=(a,b)=>[a,b].sort().join('|');
+
+  function makeBoard(){
+    const vertices=new Map();
+    BOARD_ROWS.forEach(([min,max],r)=>{for(let q=min;q<=max;q+=2)vertices.set(`${q},${r}`,{q,r});});
+    const triangles=[];
+    let id=0;
+    for(let r=0;r<7;r++){
+      const min=Math.min(BOARD_ROWS[r][0],BOARD_ROWS[r+1][0])-2;
+      const max=Math.max(BOARD_ROWS[r][1],BOARD_ROWS[r+1][1])+2;
+      for(let q=min;q<=max;q++){
+        const down=[vertices.get(`${q},${r}`),vertices.get(`${q+2},${r}`),vertices.get(`${q+1},${r+1}`)];
+        if(down.every(Boolean))triangles.push({id:id++,points:down.map(screenPoint)});
+        const up=[vertices.get(`${q},${r}`),vertices.get(`${q-1},${r+1}`),vertices.get(`${q+1},${r+1}`)];
+        if(up.every(Boolean))triangles.push({id:id++,points:up.map(screenPoint)});
+      }
+    }
+    const edges=new Map();
+    triangles.forEach(tri=>{
+      for(let i=0;i<3;i++){
+        const a=tri.points[i],b=tri.points[(i+1)%3];
+        const ka=`${a.x.toFixed(3)},${a.y.toFixed(3)}`,kb=`${b.x.toFixed(3)},${b.y.toFixed(3)}`;
+        const k=pairKey(ka,kb);
+        const item=edges.get(k)||{a,b,triangles:[]};
+        item.triangles.push(tri);
+        edges.set(k,item);
+      }
+    });
+    const boundary=[...edges.values()].filter(edge=>edge.triangles.length===1);
+    const adjacency=new Map();
+    boundary.forEach((edge,index)=>{
+      [edge.a,edge.b].forEach(point=>{
+        const k=`${point.x.toFixed(3)},${point.y.toFixed(3)}`;
+        if(!adjacency.has(k))adjacency.set(k,[]);
+        adjacency.get(k).push({index,point});
+      });
+    });
+    let start=boundary.reduce((best,edge)=>{
+      for(const point of [edge.a,edge.b])if(!best||point.y<best.y-EPS||(Math.abs(point.y-best.y)<EPS&&point.x<best.x))best=point;
+      return best;
+    },null);
+    let current=start,previous=null;
+    const ordered=[];
+    for(let guard=0;guard<boundary.length;guard++){
+      const k=`${current.x.toFixed(3)},${current.y.toFixed(3)}`;
+      const candidates=(adjacency.get(k)||[]).filter(item=>!ordered.includes(item.index));
+      let chosen=candidates[0];
+      if(guard===0)chosen=candidates.find(item=>{
+        const edge=boundary[item.index],other=samePoint(edge.a,current)?edge.b:edge.a;
+        return Math.abs(other.y-current.y)<.02&&other.x>current.x;
+      })||chosen;
+      if(!chosen)break;
+      const edge=boundary[chosen.index];
+      const other=samePoint(edge.a,current)?edge.b:edge.a;
+      ordered.push(chosen.index);previous=current;current=other;
+    }
+    const orderedBoundary=ordered.map((index,i)=>({...boundary[index],label:LABELS[i],index:i}));
+    const polygon=[start];
+    current=start;
+    orderedBoundary.forEach(edge=>{current=samePoint(edge.a,current)?edge.b:edge.a;polygon.push(current);});
+    polygon.pop();
+    const center=polygon.reduce((sum,p)=>add(sum,p),{x:0,y:0});center.x/=polygon.length;center.y/=polygon.length;
+    orderedBoundary.forEach(edge=>{
+      edge.mid=midpoint(edge.a,edge.b);
+      const tri=edge.triangles[0];
+      const otherMids=[];
+      for(let i=0;i<3;i++){
+        const m=midpoint(tri.points[i],tri.points[(i+1)%3]);
+        if(!samePoint(m,edge.mid))otherMids.push(m);
+      }
+      edge.directions=otherMids.map(m=>norm(sub(m,edge.mid))).sort((a,b)=>Math.atan2(a.y,a.x)-Math.atan2(b.y,b.x));
+      edge.outward=norm(sub(edge.mid,center));
+    });
+    return {vertices,triangles,edges:[...edges.values()],boundary:orderedBoundary,polygon,center,width:21*EDGE/2,height:7*TRI_H};
+  }
+
+  const BOARD=makeBoard();
+
+  function axialTransform(point,rotation,flipped){
+    let [a,b]=point;
+    if(flipped)[a,b]=[a+b,-b];
+    for(let i=0;i<rotation;i++)[a,b]=[-a-b,a];
+    return [a,b];
+  }
+  function pieceGeometry(piece){
+    const definition=PIECES.find(item=>item.id===piece.id);
+    const transform=point=>{
+      const [a,b]=axialTransform(point,piece.rotation,piece.flipped);
+      return screenPoint({q:piece.anchor.q+2*a+b,r:piece.anchor.r+b});
+    };
+    return {definition,poly:definition.poly.map(transform),walls:definition.walls.map(w=>w.map(transform))};
+  }
+  function pointOnSegment(p,a,b,tolerance=.05){
+    const ab=sub(b,a),ap=sub(p,a);
+    return Math.abs(cross(ab,ap))<=tolerance&&dot(ap,ab)>=-tolerance&&dot(sub(p,b),ab)<=tolerance;
+  }
+  function pointInPolygon(point,poly,includeBoundary=true){
+    if(includeBoundary&&poly.some((p,i)=>pointOnSegment(point,p,poly[(i+1)%poly.length])))return true;
+    let inside=false;
+    for(let i=0,j=poly.length-1;i<poly.length;j=i++){
+      const a=poly[i],b=poly[j];
+      if(((a.y>point.y)!==(b.y>point.y))&&point.x<(b.x-a.x)*(point.y-a.y)/(b.y-a.y)+a.x)inside=!inside;
+    }
+    return inside;
+  }
+  function segmentIntersection(a,b,c,d,includeEnds=true){
+    const r=sub(b,a),s=sub(d,c),den=cross(r,s),ca=sub(c,a);
+    if(Math.abs(den)<EPS)return null;
+    const t=cross(ca,s)/den,u=cross(ca,r)/den;
+    const lo=includeEnds?-EPS:EPS,hi=includeEnds?1+EPS:1-EPS;
+    if(t>=lo&&t<=hi&&u>=lo&&u<=hi)return {point:add(a,mul(r,t)),t,u};
+    return null;
+  }
+  function collinearOverlap(a,b,c,d){
+    const ab=sub(b,a);
+    if(Math.abs(cross(ab,sub(c,a)))>.05||Math.abs(cross(ab,sub(d,a)))>.05)return false;
+    const length2=dot(ab,ab);if(length2<EPS)return false;
+    const t1=dot(sub(c,a),ab)/length2,t2=dot(sub(d,a),ab)/length2;
+    return Math.min(1,Math.max(t1,t2))-Math.max(0,Math.min(t1,t2))>.02;
+  }
+  function polygonsConflict(a,b){
+    for(let i=0;i<a.length;i++)for(let j=0;j<b.length;j++){
+      const a1=a[i],a2=a[(i+1)%a.length],b1=b[j],b2=b[(j+1)%b.length];
+      if(collinearOverlap(a1,a2,b1,b2))return 'side';
+      const hit=segmentIntersection(a1,a2,b1,b2,false);if(hit)return 'overlap';
+    }
+    if(pointInPolygon(a[0],b,false)||pointInPolygon(b[0],a,false))return 'overlap';
+    return null;
+  }
+  function validatePieces(pieces){
+    const issues=new Map();
+    const placed=pieces.filter(piece=>piece.anchor);
+    const geometries=new Map(placed.map(piece=>[piece.id,pieceGeometry(piece)]));
+    placed.forEach(piece=>{
+      const geo=geometries.get(piece.id);
+      if(geo.poly.some(p=>!pointInPolygon(p,BOARD.polygon,true))||geo.walls.some(w=>w.some(p=>!pointInPolygon(p,BOARD.polygon,true))))issues.set(piece.id,'La pièce doit rester entièrement dans la grille.');
+    });
+    for(let i=0;i<placed.length;i++)for(let j=i+1;j<placed.length;j++){
+      const pa=placed[i],pb=placed[j],a=geometries.get(pa.id),b=geometries.get(pb.id);
+      const conflict=polygonsConflict(a.poly,b.poly);
+      if(conflict){const message=conflict==='side'?'Deux pièces ne peuvent pas partager un côté.':'Deux pièces ne peuvent pas se chevaucher.';issues.set(pa.id,message);issues.set(pb.id,message);}
+      for(const wall of a.walls){
+        if(b.poly.some((p,k)=>segmentIntersection(wall[0],wall[1],p,b.poly[(k+1)%b.poly.length],false))||pointInPolygon(midpoint(wall[0],wall[1]),b.poly,false)){issues.set(pa.id,'Un mur traverse une autre pièce.');issues.set(pb.id,'Un mur traverse une autre pièce.');}
+      }
+      for(const wall of b.walls){
+        if(a.poly.some((p,k)=>segmentIntersection(wall[0],wall[1],p,a.poly[(k+1)%a.poly.length],false))||pointInPolygon(midpoint(wall[0],wall[1]),a.poly,false)){issues.set(pa.id,'Un mur traverse une autre pièce.');issues.set(pb.id,'Un mur traverse une autre pièce.');}
+      }
+    }
+    return issues;
+  }
+  function raySegmentHit(origin,direction,a,b){
+    const s=sub(b,a),ao=sub(a,origin),den=cross(direction,s);
+    if(Math.abs(den)<EPS)return null;
+    const t=cross(ao,s)/den,u=cross(ao,direction)/den;
+    if(t>0.02&&u>-EPS&&u<1+EPS)return {t,point:add(origin,mul(direction,t)),segment:[a,b]};
+    return null;
+  }
+  function traceRay(edgeIndex,directionIndex,pieces){
+    const entry=BOARD.boundary[edgeIndex],segments=[];
+    pieces.filter(p=>p.anchor).forEach(piece=>{
+      const geo=pieceGeometry(piece);
+      geo.poly.forEach((p,i)=>segments.push({a:p,b:geo.poly[(i+1)%geo.poly.length],piece,color:geo.definition.color}));
+      geo.walls.forEach(w=>segments.push({a:w[0],b:w[1],piece,color:geo.definition.color,wall:true}));
+    });
+    let origin=add(entry.mid,mul(entry.directions[directionIndex],.1));
+    let direction=entry.directions[directionIndex],colorSet=new Set(),points=[entry.mid],exit=null;
+    for(let bounce=0;bounce<40;bounce++){
+      let nearest=null;
+      segments.forEach(segment=>{const hit=raySegmentHit(origin,direction,segment.a,segment.b);if(hit&&(!nearest||hit.t<nearest.t))nearest={...hit,...segment,type:'piece'};});
+      BOARD.boundary.forEach(edge=>{const hit=raySegmentHit(origin,direction,edge.a,edge.b);if(hit&&(!nearest||hit.t<nearest.t))nearest={...hit,edge,type:'exit'};});
+      if(!nearest)break;
+      points.push(nearest.point);
+      if(nearest.type==='exit'){exit=nearest.edge;break;}
+      colorSet.add(nearest.color);
+      const tangent=norm(sub(nearest.b,nearest.a));
+      let normal={x:-tangent.y,y:tangent.x};
+      if(dot(direction,normal)>0)normal=mul(normal,-1);
+      direction=norm(sub(direction,mul(normal,2*dot(direction,normal))));
+      origin=add(nearest.point,mul(direction,.15));
+    }
+    return {entry,exit,points,colors:[...colorSet]};
+  }
+  function laneName(labels){
+    const [a,b]=labels;
+    if(/^[ABC]$/.test(a))return `${a}${b}`;
+    if(/^[ABC]$/.test(b))return `${b}${a}`;
+    if(/^\d+$/.test(a)&&!/^\d+$/.test(b))return `${a}${b}`;
+    if(/^\d+$/.test(b)&&!/^\d+$/.test(a))return `${b}${a}`;
+    return `${a}${b}`;
+  }
+  function emptyLane(edge,directionIndex){
+    const direction=edge.directions[directionIndex],origin=add(edge.mid,mul(direction,.1));
+    let nearest=null;
+    BOARD.boundary.forEach(target=>{
+      if(target===edge)return;
+      const hit=raySegmentHit(origin,direction,target.a,target.b);
+      if(hit&&(!nearest||hit.t<nearest.t))nearest={...hit,target};
+    });
+    const labels=nearest?[edge.label,nearest.target.label]:null;
+    return nearest?{a:edge.mid,b:nearest.point,labels,name:laneName(labels)}:null;
+  }
+  const LANES=(()=>{
+    const map=new Map();
+    BOARD.boundary.forEach(edge=>edge.directions.forEach((_,i)=>{
+      const lane=emptyLane(edge,i);if(!lane)return;
+      const k=pairKey(...lane.labels);if(!map.has(k))map.set(k,lane);
+    }));
+    return [...map.values()];
+  })();
+  function coordinateForTriangle(triangle){
+    const center=triangle.points.reduce((sum,p)=>add(sum,p),{x:0,y:0});center.x/=3;center.y/=3;
+    const options=[];
+    for(let i=0;i<LANES.length;i++)for(let j=i+1;j<LANES.length;j++){
+      const hit=segmentIntersection(LANES[i].a,LANES[i].b,LANES[j].a,LANES[j].b,true);
+      if(hit&&pointInPolygon(hit.point,triangle.points,true))options.push({lanes:[LANES[i],LANES[j]],distance:Math.hypot(hit.point.x-center.x,hit.point.y-center.y)});
+    }
+    options.sort((a,b)=>a.distance-b.distance||a.lanes[0].name.localeCompare(b.lanes[0].name,undefined,{numeric:true}));
+    const selected=options[0]?.lanes;
+    if(!selected)return 'Coordonnée indéterminée';
+    selected.sort((a,b)=>{
+      const angle=lane=>Math.atan2(lane.b.y-lane.a.y,lane.b.x-lane.a.x)*180/Math.PI;
+      const aa=angle(a),ab=angle(b);
+      if((aa<-90&&ab>90)||(ab<-90&&aa>90))return aa<-90?-1:1;
+      return 0;
+    });
+    return selected.map(l=>l.name).join(' ');
+  }
+
+  let state={pieces:PIECES.map(def=>({id:def.id,anchor:null,rotation:0,flipped:false})),selected:'blueSmall',tool:'pieces',traces:[],coords:[]};
+  let drag=null;
+
+  function load(){
+    try{
+      const saved=JSON.parse(localStorage.getItem(SAVE_KEY)||'null');
+      if(saved?.pieces?.length===PIECES.length)state={...state,...saved,traces:[],coords:[]};
+    }catch(_error){}
+  }
+  function save(){
+    try{localStorage.setItem(SAVE_KEY,JSON.stringify({...state,traces:[],coords:[]}));}catch(_error){}
+  }
+  function pointsAttr(points){return points.map(p=>`${p.x},${p.y}`).join(' ');}
+  function nearestVertex(clientX,clientY,svg){
+    const point=svg.createSVGPoint();point.x=clientX;point.y=clientY;
+    const local=point.matrixTransform(svg.getScreenCTM().inverse());
+    let best=null,distance=Infinity;
+    BOARD.vertices.forEach(vertex=>{const p=screenPoint(vertex),d=Math.hypot(p.x-local.x,p.y-local.y);if(d<distance){best=vertex;distance=d;}});
+    return best;
+  }
+  function renderPalette(){
+    const host=byId('streetPalette');host.innerHTML='';
+    state.pieces.forEach(piece=>{
+      const def=PIECES.find(d=>d.id===piece.id),button=document.createElement('button');
+      button.className=`street-piece-card${state.selected===piece.id?' selected':''}${piece.anchor?' placed':''}`;
+      button.dataset.piece=piece.id;
+      button.innerHTML=`<span class="street-piece-chip" style="--piece-color:${COLORS[def.color]}"></span><span>${def.name}</span><small>${piece.anchor?'Placée':'À placer'}</small>`;
+      button.addEventListener('click',()=>{state.selected=piece.id;state.tool='pieces';render();});host.appendChild(button);
+    });
+  }
+  function renderBoard(){
+    const svg=byId('streetBoard');svg.innerHTML='';
+    svg.setAttribute('viewBox',`${-70} ${-62} ${BOARD.width+140} ${BOARD.height+124}`);
+    const boardGroup=svgEl('g',{class:'street-grid'});
+    BOARD.triangles.forEach(triangle=>{
+      const poly=svgEl('polygon',{points:pointsAttr(triangle.points),class:'street-cell','data-cell':triangle.id});
+      poly.addEventListener('click',event=>{
+        if(state.tool!=='coords')return;
+        event.stopPropagation();const coord=coordinateForTriangle(triangle);state.coords.push({triangle:triangle.id,text:coord});render();
+      });boardGroup.appendChild(poly);
+    });
+    svg.appendChild(boardGroup);
+    const labelGroup=svgEl('g',{class:'street-labels'});
+    BOARD.boundary.forEach((edge,edgeIndex)=>{
+      const labelPos=add(edge.mid,mul(edge.outward,35));
+      const label=svgEl('text',{x:labelPos.x,y:labelPos.y+4,'text-anchor':'middle',class:'street-label'});label.textContent=edge.label;labelGroup.appendChild(label);
+      edge.directions.forEach((direction,directionIndex)=>{
+        const pos=add(edge.mid,mul(direction,11));
+        const button=svgEl('circle',{cx:pos.x,cy:pos.y,r:6,class:'street-ray-button','data-edge':edgeIndex,'data-direction':directionIndex});
+        button.addEventListener('click',event=>{event.stopPropagation();if(validatePieces(state.pieces).size)return setMessage('Corrige les placements rouges avant de lancer une onde.',true);const trace=traceRay(edgeIndex,directionIndex,state.pieces);state.traces.push(trace);render();});labelGroup.appendChild(button);
+      });
+    });svg.appendChild(labelGroup);
+    state.traces.forEach((trace,index)=>{
+      const color=trace.colors.length?COLORS[trace.colors.at(-1)]:'#d7e1e5';
+      const path=svgEl('polyline',{points:pointsAttr(trace.points),class:'street-trace',stroke:color});svg.appendChild(path);
+      trace.points.slice(1,-1).forEach((p,i)=>{const n=svgEl('text',{x:p.x+5,y:p.y-5,class:'street-bounce-number'});n.textContent=String(i+1);svg.appendChild(n);});
+    });
+    const issues=validatePieces(state.pieces);
+    state.pieces.filter(piece=>piece.anchor).forEach(piece=>{
+      const geo=pieceGeometry(piece),group=svgEl('g',{class:`street-piece${state.selected===piece.id?' selected':''}${issues.has(piece.id)?' invalid':''}`,'data-piece':piece.id});
+      const poly=svgEl('polygon',{points:pointsAttr(geo.poly),fill:COLORS[geo.definition.color]});group.appendChild(poly);
+      geo.walls.forEach(w=>group.appendChild(svgEl('line',{x1:w[0].x,y1:w[0].y,x2:w[1].x,y2:w[1].y,stroke:COLORS[geo.definition.color],class:'street-wall'})));
+      group.addEventListener('pointerdown',event=>{if(state.tool!=='pieces')return;event.stopPropagation();state.selected=piece.id;drag={pieceId:piece.id,pointerId:event.pointerId};svg.setPointerCapture(event.pointerId);renderPalette();});svg.appendChild(group);
+    });
+    state.coords.forEach(item=>{const tri=BOARD.triangles.find(t=>t.id===item.triangle);if(!tri)return;const c=tri.points.reduce((s,p)=>add(s,p),{x:0,y:0});c.x/=3;c.y/=3;const text=svgEl('text',{x:c.x,y:c.y+4,'text-anchor':'middle',class:'street-coordinate-mark'});text.textContent=String(state.coords.indexOf(item)+1);svg.appendChild(text);});
+  }
+  function renderHistory(){
+    const host=byId('streetHistory'),items=[];
+    state.coords.forEach((item,index)=>items.push(`<li><b>Coordonnée ${index+1}</b> — ${item.text}</li>`));
+    state.traces.forEach(trace=>items.push(`<li><b>${trace.entry.label}</b> — ${trace.exit?trace.exit.label:'onde bloquée'}${trace.colors.length?` · ${trace.colors.map(c=>PIECES.find(p=>p.color===c)?.name||c).join(' + ')}`:''}</li>`));
+    host.innerHTML=items.length?items.join(''):'<li class="empty">Aucun test lancé.</li>';
+  }
+  function setMessage(text,error=false){const el=byId('streetMessage');el.textContent=text;el.classList.toggle('error',error);}
+  function render(){
+    renderPalette();renderBoard();renderHistory();
+    const selected=state.pieces.find(p=>p.id===state.selected),issues=validatePieces(state.pieces),placed=state.pieces.filter(p=>p.anchor).length;
+    byId('streetRotate').disabled=!selected?.anchor;byId('streetFlip').disabled=!selected?.anchor;byId('streetRemove').disabled=!selected?.anchor;
+    document.querySelectorAll('[data-street-tool]').forEach(button=>button.classList.toggle('active',button.dataset.streetTool===state.tool));
+    if(issues.size)setMessage([...new Set(issues.values())][0],true);
+    else if(placed<PIECES.length)setMessage(`${placed}/7 pièces placées — sélectionne une pièce puis un croisement de la grille.`);
+    else setMessage('Les 7 pièces sont placées et respectent les contrôles actuels. Tu peux tester les ondes et les coordonnées.');
+    save();
+  }
+  function placeSelected(vertex){
+    const piece=state.pieces.find(p=>p.id===state.selected);if(!piece)return;
+    piece.anchor={q:vertex.q,r:vertex.r};render();
+  }
+  function bind(){
+    const create=byId('createStreetMode');
+    if(!create)return;
+    create.addEventListener('click',open);
+    byId('streetClose').addEventListener('click',close);
+    byId('streetRotate').addEventListener('click',()=>{const p=state.pieces.find(x=>x.id===state.selected);if(p?.anchor){p.rotation=(p.rotation+1)%3;render();}});
+    byId('streetFlip').addEventListener('click',()=>{const p=state.pieces.find(x=>x.id===state.selected);if(p?.anchor){p.flipped=!p.flipped;render();}});
+    byId('streetRemove').addEventListener('click',()=>{const p=state.pieces.find(x=>x.id===state.selected);if(p?.anchor){p.anchor=null;render();}});
+    byId('streetReset').addEventListener('click',()=>{if(!confirm('Effacer tous les placements et les essais Street ?'))return;state={pieces:PIECES.map(def=>({id:def.id,anchor:null,rotation:0,flipped:false})),selected:'blueSmall',tool:'pieces',traces:[],coords:[]};localStorage.removeItem(SAVE_KEY);render();});
+    byId('streetClearTests').addEventListener('click',()=>{state.traces=[];state.coords=[];render();});
+    byId('streetDiagnostic').addEventListener('click',async()=>{
+      const issues=validatePieces(state.pieces);
+      const report={prototype:'ORAPA-STREET-1',appVersion:APP_VERSION,createdAt:new Date().toISOString(),pieces:state.pieces.map(piece=>({...piece})),validation:[...issues.entries()].map(([piece,message])=>({piece,message})),coordinates:state.coords.map(item=>({...item})),rays:state.traces.map(trace=>({entry:trace.entry.label,exit:trace.exit?.label||null,colors:trace.colors,points:trace.points.map(p=>({x:+p.x.toFixed(2),y:+p.y.toFixed(2)}))}))};
+      const text=`ORAPA STREET — RAPPORT DE PROTOTYPE\n${JSON.stringify(report,null,2)}`;
+      try{await navigator.clipboard.writeText(text);setMessage('Diagnostic copié. Tu peux le coller avec une capture pour signaler un problème.');}
+      catch(_error){setMessage('La copie automatique a échoué sur ce navigateur.',true);}
+    });
+    document.querySelectorAll('[data-street-tool]').forEach(button=>button.addEventListener('click',()=>{state.tool=button.dataset.streetTool;render();}));
+    const svg=byId('streetBoard');
+    svg.addEventListener('pointerup',event=>{
+      if(state.tool!=='pieces')return;
+      const vertex=nearestVertex(event.clientX,event.clientY,svg);
+      if(drag){const piece=state.pieces.find(p=>p.id===drag.pieceId);if(piece){state.selected=piece.id;piece.anchor={q:vertex.q,r:vertex.r};}drag=null;render();return;}
+      if(event.target.closest('.street-piece')||event.target.closest('.street-ray-button'))return;placeSelected(vertex);
+    });
+    svg.addEventListener('pointercancel',()=>{drag=null;});
+  }
+  function open(){
+    byId('createModeModal')?.classList.remove('open');
+    byId('streetPrototype').hidden=false;document.body.classList.add('street-open');load();render();
+  }
+  function close(){byId('streetPrototype').hidden=true;document.body.classList.remove('street-open');}
+
+  window.OrapaStreetPrototype={open,close,debug:{BOARD,LANES,PIECES,coordinateForTriangle,traceRay,validatePieces}};
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',bind);else bind();
+})();
