@@ -143,6 +143,22 @@
     };
     return {definition,poly:definition.poly.map(transform),walls:definition.walls.map(w=>w.map(transform))};
   }
+  function visualWallsFor(geometry){
+    return geometry.walls.map(wall=>{
+      const direction=norm(sub(wall[1],wall[0]));
+      let start=add(wall[0],mul(direction,-EDGE*.24)),end=wall[1];
+      if(geometry.definition.id==='redWall'){
+        let inward={x:-direction.y,y:direction.x};
+        const probeBase=add(wall[0],mul(direction,-4));
+        if(!pointInPolygon(add(probeBase,mul(inward,3)),geometry.poly,true))inward=mul(inward,-1);
+        // Le mur rouge est visuellement contenu du même côté que le corps :
+        // son bord extérieur prolonge ainsi la base sans former de rectangle
+        // simplement collé au sommet.
+        start=add(start,mul(inward,3));end=add(end,mul(inward,3));
+      }
+      return [start,end];
+    });
+  }
   function pointOnSegment(p,a,b,tolerance=.05){
     const ab=sub(b,a),ap=sub(p,a);
     return Math.abs(cross(ab,ap))<=tolerance&&dot(ap,ab)>=-tolerance&&dot(sub(p,b),ab)<=tolerance;
@@ -328,15 +344,15 @@
     return best;
   }
   function piecePreview(piece){
-    const geo=pieceGeometry({...piece,anchor:{x:0,y:0}}),all=[...geo.poly,...geo.walls.flat()];
+    const geo=pieceGeometry({...piece,anchor:{x:0,y:0}}),visualWalls=visualWallsFor(geo),all=[...geo.poly,...visualWalls.flat()];
     const xs=all.map(p=>p.x),ys=all.map(p=>p.y),pad=9;
     const minX=Math.min(...xs)-pad,minY=Math.min(...ys)-pad,width=Math.max(...xs)-Math.min(...xs)+pad*2,height=Math.max(...ys)-Math.min(...ys)+pad*2;
-    return `<svg viewBox="${minX} ${minY} ${width} ${height}" aria-hidden="true"><polygon points="${pointsAttr(geo.poly)}" fill="${COLORS[geo.definition.color]}"/>${geo.walls.map(w=>`<line x1="${w[0].x}" y1="${w[0].y}" x2="${w[1].x}" y2="${w[1].y}" stroke="${COLORS[geo.definition.color]}"/>`).join('')}</svg>`;
+    return `<svg viewBox="${minX} ${minY} ${width} ${height}" aria-hidden="true"><polygon points="${pointsAttr(geo.poly)}" fill="${COLORS[geo.definition.color]}"/>${visualWalls.map(w=>`<line x1="${w[0].x}" y1="${w[0].y}" x2="${w[1].x}" y2="${w[1].y}" stroke="${COLORS[geo.definition.color]}"/>`).join('')}</svg>`;
   }
   function createPieceGhost(piece){
-    const geo=pieceGeometry({...piece,anchor:{x:0,y:0}}),ghost=svgEl('svg',{width:1,height:1,class:'street-drag-ghost','aria-hidden':'true'});
+    const geo=pieceGeometry({...piece,anchor:{x:0,y:0}}),visualWalls=visualWallsFor(geo),ghost=svgEl('svg',{width:1,height:1,class:'street-drag-ghost','aria-hidden':'true'});
     ghost.appendChild(svgEl('polygon',{points:pointsAttr(geo.poly),fill:COLORS[geo.definition.color]}));
-    geo.walls.forEach(w=>ghost.appendChild(svgEl('line',{x1:w[0].x,y1:w[0].y,x2:w[1].x,y2:w[1].y,stroke:COLORS[geo.definition.color]})));
+    visualWalls.forEach(w=>ghost.appendChild(svgEl('line',{x1:w[0].x,y1:w[0].y,x2:w[1].x,y2:w[1].y,stroke:COLORS[geo.definition.color]})));
     document.body.appendChild(ghost);return ghost;
   }
   function attachPieceGesture(element,piece){
@@ -428,7 +444,7 @@
     state.pieces.filter(piece=>piece.anchor).forEach(piece=>{
       const geo=pieceGeometry(piece),group=svgEl('g',{class:`street-piece${state.selected===piece.id?' selected':''}${issues.has(piece.id)?' invalid':''}`,'data-piece':piece.id});
       const poly=svgEl('polygon',{points:pointsAttr(geo.poly),fill:COLORS[geo.definition.color]});group.appendChild(poly);
-      geo.walls.forEach(w=>group.appendChild(svgEl('line',{x1:w[0].x,y1:w[0].y,x2:w[1].x,y2:w[1].y,stroke:COLORS[geo.definition.color],class:'street-wall'})));
+      visualWallsFor(geo).forEach(w=>group.appendChild(svgEl('line',{x1:w[0].x,y1:w[0].y,x2:w[1].x,y2:w[1].y,stroke:COLORS[geo.definition.color],class:'street-wall'})));
       attachPieceGesture(group,piece);svg.appendChild(group);
     });
     state.coords.forEach(item=>{const tri=BOARD.triangles.find(t=>t.id===item.triangle);if(!tri)return;const c=tri.points.reduce((s,p)=>add(s,p),{x:0,y:0});c.x/=3;c.y/=3;const text=svgEl('text',{x:c.x,y:c.y+4,'text-anchor':'middle',class:'street-coordinate-mark'});text.textContent=String(state.coords.indexOf(item)+1);svg.appendChild(text);});
@@ -478,6 +494,6 @@
   }
   function close(){byId('streetPrototype').hidden=true;document.body.classList.remove('street-open');}
 
-  window.OrapaStreetPrototype={open,close,debug:{BOARD,LANES,PIECES,axialTransform,pieceGeometry,snapPieceAnchor,coordinateForTriangle,traceRay,validatePieces}};
+  window.OrapaStreetPrototype={open,close,debug:{BOARD,LANES,PIECES,axialTransform,pieceGeometry,visualWallsFor,snapPieceAnchor,coordinateForTriangle,traceRay,validatePieces}};
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',bind);else bind();
 })();
