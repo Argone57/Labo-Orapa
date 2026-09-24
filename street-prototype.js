@@ -9,6 +9,14 @@
     [4,18],[3,19],[2,20],[1,21],[0,20],[1,19],[2,18],[3,17]
   ];
   const COLORS={blue:'#2f6fd1',white:'#f5f1e8',yellow:'#e0a72e',red:'#d1293d'};
+  const STREET_MIX={
+    blue:{name:'Bleu',hex:'#2f6fd1'},red:{name:'Rouge',hex:'#d1293d'},white:{name:'Blanc',hex:'#f5f1e8'},yellow:{name:'Jaune',hex:'#e0a72e'},
+    'red+yellow':{name:'Orange',hex:'#e0763c'},'blue+red':{name:'Violet',hex:'#9b4fd1'},'blue+yellow':{name:'Vert',hex:'#5cb82f'},
+    'red+white':{name:'Rose',hex:'#f2a7bd'},'white+yellow':{name:'Jaune clair',hex:'#f5f0a3'},'blue+white':{name:'Bleu ciel',hex:'#a8d8f0'},
+    'red+white+yellow':{name:'Orange clair',hex:'#eec397'},'blue+red+white':{name:'Violet clair',hex:'#cdaee6'},'blue+white+yellow':{name:'Vert clair',hex:'#aee089'},
+    'blue+red+yellow':{name:'Noir',hex:'#171310'},'blue+red+white+yellow':{name:'Gris',hex:'#8f8f8f'}
+  };
+  const STREET_TRANSPARENT={name:'Transparent',hex:'#8a93a3'};
   const LABELS=['5','6','7','8','9','10','11','12','13','14','N','M','L','K','J','I','H','G','F','E','D','C','B','A','1','2','3','4'];
   const SAVE_KEY='orapa_street_prototype_v1';
   const EPS=1e-6;
@@ -196,6 +204,17 @@
     if(t>0.02&&u>-EPS&&u<1+EPS)return {t,point:add(origin,mul(direction,t)),segment:[a,b]};
     return null;
   }
+  function resolveStreetColor(colors){return colors.size?STREET_MIX[[...colors].sort().join('+')]||STREET_TRANSPARENT:STREET_TRANSPARENT;}
+  function reflectedDirection(direction,a,b){
+    const tangent=norm(sub(b,a));let normal={x:-tangent.y,y:tangent.x};
+    if(dot(direction,normal)>0)normal=mul(normal,-1);
+    return norm(sub(direction,mul(normal,2*dot(direction,normal))));
+  }
+  function matchingExitDirection(edge,outwardDirection){
+    const inward=mul(outwardDirection,-1);let best=0,bestDot=-Infinity;
+    edge.directions.forEach((direction,index)=>{const score=dot(direction,inward);if(score>bestDot){best=index;bestDot=score;}});
+    return best;
+  }
   function traceRay(edgeIndex,directionIndex,pieces){
     const entry=BOARD.boundary[edgeIndex],segments=[];
     pieces.filter(p=>p.anchor).forEach(piece=>{
@@ -203,23 +222,33 @@
       geo.poly.forEach((p,i)=>segments.push({a:p,b:geo.poly[(i+1)%geo.poly.length],piece,color:geo.definition.color}));
       geo.walls.forEach(w=>segments.push({a:w[0],b:w[1],piece,color:geo.definition.color,wall:true}));
     });
-    let origin=add(entry.mid,mul(entry.directions[directionIndex],.1));
-    let direction=entry.directions[directionIndex],colorSet=new Set(),points=[entry.mid],exit=null;
+    let direction=entry.directions[directionIndex],colorSet=new Set(),points=[entry.mid],exit=null,exitDirectionIndex=null,loop=false;
+    // Une pièce peut poser l'un de ses murs exactement sur le bord. L'onde
+    // frappe alors ce mur avant même d'entrer : elle ressort par l'autre
+    // flèche de la même case, comme un rebond sur place.
+    const entryContacts=segments.filter(segment=>pointOnSegment(entry.mid,segment.a,segment.b,.2));
+    if(entryContacts.length){
+      entryContacts.forEach(segment=>colorSet.add(segment.color));
+      const reflected=reflectedDirection(direction,entryContacts[0].a,entryContacts[0].b);
+      exitDirectionIndex=matchingExitDirection(entry,reflected);
+      return {entry,entryDirectionIndex:directionIndex,exit:entry,exitDirectionIndex,points,colors:[...colorSet],color:resolveStreetColor(colorSet),bounced:true,loop:false};
+    }
+    let origin=add(entry.mid,mul(direction,.1));
+    const visited=new Set();
     for(let bounce=0;bounce<40;bounce++){
+      const stateKey=`${origin.x.toFixed(2)},${origin.y.toFixed(2)}:${direction.x.toFixed(3)},${direction.y.toFixed(3)}`;
+      if(visited.has(stateKey)){loop=true;break;}visited.add(stateKey);
       let nearest=null;
       segments.forEach(segment=>{const hit=raySegmentHit(origin,direction,segment.a,segment.b);if(hit&&(!nearest||hit.t<nearest.t))nearest={...hit,...segment,type:'piece'};});
       BOARD.boundary.forEach(edge=>{const hit=raySegmentHit(origin,direction,edge.a,edge.b);if(hit&&(!nearest||hit.t<nearest.t))nearest={...hit,edge,type:'exit'};});
       if(!nearest)break;
       points.push(nearest.point);
-      if(nearest.type==='exit'){exit=nearest.edge;break;}
+      if(nearest.type==='exit'){exit=nearest.edge;exitDirectionIndex=matchingExitDirection(exit,direction);break;}
       colorSet.add(nearest.color);
-      const tangent=norm(sub(nearest.b,nearest.a));
-      let normal={x:-tangent.y,y:tangent.x};
-      if(dot(direction,normal)>0)normal=mul(normal,-1);
-      direction=norm(sub(direction,mul(normal,2*dot(direction,normal))));
+      direction=reflectedDirection(direction,nearest.a,nearest.b);
       origin=add(nearest.point,mul(direction,.15));
     }
-    return {entry,exit,points,colors:[...colorSet]};
+    return {entry,entryDirectionIndex:directionIndex,exit,exitDirectionIndex,points,colors:[...colorSet],color:resolveStreetColor(colorSet),bounced:exit===entry,loop};
   }
   function laneName(labels){
     const [a,b]=labels;
@@ -363,14 +392,17 @@
         const pos=add(add(edge.mid,mul(edge.outward,9)),mul(tangent,directionIndex===0?-6:6));
         const perpendicular={x:-direction.y,y:direction.x};
         const arrow=[add(pos,mul(direction,6)),add(add(pos,mul(direction,-4)),mul(perpendicular,4)),add(add(pos,mul(direction,-4)),mul(perpendicular,-4))];
-        const button=svgEl('polygon',{points:pointsAttr(arrow),class:'street-ray-button','data-edge':edgeIndex,'data-direction':directionIndex});
-        button.addEventListener('click',event=>{event.stopPropagation();if(validatePieces(state.pieces).size)return setMessage('Corrige les placements rouges avant de lancer une onde.',true);const trace=traceRay(edgeIndex,directionIndex,state.pieces);state.traces.push(trace);render();});labelGroup.appendChild(button);
+        const usedTrace=state.traces.find(trace=>(trace.entry.index===edgeIndex&&trace.entryDirectionIndex===directionIndex)||(trace.exit?.index===edgeIndex&&trace.exitDirectionIndex===directionIndex));
+        const button=svgEl('polygon',{points:pointsAttr(arrow),class:`street-ray-button${usedTrace?' used':''}`,'data-edge':edgeIndex,'data-direction':directionIndex,style:usedTrace?`--street-result:${usedTrace.color.hex}`:''});
+        button.addEventListener('click',event=>{event.stopPropagation();if(usedTrace)return;if(validatePieces(state.pieces).size)return setMessage('Corrige les placements rouges avant de lancer une onde.',true);const trace=traceRay(edgeIndex,directionIndex,state.pieces);trace.time=new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});state.traces.push(trace);render();});labelGroup.appendChild(button);
       });
     });svg.appendChild(labelGroup);
     state.traces.forEach((trace,index)=>{
-      const color=trace.colors.length?COLORS[trace.colors.at(-1)]:'#d7e1e5';
-      const path=svgEl('polyline',{points:pointsAttr(trace.points),class:'street-trace',stroke:color});svg.appendChild(path);
-      trace.points.slice(1,-1).forEach((p,i)=>{const n=svgEl('text',{x:p.x+5,y:p.y-5,class:'street-bounce-number'});n.textContent=String(i+1);svg.appendChild(n);});
+      if(trace.points.length>1){
+        const stroke=trace.color?.hex||STREET_TRANSPARENT.hex;
+        svg.appendChild(svgEl('polyline',{points:pointsAttr(trace.points),class:'street-trace-halo',stroke}));
+        svg.appendChild(svgEl('polyline',{points:pointsAttr(trace.points),class:'street-trace',stroke}));
+      }
     });
     const issues=validatePieces(state.pieces);
     state.pieces.filter(piece=>piece.anchor).forEach(piece=>{
@@ -384,7 +416,12 @@
   function renderHistory(){
     const host=byId('streetHistory'),items=[];
     state.coords.forEach((item,index)=>items.push(`<li><b>Coordonnée ${index+1}</b> — ${item.text}</li>`));
-    state.traces.forEach(trace=>items.push(`<li><b>${trace.entry.label}</b> — ${trace.exit?trace.exit.label:'onde bloquée'}${trace.colors.length?` · ${trace.colors.map(c=>PIECES.find(p=>p.color===c)?.name||c).join(' + ')}`:''}</li>`));
+    state.traces.slice().reverse().forEach(trace=>{
+      const color=trace.color||resolveStreetColor(new Set(trace.colors||[]));
+      const result=trace.loop?'Prisonnière':(!trace.exit?'Sans sortie':(trace.exit===trace.entry?`<b>${trace.entry.label}</b> ↔`:`<b>${trace.entry.label}</b> — <b>${trace.exit.label}</b>`));
+      const special=color.name==='Transparent'?' transparent':'';
+      items.push(`<li class="street-history-item"><span class="street-history-swatch${special}" style="--street-result:${color.hex}"></span><span>${result} — ${color.name}</span>${trace.time?`<span class="street-history-time">${trace.time}</span>`:''}</li>`);
+    });
     host.innerHTML=items.length?items.join(''):'<li class="empty">Aucun test lancé.</li>';
   }
   function setMessage(text,error=false){const el=byId('streetMessage');el.textContent=text;el.classList.toggle('error',error);}
@@ -408,7 +445,7 @@
     byId('streetClearTests').addEventListener('click',()=>{state.traces=[];state.coords=[];render();});
     byId('streetDiagnostic').addEventListener('click',async()=>{
       const issues=validatePieces(state.pieces);
-      const report={prototype:'ORAPA-STREET-1',appVersion:APP_VERSION,createdAt:new Date().toISOString(),pieces:state.pieces.map(piece=>({...piece})),validation:[...issues.entries()].map(([piece,message])=>({piece,message})),coordinates:state.coords.map(item=>({...item})),rays:state.traces.map(trace=>({entry:trace.entry.label,exit:trace.exit?.label||null,colors:trace.colors,points:trace.points.map(p=>({x:+p.x.toFixed(2),y:+p.y.toFixed(2)}))}))};
+      const report={prototype:'ORAPA-STREET-2',appVersion:APP_VERSION,createdAt:new Date().toISOString(),pieces:state.pieces.map(piece=>({...piece})),validation:[...issues.entries()].map(([piece,message])=>({piece,message})),coordinates:state.coords.map(item=>({...item})),rays:state.traces.map(trace=>({entry:trace.entry.label,entryDirection:trace.entryDirectionIndex,exit:trace.exit?.label||null,exitDirection:trace.exitDirectionIndex??null,bounced:!!trace.bounced,loop:!!trace.loop,colors:trace.colors,color:trace.color,time:trace.time||null,points:trace.points.map(p=>({x:+p.x.toFixed(2),y:+p.y.toFixed(2)}))}))};
       const text=`ORAPA STREET — RAPPORT DE PROTOTYPE\n${JSON.stringify(report,null,2)}`;
       try{await navigator.clipboard.writeText(text);setMessage('Diagnostic copié. Tu peux le coller avec une capture pour signaler un problème.');}
       catch(_error){setMessage('La copie automatique a échoué sur ce navigateur.',true);}
