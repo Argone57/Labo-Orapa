@@ -18,17 +18,17 @@
   };
   const STREET_TRANSPARENT={name:'Transparent',hex:'#8a93a3'};
   const LABELS=['5','6','7','8','9','10','11','12','13','14','N','M','L','K','J','I','H','G','F','E','D','C','B','A','1','2','3','4'];
-  const SAVE_KEY='orapa_street_prototype_v1';
+  const SAVE_KEY='orapa_street_prototype_v2';
   const EPS=1e-6;
 
   const PIECES=[
-    {id:'blueSmall',name:'Bleue — 1 triangle',color:'blue',poly:[[0,0],[1,0],[0,1]],walls:[]},
-    {id:'blueLarge',name:'Bleue — 4 triangles',color:'blue',poly:[[0,0],[1,0],[1,2],[0,2]],walls:[]},
-    {id:'whiteSmall',name:'Blanche — 2 triangles + mur',color:'white',poly:[[0,0],[1,0],[1,1],[0,1]],walls:[[[1,0],[2,-1]]]},
-    {id:'whiteLarge',name:'Blanche — hexagone + mur',color:'white',poly:[[1,0],[0,1],[-1,1],[-1,0],[0,-1],[1,-1]],walls:[[[1,0],[2,0]]]},
-    {id:'yellowLarge',name:'Jaune — 4 triangles',color:'yellow',poly:[[0,0],[1,0],[1,2],[0,2]],walls:[]},
-    {id:'yellowBent',name:'Jaune — 2 demi-hexagones décalés',color:'yellow',poly:[[0,0],[1,0],[2,-1],[3,-1],[3,0],[2,0],[1,1],[0,1]],walls:[]},
-    {id:'redWall',name:'Rouge — 2 triangles + mur',color:'red',poly:[[0,0],[1,0],[1,1],[0,1]],walls:[[[1,1],[2,1]]]},
+    {id:'blueSmall',name:'Bleue — 1 triangle',color:'blue',pivot:[1/3,1/3],poly:[[0,0],[1,0],[0,1]],walls:[]},
+    {id:'blueLarge',name:'Bleue — 4 triangles',color:'blue',pivot:[0,1],poly:[[0,0],[1,0],[1,2],[0,2]],walls:[]},
+    {id:'whiteSmall',name:'Blanche — 2 triangles + mur',color:'white',pivot:[1,0],poly:[[0,0],[1,0],[1,1],[0,1]],walls:[[[1,0],[2,-1]]]},
+    {id:'whiteLarge',name:'Blanche — hexagone + mur',color:'white',pivot:[0,0],poly:[[1,0],[0,1],[-1,1],[-1,0],[0,-1],[1,-1]],walls:[[[1,0],[2,0]]]},
+    {id:'yellowLarge',name:'Jaune — 4 triangles',color:'yellow',pivot:[0,1],poly:[[0,0],[1,0],[1,2],[0,2]],walls:[]},
+    {id:'yellowBent',name:'Jaune — 2 demi-hexagones décalés',color:'yellow',pivot:[1.5,0],poly:[[0,0],[1,0],[2,-1],[3,-1],[3,0],[2,0],[1,1],[0,1]],walls:[]},
+    {id:'redWall',name:'Rouge — 2 triangles + mur',color:'red',pivot:[1,1],poly:[[0,0],[1,0],[1,1],[0,1]],walls:[[[1,1],[2,1]]]},
   ];
 
   const byId=id=>document.getElementById(id);
@@ -131,11 +131,15 @@
     for(let i=0;i<rotation;i++)[a,b]=[-b,a+b];
     return [a,b];
   }
+  function axialVectorToScreen([a,b]){return {x:(a+b/2)*EDGE,y:b*TRI_H};}
   function pieceGeometry(piece){
     const definition=PIECES.find(item=>item.id===piece.id);
+    const legacyAnchor=piece.anchor?.q!==undefined;
+    const center=legacyAnchor?screenPoint(piece.anchor):piece.anchor;
     const transform=point=>{
-      const [a,b]=axialTransform(point,piece.rotation,piece.flipped);
-      return screenPoint({q:piece.anchor.q+2*a+b,r:piece.anchor.r+b});
+      if(legacyAnchor){const [a,b]=axialTransform(point,piece.rotation,piece.flipped);return add(center,axialVectorToScreen([a,b]));}
+      const relative=[point[0]-definition.pivot[0],point[1]-definition.pivot[1]];
+      return add(center,axialVectorToScreen(axialTransform(relative,piece.rotation,piece.flipped)));
     };
     return {definition,poly:definition.poly.map(transform),walls:definition.walls.map(w=>w.map(transform))};
   }
@@ -308,22 +312,32 @@
     try{localStorage.setItem(SAVE_KEY,JSON.stringify({...state,traces:[],coords:[]}));}catch(_error){}
   }
   function pointsAttr(points){return points.map(p=>`${p.x},${p.y}`).join(' ');}
-  function nearestVertex(clientX,clientY,svg){
-    const point=svg.createSVGPoint();point.x=clientX;point.y=clientY;
-    const local=point.matrixTransform(svg.getScreenCTM().inverse());
-    let best=null,distance=Infinity;
-    BOARD.vertices.forEach(vertex=>{const p=screenPoint(vertex),d=Math.hypot(p.x-local.x,p.y-local.y);if(d<distance){best=vertex;distance=d;}});
-    return best;
-  }
   function svgClientPoint(clientX,clientY,svg){
     const point=svg.createSVGPoint();point.x=clientX;point.y=clientY;
     return point.matrixTransform(svg.getScreenCTM().inverse());
   }
+  function snapPieceAnchor(piece,target){
+    const definition=PIECES.find(item=>item.id===piece.id),first=definition.poly[0];
+    const relative=[first[0]-definition.pivot[0],first[1]-definition.pivot[1]];
+    const firstOffset=axialVectorToScreen(axialTransform(relative,piece.rotation,piece.flipped));
+    let best=null,bestDistance=Infinity;
+    BOARD.vertices.forEach(vertex=>{
+      const point=screenPoint(vertex),candidate=sub(point,firstOffset),distance=Math.hypot(candidate.x-target.x,candidate.y-target.y);
+      if(distance<bestDistance){best={x:candidate.x,y:candidate.y};bestDistance=distance;}
+    });
+    return best;
+  }
   function piecePreview(piece){
-    const geo=pieceGeometry({...piece,anchor:{q:0,r:0}}),all=[...geo.poly,...geo.walls.flat()];
+    const geo=pieceGeometry({...piece,anchor:{x:0,y:0}}),all=[...geo.poly,...geo.walls.flat()];
     const xs=all.map(p=>p.x),ys=all.map(p=>p.y),pad=9;
     const minX=Math.min(...xs)-pad,minY=Math.min(...ys)-pad,width=Math.max(...xs)-Math.min(...xs)+pad*2,height=Math.max(...ys)-Math.min(...ys)+pad*2;
     return `<svg viewBox="${minX} ${minY} ${width} ${height}" aria-hidden="true"><polygon points="${pointsAttr(geo.poly)}" fill="${COLORS[geo.definition.color]}"/>${geo.walls.map(w=>`<line x1="${w[0].x}" y1="${w[0].y}" x2="${w[1].x}" y2="${w[1].y}" stroke="${COLORS[geo.definition.color]}"/>`).join('')}</svg>`;
+  }
+  function createPieceGhost(piece){
+    const geo=pieceGeometry({...piece,anchor:{x:0,y:0}}),ghost=svgEl('svg',{width:1,height:1,class:'street-drag-ghost','aria-hidden':'true'});
+    ghost.appendChild(svgEl('polygon',{points:pointsAttr(geo.poly),fill:COLORS[geo.definition.color]}));
+    geo.walls.forEach(w=>ghost.appendChild(svgEl('line',{x1:w[0].x,y1:w[0].y,x2:w[1].x,y2:w[1].y,stroke:COLORS[geo.definition.color]})));
+    document.body.appendChild(ghost);return ghost;
   }
   function attachPieceGesture(element,piece){
     element.addEventListener('touchstart',event=>event.preventDefault(),{passive:false});
@@ -332,30 +346,36 @@
       if(state.tool!=='pieces')return;
       event.preventDefault();event.stopPropagation();state.selected=piece.id;
       const startX=event.clientX,startY=event.clientY,pointerId=event.pointerId;
-      let moved=false,longPressed=false;
+      let moved=false,longPressed=false,ghost=null,ghostFrame=0,ghostX=startX,ghostY=startY;
       element.classList.add('gesture-active');
       const timer=setTimeout(()=>{
         if(moved)return;
         longPressed=true;piece.flipped=!piece.flipped;
+        if(piece.anchor&&piece.anchor.q===undefined)piece.anchor=snapPieceAnchor(piece,piece.anchor);
         if(navigator.vibrate)navigator.vibrate(15);
         render();
       },480);
-      const cleanup=()=>{clearTimeout(timer);element.classList.remove('gesture-active');window.removeEventListener('pointermove',onMove);window.removeEventListener('pointerup',onUp);window.removeEventListener('pointercancel',onCancel);};
+      const positionGhost=(x,y)=>{ghostX=x;ghostY=y;if(ghostFrame)return;ghostFrame=requestAnimationFrame(()=>{ghostFrame=0;if(ghost?.isConnected)ghost.style.transform=`translate3d(${ghostX}px,${ghostY}px,0)`;});};
+      const startDrag=()=>{ghost=createPieceGhost(piece);element.classList.add('dragging');positionGhost(startX,startY);};
+      const cleanup=()=>{clearTimeout(timer);if(ghostFrame)cancelAnimationFrame(ghostFrame);element.classList.remove('gesture-active','dragging');window.removeEventListener('pointermove',onMove);window.removeEventListener('pointerup',onUp);window.removeEventListener('pointercancel',onCancel);};
       const onMove=moveEvent=>{
         if(moveEvent.pointerId!==pointerId)return;
-        if(Math.hypot(moveEvent.clientX-startX,moveEvent.clientY-startY)>9){moved=true;clearTimeout(timer);element.classList.add('dragging');}
+        if(moveEvent.cancelable)moveEvent.preventDefault();
+        if(!moved&&Math.hypot(moveEvent.clientX-startX,moveEvent.clientY-startY)>9){moved=true;clearTimeout(timer);startDrag();}
+        if(moved)positionGhost(moveEvent.clientX,moveEvent.clientY);
       };
       const onUp=upEvent=>{
         if(upEvent.pointerId!==pointerId)return;
         const wasMoved=moved;cleanup();
         if(wasMoved){
           const svg=byId('streetBoard'),local=svgClientPoint(upEvent.clientX,upEvent.clientY,svg);
-          if(pointInPolygon(local,BOARD.polygon,true)){const vertex=nearestVertex(upEvent.clientX,upEvent.clientY,svg);piece.anchor={q:vertex.q,r:vertex.r};}
+          if(pointInPolygon(local,BOARD.polygon,true))piece.anchor=snapPieceAnchor(piece,local);
           else piece.anchor=null;
-        }else if(!longPressed)piece.rotation=(piece.rotation+1)%6;
+          ghost?.remove();
+        }else if(!longPressed){piece.rotation=(piece.rotation+1)%6;if(piece.anchor&&piece.anchor.q===undefined)piece.anchor=snapPieceAnchor(piece,piece.anchor);}
         render();
       };
-      const onCancel=cancelEvent=>{if(cancelEvent.pointerId!==pointerId)return;cleanup();};
+      const onCancel=cancelEvent=>{if(cancelEvent.pointerId!==pointerId)return;cleanup();ghost?.remove();};
       window.addEventListener('pointermove',onMove,{passive:false});window.addEventListener('pointerup',onUp,{passive:false});window.addEventListener('pointercancel',onCancel);
     });
   }
@@ -458,6 +478,6 @@
   }
   function close(){byId('streetPrototype').hidden=true;document.body.classList.remove('street-open');}
 
-  window.OrapaStreetPrototype={open,close,debug:{BOARD,LANES,PIECES,axialTransform,pieceGeometry,coordinateForTriangle,traceRay,validatePieces}};
+  window.OrapaStreetPrototype={open,close,debug:{BOARD,LANES,PIECES,axialTransform,pieceGeometry,snapPieceAnchor,coordinateForTriangle,traceRay,validatePieces}};
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',bind);else bind();
 })();
