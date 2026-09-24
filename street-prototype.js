@@ -150,30 +150,25 @@
   function visualWallsFor(geometry){
     return geometry.walls.map(wall=>{
       const direction=norm(sub(wall[1],wall[0]));
-      let start=add(wall[0],mul(direction,-EDGE*.24)),end=wall[1];
-      if(geometry.definition.id==='redWall'){
-        let inward={x:-direction.y,y:direction.x};
-        const probeBase=add(wall[0],mul(direction,-4));
-        if(!pointInPolygon(add(probeBase,mul(inward,3)),geometry.poly,true))inward=mul(inward,-1);
-        // Le mur rouge est visuellement contenu du même côté que le corps :
-        // son bord extérieur prolonge ainsi la base sans former de rectangle
-        // simplement collé au sommet.
-        start=add(start,mul(inward,3));end=add(end,mul(inward,3));
-      }
-      return [start,end];
+      return [add(wall[0],mul(direction,-EDGE*.24)),wall[1]];
     });
   }
   function visualWallPolygonsFor(geometry){
-    return visualWallsFor(geometry).map(wall=>{
+    return visualWallsFor(geometry).map((wall,index)=>{
       const direction=norm(sub(wall[1],wall[0]));
-      const normal={x:-direction.y,y:direction.x};
+      let normal={x:-direction.y,y:direction.x};
       const half=STREET_WALL_WIDTH/2;
-      const bevel=STREET_WALL_WIDTH*1.15;
+      const bevel=half/Math.tan(Math.PI/3);
       const startTop=add(wall[0],mul(normal,half));
       const startBottom=add(wall[0],mul(normal,-half));
       const shoulder=add(wall[1],mul(direction,-bevel));
       if(geometry.definition.id==='redWall'){
-        return [startTop,add(shoulder,mul(normal,half)),add(wall[1],mul(normal,-half)),startBottom];
+        const physical=geometry.walls[index];
+        const probeBase=add(physical[0],mul(direction,-4));
+        if(!pointInPolygon(add(probeBase,mul(normal,STREET_WALL_WIDTH)),geometry.poly,true))normal=mul(normal,-1);
+        const innerStart=add(wall[0],mul(normal,STREET_WALL_WIDTH));
+        const innerShoulder=add(add(wall[1],mul(direction,-STREET_WALL_WIDTH/Math.tan(Math.PI/3))),mul(normal,STREET_WALL_WIDTH));
+        return [wall[0],wall[1],innerShoulder,innerStart];
       }
       return [startTop,add(shoulder,mul(normal,half)),wall[1],add(shoulder,mul(normal,-half)),startBottom];
     });
@@ -351,7 +346,7 @@
     return {empty:false,name:result.name,hex:result.hex,colors:[...colors]};
   }
 
-  let state={pieces:PIECES.map(def=>({id:def.id,anchor:null,rotation:0,flipped:false})),selected:'blueSmall',tool:'pieces',traces:[],coords:[]};
+  let state={pieces:PIECES.map(def=>({id:def.id,anchor:null,rotation:0,flipped:false})),selected:'blueSmall',tool:'pieces',started:false,traces:[],coords:[]};
 
   function load(){
     try{
@@ -361,6 +356,36 @@
   }
   function save(){
     try{localStorage.setItem(SAVE_KEY,JSON.stringify({...state,traces:[],coords:[]}));}catch(_error){}
+  }
+  function shuffled(items){
+    const result=[...items];
+    for(let i=result.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[result[i],result[j]]=[result[j],result[i]];}
+    return result;
+  }
+  function randomizePieces(){
+    const vertices=[...BOARD.vertices.values()].map(screenPoint);
+    for(let boardAttempt=0;boardAttempt<180;boardAttempt++){
+      const placed=[];
+      const definitions=shuffled(PIECES);
+      let failed=false;
+      for(const definition of definitions){
+        let accepted=null;
+        for(let pieceAttempt=0;pieceAttempt<420;pieceAttempt++){
+          const anchor=vertices[Math.floor(Math.random()*vertices.length)];
+          const candidate={id:definition.id,anchor:{...anchor},rotation:Math.floor(Math.random()*6),flipped:Math.random()<.5};
+          if(validatePieces([...placed,candidate]).size===0){accepted=candidate;break;}
+        }
+        if(!accepted){failed=true;break;}
+        placed.push(accepted);
+      }
+      if(!failed){
+        const byPiece=new Map(placed.map(piece=>[piece.id,piece]));
+        state.pieces=PIECES.map(definition=>byPiece.get(definition.id));
+        state.selected=state.pieces[0].id;state.traces=[];state.coords=[];state.tool='pieces';
+        return true;
+      }
+    }
+    return false;
   }
   function pointsAttr(points){return points.map(p=>`${p.x},${p.y}`).join(' ');}
   function svgClientPoint(clientX,clientY,svg){
@@ -394,7 +419,7 @@
     element.addEventListener('touchstart',event=>event.preventDefault(),{passive:false});
     element.addEventListener('touchmove',event=>event.preventDefault(),{passive:false});
     element.addEventListener('pointerdown',event=>{
-      if(state.tool!=='pieces')return;
+      if(state.started||state.tool!=='pieces')return;
       event.preventDefault();event.stopPropagation();state.selected=piece.id;
       const startX=event.clientX,startY=event.clientY,pointerId=event.pointerId;
       let moved=false,longPressed=false,ghost=null,ghostFrame=0,ghostX=startX,ghostY=startY;
@@ -445,12 +470,13 @@
   function renderBoard(){
     const svg=byId('streetBoard');svg.innerHTML='';
     svg.classList.toggle('coordinate-mode',state.tool==='coords');
+    svg.classList.toggle('started',!!state.started);
     svg.setAttribute('viewBox',`${-70} ${-62} ${BOARD.width+140} ${BOARD.height+124}`);
     const boardGroup=svgEl('g',{class:'street-grid'});
     BOARD.triangles.forEach(triangle=>{
       const poly=svgEl('polygon',{points:pointsAttr(triangle.points),class:'street-cell','data-cell':triangle.id});
       poly.addEventListener('click',event=>{
-        if(state.tool!=='coords')return;
+        if(!state.started||state.tool!=='coords')return;
         event.stopPropagation();
         if(state.coords.some(item=>item.triangle===triangle.id))return;
         const coord=coordinateForTriangle(triangle),result=coordinateResultForTriangle(triangle);
@@ -471,8 +497,8 @@
         const perpendicular={x:-direction.y,y:direction.x};
         const arrow=[add(pos,mul(direction,6)),add(add(pos,mul(direction,-4)),mul(perpendicular,4)),add(add(pos,mul(direction,-4)),mul(perpendicular,-4))];
         const usedTrace=state.traces.find(trace=>(trace.entry.index===edgeIndex&&trace.entryDirectionIndex===directionIndex)||(trace.exit?.index===edgeIndex&&trace.exitDirectionIndex===directionIndex));
-        const button=svgEl('polygon',{points:pointsAttr(arrow),class:`street-ray-button${usedTrace?' used':''}`,'data-edge':edgeIndex,'data-direction':directionIndex,style:usedTrace?`--street-result:${usedTrace.color.hex}`:''});
-        button.addEventListener('click',event=>{event.stopPropagation();if(usedTrace)return;if(validatePieces(state.pieces).size)return setMessage('Corrige les placements rouges avant de lancer une onde.',true);const trace=traceRay(edgeIndex,directionIndex,state.pieces);trace.time=new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});state.traces.push(trace);render();});labelGroup.appendChild(button);
+        const button=svgEl('polygon',{points:pointsAttr(arrow),class:`street-ray-button${usedTrace?' used':''}${state.started?'':' disabled'}`,'data-edge':edgeIndex,'data-direction':directionIndex,style:usedTrace?`--street-result:${usedTrace.color.hex}`:''});
+        button.addEventListener('click',event=>{event.stopPropagation();if(!state.started||usedTrace)return;if(validatePieces(state.pieces).size)return setMessage('Corrige les placements rouges avant de lancer une onde.',true);const trace=traceRay(edgeIndex,directionIndex,state.pieces);trace.time=new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});state.traces.push(trace);render();});labelGroup.appendChild(button);
       });
     });svg.appendChild(labelGroup);
     state.traces.forEach((trace,index)=>{
@@ -522,15 +548,31 @@
     byId('streetHistoryToggle').setAttribute('aria-expanded',String(open));
     byId('streetHistoryToggleIndicator').textContent=open?'−':'+';
   }
-  function setMessage(text,error=false){const el=byId('streetMessage');el.textContent=text;el.classList.toggle('error',error);}
+  function setMessage(text,error=false){const el=byId('streetStartBlockMsg');el.textContent=text;el.style.color=error?'#f5b8ae':'var(--text-faint)';}
   function render(){
     renderPalette();renderBoard();renderHistory();
     const selected=state.pieces.find(p=>p.id===state.selected),issues=validatePieces(state.pieces),placed=state.pieces.filter(p=>p.anchor).length;
-    byId('streetRemove').disabled=!selected?.anchor;
+    const complete=placed===PIECES.length&&!issues.size;
+    const preStart=!state.started;
+    byId('streetRandom').hidden=!preStart;
+    byId('streetShare').hidden=!preStart;
+    byId('streetStart').hidden=!preStart;
+    byId('streetEnd').hidden=preStart;
+    byId('streetStart').disabled=!complete;
+    byId('streetShare').disabled=true;
+    byId('streetPaletteTitle').style.display=preStart?'flex':'none';
+    byId('streetPalette').style.display=preStart?'flex':'none';
+    byId('streetSetupHint').style.display=preStart?'block':'none';
+    byId('streetStartBlockMsg').style.display=preStart?'block':'none';
+    document.querySelector('.street-tool-tabs').hidden=preStart;
+    const pill=byId('streetPrototype').querySelector('.mode-pill');
+    pill.classList.toggle('live',state.started);
+    pill.querySelector('span:last-child').textContent=state.started?'Partie en cours':'Placement des pièces';
     document.querySelectorAll('[data-street-tool]').forEach(button=>button.classList.toggle('active',button.dataset.streetTool===state.tool));
-    if(issues.size)setMessage([...new Set(issues.values())][0],true);
-    else if(placed<PIECES.length)setMessage(`${placed}/7 pièces placées — fais glisser les pièces sur la grille. Touche : rotation · appui long : miroir.`);
-    else setMessage('Les 7 pièces sont placées et respectent les contrôles actuels. Tu peux tester les ondes et les coordonnées.');
+    if(state.started)setMessage('',false);
+    else if(issues.size)setMessage([...new Set(issues.values())][0],true);
+    else if(placed<PIECES.length)setMessage('Place toutes les pièces avant de démarrer.',true);
+    else setMessage('');
     save();
   }
   function bind(){
@@ -538,8 +580,10 @@
     if(!create)return;
     create.addEventListener('click',open);
     byId('streetClose').addEventListener('click',close);
-    byId('streetRemove').addEventListener('click',()=>{const p=state.pieces.find(x=>x.id===state.selected);if(p?.anchor){p.anchor=null;render();}});
-    byId('streetReset').addEventListener('click',()=>{if(!confirm('Effacer tous les placements et l’historique Street ?'))return;state={pieces:PIECES.map(def=>({id:def.id,anchor:null,rotation:0,flipped:false})),selected:'blueSmall',tool:'pieces',traces:[],coords:[]};localStorage.removeItem(SAVE_KEY);render();});
+    byId('streetRandom').addEventListener('click',()=>{if(state.started)return;if(!randomizePieces())setMessage('Impossible de trouver un placement valide. Réessaie.',true);render();});
+    byId('streetStart').addEventListener('click',()=>{if(state.started||byId('streetStart').disabled)return;state.started=true;state.tool='pieces';state.traces=[];state.coords=[];render();});
+    byId('streetEnd').addEventListener('click',close);
+    byId('streetReset').addEventListener('click',()=>{if(!confirm('Effacer tous les placements et l’historique Street ?'))return;state={pieces:PIECES.map(def=>({id:def.id,anchor:null,rotation:0,flipped:false})),selected:'blueSmall',tool:'pieces',started:false,traces:[],coords:[]};localStorage.removeItem(SAVE_KEY);render();});
     byId('streetClearTests').addEventListener('click',()=>{state.traces=[];state.coords=[];render();});
     byId('streetHistoryToggle').addEventListener('click',()=>toggleHistory());
     byId('streetDiagnostic').addEventListener('click',async()=>{
@@ -553,9 +597,9 @@
   }
   function open(){
     byId('createModeModal')?.classList.remove('open');
-    byId('streetPrototype').hidden=false;document.body.classList.add('street-open');load();render();
+    byId('streetPrototype').hidden=false;document.body.classList.add('street-open');document.body.classList.remove('home-view');load();render();
   }
-  function close(){byId('streetPrototype').hidden=true;document.body.classList.remove('street-open');}
+  function close(){byId('streetPrototype').hidden=true;document.body.classList.remove('street-open');document.body.classList.add('home-view');}
 
   window.OrapaStreetPrototype={open,close,debug:{BOARD,LANES,PIECES,axialTransform,pieceGeometry,visualWallsFor,visualWallPolygonsFor,snapPieceAnchor,coordinateForTriangle,traceRay,validatePieces}};
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',bind);else bind();
