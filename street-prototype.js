@@ -551,6 +551,7 @@
       const poly=svgEl('polygon',{points:pointsAttr(triangle.points),class:'street-cell','data-cell':triangle.id});
       poly.addEventListener('click',event=>{
         if(!state.started)return;
+        if(useDirectionChoices&&selectedWaveEdge!==null)return;
         event.stopPropagation();
         if(state.coords.some(item=>item.triangle===triangle.id))return;
         const coord=coordinateForTriangle(triangle),result=coordinateResultForTriangle(triangle);
