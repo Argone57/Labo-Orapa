@@ -20,6 +20,7 @@
   const STREET_TRANSPARENT={name:'Transparent',hex:'#8a93a3'};
   const LABELS=['5','6','7','8','9','10','11','12','13','14','N','M','L','K','J','I','H','G','F','E','D','C','B','A','1','2','3','4'];
   const SAVE_KEY='orapa_street_prototype_v2';
+  const WAVE_PREFERENCE_KEY='orapa_street_wave_preference_v1';
   const EPS=1e-6;
 
   const PIECES=[
@@ -379,6 +380,17 @@
   }
 
   let state={pieces:PIECES.map(def=>({id:def.id,anchor:null,rotation:0,flipped:false})),selected:'blueSmall',tool:'pieces',started:false,traces:[],coords:[]};
+  let wavePreference='auto';
+  let selectedWaveEdge=null;
+  try{
+    const savedPreference=localStorage.getItem(WAVE_PREFERENCE_KEY);
+    if(['auto','arrows','choices'].includes(savedPreference))wavePreference=savedPreference;
+  }catch(_error){}
+
+  function resolvedWavePreference(){
+    if(wavePreference!=='auto')return wavePreference;
+    return window.matchMedia('(max-width: 640px)').matches?'choices':'arrows';
+  }
 
   function load(){
     try{
@@ -452,7 +464,7 @@
     element.addEventListener('touchstart',event=>event.preventDefault(),{passive:false});
     element.addEventListener('touchmove',event=>event.preventDefault(),{passive:false});
     element.addEventListener('pointerdown',event=>{
-      if(state.started||state.tool!=='pieces')return;
+      if(state.started)return;
       event.preventDefault();event.stopPropagation();state.selected=piece.id;
       const startX=event.clientX,startY=event.clientY,pointerId=event.pointerId;
       try{element.setPointerCapture?.(pointerId);}catch(_error){}
@@ -503,15 +515,17 @@
   }
   function renderBoard(){
     const svg=byId('streetBoard');svg.innerHTML='';
-    svg.classList.toggle('coordinate-mode',state.tool==='coords');
+    const useDirectionChoices=resolvedWavePreference()==='choices';
+    svg.classList.toggle('coordinate-mode',state.started);
+    svg.classList.toggle('wave-choice-mode',useDirectionChoices);
     svg.classList.toggle('started',!!state.started);
-    const margin=48;
+    const margin=useDirectionChoices?31:39;
     svg.setAttribute('viewBox',`${-margin} ${-margin} ${BOARD.width+margin*2} ${BOARD.height+margin*2}`);
     const boardGroup=svgEl('g',{class:'street-grid'});
     BOARD.triangles.forEach(triangle=>{
       const poly=svgEl('polygon',{points:pointsAttr(triangle.points),class:'street-cell','data-cell':triangle.id});
       poly.addEventListener('click',event=>{
-        if(!state.started||state.tool!=='coords')return;
+        if(!state.started)return;
         event.stopPropagation();
         if(state.coords.some(item=>item.triangle===triangle.id))return;
         const coord=coordinateForTriangle(triangle),result=coordinateResultForTriangle(triangle);
@@ -521,19 +535,22 @@
     svg.appendChild(boardGroup);
     const labelGroup=svgEl('g',{class:'street-labels'});
     BOARD.boundary.forEach((edge,edgeIndex)=>{
-      const labelPos=add(edge.mid,mul(edge.outward,38));
-      let labelAngle=Math.atan2(edge.b.y-edge.a.y,edge.b.x-edge.a.x)*180/Math.PI;
-      if(labelAngle>90||labelAngle<-90)labelAngle+=180;
-      const label=svgEl('text',{x:labelPos.x,y:labelPos.y,'text-anchor':'middle','dominant-baseline':'central',class:'street-label',transform:`rotate(${labelAngle} ${labelPos.x} ${labelPos.y})`});label.textContent=edge.label;labelGroup.appendChild(label);
+      const labelPos=add(edge.mid,mul(edge.outward,useDirectionChoices?19:31));
+      if(useDirectionChoices){
+        const hit=svgEl('rect',{x:labelPos.x-16,y:labelPos.y-13,width:32,height:26,rx:6,class:`street-label-hit${selectedWaveEdge===edgeIndex?' active':''}${state.started?'':' disabled'}`});
+        hit.addEventListener('click',event=>{event.stopPropagation();if(!state.started)return;selectedWaveEdge=selectedWaveEdge===edgeIndex?null:edgeIndex;render();});
+        labelGroup.appendChild(hit);
+      }
+      const label=svgEl('text',{x:labelPos.x,y:labelPos.y,'text-anchor':'middle','dominant-baseline':'central',class:`street-label${useDirectionChoices?' clickable':''}${selectedWaveEdge===edgeIndex?' active':''}`});label.textContent=edge.label;labelGroup.appendChild(label);
       const tangent=norm(sub(edge.b,edge.a));
-      edge.directions.forEach((direction,directionIndex)=>{
+      if(!useDirectionChoices)edge.directions.forEach((direction,directionIndex)=>{
         const side=dot(direction,tangent)<0?-1:1;
-        const pos=add(add(edge.mid,mul(edge.outward,10)),mul(tangent,side*6));
+        const pos=add(add(edge.mid,mul(edge.outward,10)),mul(tangent,side*10));
         const perpendicular={x:-direction.y,y:direction.x};
-        const arrow=[add(pos,mul(direction,6)),add(add(pos,mul(direction,-4)),mul(perpendicular,4)),add(add(pos,mul(direction,-4)),mul(perpendicular,-4))];
+        const arrow=[add(pos,mul(direction,7)),add(add(pos,mul(direction,-5)),mul(perpendicular,4.5)),add(add(pos,mul(direction,-5)),mul(perpendicular,-4.5))];
         const usedTrace=state.traces.find(trace=>(trace.entry.index===edgeIndex&&trace.entryDirectionIndex===directionIndex)||(trace.exit?.index===edgeIndex&&trace.exitDirectionIndex===directionIndex));
         const button=svgEl('polygon',{points:pointsAttr(arrow),class:`street-ray-button${usedTrace?' used':''}${state.started?'':' disabled'}`,'data-edge':edgeIndex,'data-direction':directionIndex,style:usedTrace?`--street-result:${usedTrace.color.hex}`:''});
-        button.addEventListener('click',event=>{event.stopPropagation();if(!state.started||usedTrace)return;if(validatePieces(state.pieces).size)return setMessage('Corrige les placements rouges avant de lancer une onde.',true);const trace=traceRay(edgeIndex,directionIndex,state.pieces);trace.time=new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});state.traces.push(trace);render();});labelGroup.appendChild(button);
+        button.addEventListener('click',event=>{event.stopPropagation();if(!usedTrace)launchWave(edgeIndex,directionIndex);});labelGroup.appendChild(button);
       });
     });svg.appendChild(labelGroup);
     state.traces.forEach((trace,index)=>{
@@ -561,6 +578,32 @@
       }else svg.appendChild(svgEl('circle',{cx:center.x,cy:center.y,r:5.5,fill:item.hex,class:'street-coordinate-color'}));
     });
   }
+  function launchWave(edgeIndex,directionIndex){
+    if(!state.started)return;
+    const usedTrace=state.traces.find(trace=>(trace.entry.index===edgeIndex&&trace.entryDirectionIndex===directionIndex)||(trace.exit?.index===edgeIndex&&trace.exitDirectionIndex===directionIndex));
+    if(usedTrace)return;
+    if(validatePieces(state.pieces).size)return setMessage('Corrige les placements rouges avant de lancer une onde.',true);
+    const trace=traceRay(edgeIndex,directionIndex,state.pieces);
+    trace.time=new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    state.traces.push(trace);selectedWaveEdge=null;render();
+  }
+  function renderDirectionChooser(){
+    const host=byId('streetDirectionChooser'),choices=byId('streetDirectionChoices');
+    const visible=state.started&&resolvedWavePreference()==='choices'&&selectedWaveEdge!==null;
+    host.hidden=!visible;choices.innerHTML='';
+    if(!visible)return;
+    const edge=BOARD.boundary[selectedWaveEdge];
+    byId('streetDirectionTitle').textContent=`Onde depuis ${edge.label}`;
+    edge.directions.forEach((direction,directionIndex)=>{
+      const lane=emptyLane(edge,directionIndex);
+      const destination=lane?.labels?.find(label=>label!==edge.label)||'?';
+      const usedTrace=state.traces.find(trace=>(trace.entry.index===edge.index&&trace.entryDirectionIndex===directionIndex)||(trace.exit?.index===edge.index&&trace.exitDirectionIndex===directionIndex));
+      const button=document.createElement('button');button.className=`ghost street-direction-choice${usedTrace?' used':''}`;
+      button.textContent=`→ ${destination}`;button.disabled=!!usedTrace;
+      if(usedTrace)button.style.setProperty('--street-result',usedTrace.color.hex);
+      button.addEventListener('click',()=>launchWave(edge.index,directionIndex));choices.appendChild(button);
+    });
+  }
   function renderHistory(){
     const host=byId('streetHistory'),items=[];
     state.coords.slice().reverse().forEach(item=>{
@@ -585,7 +628,7 @@
   }
   function setMessage(text,error=false){const el=byId('streetStartBlockMsg');el.textContent=text;el.style.color=error?'#f5b8ae':'var(--text-faint)';}
   function render(){
-    renderPalette();renderBoard();renderHistory();
+    renderPalette();renderBoard();renderDirectionChooser();renderHistory();
     const issues=validatePieces(state.pieces),placed=state.pieces.filter(p=>p.anchor).length;
     const complete=placed===PIECES.length&&!issues.size;
     const preStart=!state.started;
@@ -599,11 +642,12 @@
     byId('streetPalette').style.display=preStart?'flex':'none';
     byId('streetSetupHint').style.display=preStart?'block':'none';
     byId('streetStartBlockMsg').style.display=preStart?'block':'none';
-    document.querySelector('.street-tool-tabs').hidden=preStart;
+    byId('streetWaveSetting').hidden=preStart;
+    byId('streetWavePreference').value=wavePreference;
     const pill=byId('streetPrototype').querySelector('.mode-pill');
     pill.classList.toggle('live',state.started);
     pill.querySelector('span:last-child').textContent=state.started?'Partie en cours':'Placement des pièces';
-    document.querySelectorAll('[data-street-tool]').forEach(button=>button.classList.toggle('active',button.dataset.streetTool===state.tool));
+    if(preStart)selectedWaveEdge=null;
     if(state.started)setMessage('',false);
     else if(issues.size)setMessage([...new Set(issues.values())][0],true);
     else if(placed<PIECES.length)setMessage('Place toutes les pièces avant de démarrer.',true);
@@ -616,9 +660,9 @@
     create.addEventListener('click',open);
     byId('streetClose').addEventListener('click',close);
     byId('streetRandom').addEventListener('click',()=>{if(state.started)return;if(!randomizePieces())setMessage('Impossible de trouver un placement valide. Réessaie.',true);render();});
-    byId('streetStart').addEventListener('click',()=>{if(state.started||byId('streetStart').disabled)return;state.started=true;state.tool='pieces';state.traces=[];state.coords=[];render();});
+    byId('streetStart').addEventListener('click',()=>{if(state.started||byId('streetStart').disabled)return;state.started=true;state.tool='pieces';state.traces=[];state.coords=[];selectedWaveEdge=null;render();});
     byId('streetEnd').addEventListener('click',close);
-    byId('streetReset').addEventListener('click',()=>{if(!confirm('Effacer tous les placements et l’historique Street ?'))return;state={pieces:PIECES.map(def=>({id:def.id,anchor:null,rotation:0,flipped:false})),selected:'blueSmall',tool:'pieces',started:false,traces:[],coords:[]};localStorage.removeItem(SAVE_KEY);render();});
+    byId('streetReset').addEventListener('click',()=>{if(!confirm('Effacer tous les placements et l’historique Street ?'))return;state={pieces:PIECES.map(def=>({id:def.id,anchor:null,rotation:0,flipped:false})),selected:'blueSmall',tool:'pieces',started:false,traces:[],coords:[]};selectedWaveEdge=null;localStorage.removeItem(SAVE_KEY);render();});
     byId('streetClearTests').addEventListener('click',()=>{state.traces=[];state.coords=[];render();});
     byId('streetHistoryToggle').addEventListener('click',()=>toggleHistory());
     byId('streetDiagnostic').addEventListener('click',async()=>{
@@ -628,7 +672,14 @@
       try{await navigator.clipboard.writeText(text);setMessage('Diagnostic copié. Tu peux le coller avec une capture pour signaler un problème.');}
       catch(_error){setMessage('La copie automatique a échoué sur ce navigateur.',true);}
     });
-    document.querySelectorAll('[data-street-tool]').forEach(button=>button.addEventListener('click',()=>{state.tool=button.dataset.streetTool;render();}));
+    byId('streetWavePreference').addEventListener('change',event=>{
+      wavePreference=event.target.value;selectedWaveEdge=null;
+      try{localStorage.setItem(WAVE_PREFERENCE_KEY,wavePreference);}catch(_error){}
+      render();
+    });
+    const narrowScreen=window.matchMedia('(max-width: 640px)');
+    const refreshAutomaticControls=()=>{if(wavePreference==='auto'&&!byId('streetPrototype').hidden){selectedWaveEdge=null;render();}};
+    if(narrowScreen.addEventListener)narrowScreen.addEventListener('change',refreshAutomaticControls);else narrowScreen.addListener(refreshAutomaticControls);
   }
   function open(){
     byId('createModeModal')?.classList.remove('open');
