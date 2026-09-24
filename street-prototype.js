@@ -5,6 +5,7 @@
   const APP_VERSION=(()=>{try{return new URL(document.currentScript?.src||location.href,location.href).searchParams.get('v')||null;}catch(_error){return null;}})();
   const EDGE=38;
   const TRI_H=Math.sqrt(3)*EDGE/2;
+  const STREET_WALL_WIDTH=EDGE*.07;
   const BOARD_ROWS=[
     [4,18],[3,19],[2,20],[1,21],[0,20],[1,19],[2,18],[3,17]
   ];
@@ -118,7 +119,10 @@
         if(!samePoint(m,edge.mid))otherMids.push(m);
       }
       edge.directions=otherMids.map(m=>norm(sub(m,edge.mid))).sort((a,b)=>Math.atan2(a.y,a.x)-Math.atan2(b.y,b.x));
-      edge.outward=norm(sub(edge.mid,center));
+      const tangent=norm(sub(edge.b,edge.a));
+      let outward={x:-tangent.y,y:tangent.x};
+      if(dot(outward,sub(edge.mid,center))<0)outward=mul(outward,-1);
+      edge.outward=outward;
     });
     return {vertices,triangles,edges:[...edges.values()],boundary:orderedBoundary,polygon,center,width:21*EDGE/2,height:7*TRI_H};
   }
@@ -157,6 +161,21 @@
         start=add(start,mul(inward,3));end=add(end,mul(inward,3));
       }
       return [start,end];
+    });
+  }
+  function visualWallPolygonsFor(geometry){
+    return visualWallsFor(geometry).map(wall=>{
+      const direction=norm(sub(wall[1],wall[0]));
+      const normal={x:-direction.y,y:direction.x};
+      const half=STREET_WALL_WIDTH/2;
+      const bevel=STREET_WALL_WIDTH*1.15;
+      const startTop=add(wall[0],mul(normal,half));
+      const startBottom=add(wall[0],mul(normal,-half));
+      const shoulder=add(wall[1],mul(direction,-bevel));
+      if(geometry.definition.id==='redWall'){
+        return [startTop,add(shoulder,mul(normal,half)),add(wall[1],mul(normal,-half)),startBottom];
+      }
+      return [startTop,add(shoulder,mul(normal,half)),wall[1],add(shoulder,mul(normal,-half)),startBottom];
     });
   }
   function pointOnSegment(p,a,b,tolerance=.05){
@@ -315,6 +334,22 @@
     });
     return selected.map(l=>l.name).join(' ');
   }
+  function triangleCenter(triangle){
+    const center=triangle.points.reduce((sum,p)=>add(sum,p),{x:0,y:0});
+    center.x/=3;center.y/=3;
+    return center;
+  }
+  function coordinateResultForTriangle(triangle){
+    const center=triangleCenter(triangle);
+    const colors=new Set();
+    state.pieces.filter(piece=>piece.anchor).forEach(piece=>{
+      const geometry=pieceGeometry(piece);
+      if(pointInPolygon(center,geometry.poly,true))colors.add(geometry.definition.color);
+    });
+    if(!colors.size)return {empty:true,name:'Vide',hex:null,colors:[]};
+    const result=resolveStreetColor(colors);
+    return {empty:false,name:result.name,hex:result.hex,colors:[...colors]};
+  }
 
   let state={pieces:PIECES.map(def=>({id:def.id,anchor:null,rotation:0,flipped:false})),selected:'blueSmall',tool:'pieces',traces:[],coords:[]};
 
@@ -344,15 +379,15 @@
     return best;
   }
   function piecePreview(piece){
-    const geo=pieceGeometry({...piece,anchor:{x:0,y:0}}),visualWalls=visualWallsFor(geo),all=[...geo.poly,...visualWalls.flat()];
+    const geo=pieceGeometry({...piece,anchor:{x:0,y:0}}),wallPolygons=visualWallPolygonsFor(geo),all=[...geo.poly,...wallPolygons.flat()];
     const xs=all.map(p=>p.x),ys=all.map(p=>p.y),pad=9;
     const minX=Math.min(...xs)-pad,minY=Math.min(...ys)-pad,width=Math.max(...xs)-Math.min(...xs)+pad*2,height=Math.max(...ys)-Math.min(...ys)+pad*2;
-    return `<svg viewBox="${minX} ${minY} ${width} ${height}" aria-hidden="true"><polygon points="${pointsAttr(geo.poly)}" fill="${COLORS[geo.definition.color]}"/>${visualWalls.map(w=>`<line x1="${w[0].x}" y1="${w[0].y}" x2="${w[1].x}" y2="${w[1].y}" stroke="${COLORS[geo.definition.color]}"/>`).join('')}</svg>`;
+    return `<svg viewBox="${minX} ${minY} ${width} ${height}" aria-hidden="true"><polygon points="${pointsAttr(geo.poly)}" fill="${COLORS[geo.definition.color]}"/>${wallPolygons.map(poly=>`<polygon points="${pointsAttr(poly)}" fill="${COLORS[geo.definition.color]}"/>`).join('')}</svg>`;
   }
   function createPieceGhost(piece){
-    const geo=pieceGeometry({...piece,anchor:{x:0,y:0}}),visualWalls=visualWallsFor(geo),ghost=svgEl('svg',{width:1,height:1,class:'street-drag-ghost','aria-hidden':'true'});
+    const geo=pieceGeometry({...piece,anchor:{x:0,y:0}}),wallPolygons=visualWallPolygonsFor(geo),ghost=svgEl('svg',{width:1,height:1,class:'street-drag-ghost','aria-hidden':'true'});
     ghost.appendChild(svgEl('polygon',{points:pointsAttr(geo.poly),fill:COLORS[geo.definition.color]}));
-    visualWalls.forEach(w=>ghost.appendChild(svgEl('line',{x1:w[0].x,y1:w[0].y,x2:w[1].x,y2:w[1].y,stroke:COLORS[geo.definition.color]})));
+    wallPolygons.forEach(poly=>ghost.appendChild(svgEl('polygon',{points:pointsAttr(poly),fill:COLORS[geo.definition.color],class:'street-wall'})));
     document.body.appendChild(ghost);return ghost;
   }
   function attachPieceGesture(element,piece){
@@ -397,35 +432,42 @@
   }
   function renderPalette(){
     const host=byId('streetPalette');host.innerHTML='';
-    state.pieces.forEach(piece=>{
+    const pieces=state.pieces.filter(piece=>!piece.anchor);
+    pieces.forEach(piece=>{
       const def=PIECES.find(d=>d.id===piece.id),tile=document.createElement('div');
-      tile.className=`street-piece-card${state.selected===piece.id?' selected':''}${piece.anchor?' placed':''}`;
-      tile.dataset.piece=piece.id;tile.setAttribute('role','button');tile.setAttribute('tabindex','0');
-      tile.innerHTML=`${piecePreview(piece)}<span>${def.name}</span><small>${piece.anchor?'Placée':'À placer'}</small>`;
+      tile.className=`street-piece-card${state.selected===piece.id?' selected':''}`;
+      tile.dataset.piece=piece.id;tile.setAttribute('role','button');tile.setAttribute('tabindex','0');tile.setAttribute('aria-label',def.name);tile.title=def.name;
+      tile.innerHTML=piecePreview(piece);
       attachPieceGesture(tile,piece);host.appendChild(tile);
     });
+    if(!pieces.length)host.innerHTML='<p class="street-palette-empty">Toutes les pièces sont placées sur la grille.</p>';
   }
   function renderBoard(){
     const svg=byId('streetBoard');svg.innerHTML='';
+    svg.classList.toggle('coordinate-mode',state.tool==='coords');
     svg.setAttribute('viewBox',`${-70} ${-62} ${BOARD.width+140} ${BOARD.height+124}`);
     const boardGroup=svgEl('g',{class:'street-grid'});
     BOARD.triangles.forEach(triangle=>{
       const poly=svgEl('polygon',{points:pointsAttr(triangle.points),class:'street-cell','data-cell':triangle.id});
       poly.addEventListener('click',event=>{
         if(state.tool!=='coords')return;
-        event.stopPropagation();const coord=coordinateForTriangle(triangle);state.coords.push({triangle:triangle.id,text:coord});render();
+        event.stopPropagation();
+        if(state.coords.some(item=>item.triangle===triangle.id))return;
+        const coord=coordinateForTriangle(triangle),result=coordinateResultForTriangle(triangle);
+        state.coords.push({triangle:triangle.id,text:coord,...result,time:new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit',second:'2-digit'})});render();
       });boardGroup.appendChild(poly);
     });
     svg.appendChild(boardGroup);
     const labelGroup=svgEl('g',{class:'street-labels'});
     BOARD.boundary.forEach((edge,edgeIndex)=>{
-      const labelPos=add(edge.mid,mul(edge.outward,39));
+      const labelPos=add(edge.mid,mul(edge.outward,38));
       let labelAngle=Math.atan2(edge.b.y-edge.a.y,edge.b.x-edge.a.x)*180/Math.PI;
       if(labelAngle>90||labelAngle<-90)labelAngle+=180;
-      const label=svgEl('text',{x:labelPos.x,y:labelPos.y+4,'text-anchor':'middle',class:'street-label',transform:`rotate(${labelAngle} ${labelPos.x} ${labelPos.y})`});label.textContent=edge.label;labelGroup.appendChild(label);
+      const label=svgEl('text',{x:labelPos.x,y:labelPos.y,'text-anchor':'middle','dominant-baseline':'central',class:'street-label',transform:`rotate(${labelAngle} ${labelPos.x} ${labelPos.y})`});label.textContent=edge.label;labelGroup.appendChild(label);
       const tangent=norm(sub(edge.b,edge.a));
       edge.directions.forEach((direction,directionIndex)=>{
-        const pos=add(add(edge.mid,mul(edge.outward,9)),mul(tangent,directionIndex===0?-6:6));
+        const side=dot(direction,tangent)<0?-1:1;
+        const pos=add(add(edge.mid,mul(edge.outward,10)),mul(tangent,side*6));
         const perpendicular={x:-direction.y,y:direction.x};
         const arrow=[add(pos,mul(direction,6)),add(add(pos,mul(direction,-4)),mul(perpendicular,4)),add(add(pos,mul(direction,-4)),mul(perpendicular,-4))];
         const usedTrace=state.traces.find(trace=>(trace.entry.index===edgeIndex&&trace.entryDirectionIndex===directionIndex)||(trace.exit?.index===edgeIndex&&trace.exitDirectionIndex===directionIndex));
@@ -444,21 +486,33 @@
     state.pieces.filter(piece=>piece.anchor).forEach(piece=>{
       const geo=pieceGeometry(piece),group=svgEl('g',{class:`street-piece${state.selected===piece.id?' selected':''}${issues.has(piece.id)?' invalid':''}`,'data-piece':piece.id});
       const poly=svgEl('polygon',{points:pointsAttr(geo.poly),fill:COLORS[geo.definition.color]});group.appendChild(poly);
-      visualWallsFor(geo).forEach(w=>group.appendChild(svgEl('line',{x1:w[0].x,y1:w[0].y,x2:w[1].x,y2:w[1].y,stroke:COLORS[geo.definition.color],class:'street-wall'})));
+      visualWallPolygonsFor(geo).forEach(wall=>group.appendChild(svgEl('polygon',{points:pointsAttr(wall),fill:COLORS[geo.definition.color],class:'street-wall'})));
       attachPieceGesture(group,piece);svg.appendChild(group);
     });
-    state.coords.forEach(item=>{const tri=BOARD.triangles.find(t=>t.id===item.triangle);if(!tri)return;const c=tri.points.reduce((s,p)=>add(s,p),{x:0,y:0});c.x/=3;c.y/=3;const text=svgEl('text',{x:c.x,y:c.y+4,'text-anchor':'middle',class:'street-coordinate-mark'});text.textContent=String(state.coords.indexOf(item)+1);svg.appendChild(text);});
+    state.coords.forEach(item=>{
+      const tri=BOARD.triangles.find(t=>t.id===item.triangle);if(!tri)return;
+      const center=triangleCenter(tri);
+      if(item.empty){
+        const group=svgEl('g',{class:'street-coordinate-empty'}),radius=5.2;
+        group.appendChild(svgEl('line',{x1:center.x-radius,y1:center.y-radius,x2:center.x+radius,y2:center.y+radius}));
+        group.appendChild(svgEl('line',{x1:center.x+radius,y1:center.y-radius,x2:center.x-radius,y2:center.y+radius}));
+        svg.appendChild(group);
+      }else svg.appendChild(svgEl('circle',{cx:center.x,cy:center.y,r:5.5,fill:item.hex,class:'street-coordinate-color'}));
+    });
   }
   function renderHistory(){
     const host=byId('streetHistory'),items=[];
-    state.coords.forEach((item,index)=>items.push(`<li><b>Coordonnée ${index+1}</b> — ${item.text}</li>`));
+    state.coords.slice().reverse().forEach(item=>{
+      const marker=item.empty?'<span class="street-history-cross">×</span>':`<span class="street-history-swatch" style="--street-result:${item.hex}"></span>`;
+      items.push(`<li class="street-history-item">${marker}<span><b>${item.text}</b> — ${item.name}</span>${item.time?`<span class="street-history-time">${item.time}</span>`:''}</li>`);
+    });
     state.traces.slice().reverse().forEach(trace=>{
       const color=trace.color||resolveStreetColor(new Set(trace.colors||[]));
       const result=trace.loop?'Prisonnière':(!trace.exit?'Sans sortie':(trace.exit===trace.entry?`<b>${trace.entry.label}</b> ↔`:`<b>${trace.entry.label}</b> — <b>${trace.exit.label}</b>`));
       const special=color.name==='Transparent'?' transparent':'';
       items.push(`<li class="street-history-item"><span class="street-history-swatch${special}" style="--street-result:${color.hex}"></span><span>${result} — ${color.name}</span>${trace.time?`<span class="street-history-time">${trace.time}</span>`:''}</li>`);
     });
-    host.innerHTML=items.length?items.join(''):'<li class="empty">Aucun test lancé.</li>';
+    host.innerHTML=items.length?items.join(''):'<li class="empty">Aucun coup joué.</li>';
   }
   function setMessage(text,error=false){const el=byId('streetMessage');el.textContent=text;el.classList.toggle('error',error);}
   function render(){
@@ -477,12 +531,12 @@
     create.addEventListener('click',open);
     byId('streetClose').addEventListener('click',close);
     byId('streetRemove').addEventListener('click',()=>{const p=state.pieces.find(x=>x.id===state.selected);if(p?.anchor){p.anchor=null;render();}});
-    byId('streetReset').addEventListener('click',()=>{if(!confirm('Effacer tous les placements et les essais Street ?'))return;state={pieces:PIECES.map(def=>({id:def.id,anchor:null,rotation:0,flipped:false})),selected:'blueSmall',tool:'pieces',traces:[],coords:[]};localStorage.removeItem(SAVE_KEY);render();});
+    byId('streetReset').addEventListener('click',()=>{if(!confirm('Effacer tous les placements et l’historique Street ?'))return;state={pieces:PIECES.map(def=>({id:def.id,anchor:null,rotation:0,flipped:false})),selected:'blueSmall',tool:'pieces',traces:[],coords:[]};localStorage.removeItem(SAVE_KEY);render();});
     byId('streetClearTests').addEventListener('click',()=>{state.traces=[];state.coords=[];render();});
     byId('streetDiagnostic').addEventListener('click',async()=>{
       const issues=validatePieces(state.pieces);
       const report={prototype:'ORAPA-STREET-2',appVersion:APP_VERSION,createdAt:new Date().toISOString(),pieces:state.pieces.map(piece=>({...piece})),validation:[...issues.entries()].map(([piece,message])=>({piece,message})),coordinates:state.coords.map(item=>({...item})),rays:state.traces.map(trace=>({entry:trace.entry.label,entryDirection:trace.entryDirectionIndex,exit:trace.exit?.label||null,exitDirection:trace.exitDirectionIndex??null,bounced:!!trace.bounced,loop:!!trace.loop,colors:trace.colors,color:trace.color,time:trace.time||null,points:trace.points.map(p=>({x:+p.x.toFixed(2),y:+p.y.toFixed(2)}))}))};
-      const text=`ORAPA STREET — RAPPORT DE PROTOTYPE\n${JSON.stringify(report,null,2)}`;
+      const text=`ORAPA STREET — RAPPORT DE CRÉATION\n${JSON.stringify(report,null,2)}`;
       try{await navigator.clipboard.writeText(text);setMessage('Diagnostic copié. Tu peux le coller avec une capture pour signaler un problème.');}
       catch(_error){setMessage('La copie automatique a échoué sur ce navigateur.',true);}
     });
@@ -494,6 +548,6 @@
   }
   function close(){byId('streetPrototype').hidden=true;document.body.classList.remove('street-open');}
 
-  window.OrapaStreetPrototype={open,close,debug:{BOARD,LANES,PIECES,axialTransform,pieceGeometry,visualWallsFor,snapPieceAnchor,coordinateForTriangle,traceRay,validatePieces}};
+  window.OrapaStreetPrototype={open,close,debug:{BOARD,LANES,PIECES,axialTransform,pieceGeometry,visualWallsFor,visualWallPolygonsFor,snapPieceAnchor,coordinateForTriangle,traceRay,validatePieces}};
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',bind);else bind();
 })();
