@@ -382,6 +382,7 @@
   let state={pieces:PIECES.map(def=>({id:def.id,anchor:null,rotation:0,flipped:false})),selected:'blueSmall',tool:'pieces',started:false,traces:[],coords:[]};
   let wavePreference='auto';
   let selectedWaveEdge=null;
+  let directionChoicesHideTimer=null;
   try{
     const savedPreference=localStorage.getItem(WAVE_PREFERENCE_KEY);
     if(['auto','arrows','choices'].includes(savedPreference))wavePreference=savedPreference;
@@ -390,6 +391,16 @@
   function resolvedWavePreference(){
     if(wavePreference!=='auto')return wavePreference;
     return window.matchMedia('(max-width: 640px)').matches?'choices':'arrows';
+  }
+  function clearDirectionChoicesTimer(){
+    if(directionChoicesHideTimer){clearTimeout(directionChoicesHideTimer);directionChoicesHideTimer=null;}
+  }
+  function scheduleDirectionChoicesHide(edgeIndex){
+    clearDirectionChoicesTimer();
+    directionChoicesHideTimer=setTimeout(()=>{
+      directionChoicesHideTimer=null;
+      if(selectedWaveEdge===edgeIndex){selectedWaveEdge=null;render();}
+    },2000);
   }
 
   function load(){
@@ -563,7 +574,7 @@
           labelGroup.appendChild(svgEl('polygon',{points:pointsAttr(half),class:`street-label-result${usedTrace.color.name==='Transparent'?' transparent':''}`,style:`--street-result:${usedTrace.color.hex}`,'clip-path':`url(#${clipId})`}));
         });
         const hit=svgEl('rect',{x:box.left,y:box.top,width:32,height:26,rx:6,class:`street-label-hit${selectedWaveEdge===edgeIndex?' active':''}${state.started?'':' disabled'}`});
-        hit.addEventListener('click',event=>{event.stopPropagation();if(!state.started)return;selectedWaveEdge=selectedWaveEdge===edgeIndex?null:edgeIndex;render();});
+        hit.addEventListener('click',event=>{event.stopPropagation();if(!state.started)return;clearDirectionChoicesTimer();selectedWaveEdge=selectedWaveEdge===edgeIndex?null:edgeIndex;render();});
         labelGroup.appendChild(hit);
       }
       const label=svgEl('text',{x:labelPos.x,y:labelPos.y,'text-anchor':'middle','dominant-baseline':'central',class:`street-label${useDirectionChoices?' clickable':''}${selectedWaveEdge===edgeIndex?' active':''}`});label.textContent=edge.label;labelGroup.appendChild(label);
@@ -571,13 +582,13 @@
       if(useDirectionChoices&&state.started&&selectedWaveEdge===edgeIndex){
         edge.directions.forEach((direction,directionIndex)=>{
           const lane=emptyLane(edge,directionIndex),destination=lane?.labels?.find(value=>value!==edge.label)||'?';
-          const center=add(labelPos,mul(direction,62));
+          const center=add(edge.mid,mul(direction,48));
           const usedTrace=findTraceAt(edgeIndex,directionIndex);
           const choice=svgEl('g',{class:`street-direction-choice-svg${usedTrace?' used':''}${usedTrace?.color?.name==='Transparent'?' transparent':''}`,'data-edge':edgeIndex,'data-direction':directionIndex});
-          const box=svgEl('rect',{x:center.x-19,y:center.y-12,width:38,height:24,rx:5,style:usedTrace?`--street-result:${usedTrace.color.hex}`:''});
+          const box=svgEl('rect',{x:center.x-15,y:center.y-11,width:30,height:22,rx:5,style:usedTrace?`--street-result:${usedTrace.color.hex}`:''});
           const text=svgEl('text',{x:center.x,y:center.y,'text-anchor':'middle','dominant-baseline':'central'});text.textContent=`→ ${destination}`;
           choice.appendChild(box);choice.appendChild(text);
-          choice.addEventListener('click',event=>{event.stopPropagation();if(usedTrace)showStreetTraceFeedback(usedTrace,edgeIndex,directionIndex);else launchWave(edgeIndex,directionIndex);});
+          choice.addEventListener('click',event=>{event.stopPropagation();if(usedTrace)showStreetTraceFeedback(usedTrace,edgeIndex,directionIndex);else launchWave(edgeIndex,directionIndex);scheduleDirectionChoicesHide(edgeIndex);});
           labelGroup.appendChild(choice);
         });
       }
@@ -703,7 +714,7 @@
     const pill=byId('streetPrototype').querySelector('.mode-pill');
     pill.classList.toggle('live',state.started);
     pill.querySelector('span:last-child').textContent=state.started?'Partie en cours':'Placement des pièces';
-    if(preStart)selectedWaveEdge=null;
+    if(preStart){clearDirectionChoicesTimer();selectedWaveEdge=null;}
     if(state.started)setMessage('',false);
     else if(issues.size)setMessage([...new Set(issues.values())][0],true);
     else if(placed<PIECES.length)setMessage('Place toutes les pièces avant de démarrer.',true);
@@ -716,9 +727,9 @@
     create.addEventListener('click',open);
     byId('streetClose').addEventListener('click',close);
     byId('streetRandom').addEventListener('click',()=>{if(state.started)return;if(!randomizePieces())setMessage('Impossible de trouver un placement valide. Réessaie.',true);render();});
-    byId('streetStart').addEventListener('click',()=>{if(state.started||byId('streetStart').disabled)return;state.started=true;state.tool='pieces';state.traces=[];state.coords=[];selectedWaveEdge=null;render();});
+    byId('streetStart').addEventListener('click',()=>{if(state.started||byId('streetStart').disabled)return;state.started=true;state.tool='pieces';state.traces=[];state.coords=[];clearDirectionChoicesTimer();selectedWaveEdge=null;render();});
     byId('streetEnd').addEventListener('click',close);
-    byId('streetReset').addEventListener('click',()=>{if(!confirm('Effacer tous les placements et l’historique Street ?'))return;state={pieces:PIECES.map(def=>({id:def.id,anchor:null,rotation:0,flipped:false})),selected:'blueSmall',tool:'pieces',started:false,traces:[],coords:[]};selectedWaveEdge=null;localStorage.removeItem(SAVE_KEY);render();});
+    byId('streetReset').addEventListener('click',()=>{if(!confirm('Effacer tous les placements et l’historique Street ?'))return;state={pieces:PIECES.map(def=>({id:def.id,anchor:null,rotation:0,flipped:false})),selected:'blueSmall',tool:'pieces',started:false,traces:[],coords:[]};clearDirectionChoicesTimer();selectedWaveEdge=null;localStorage.removeItem(SAVE_KEY);render();});
     byId('streetClearTests').addEventListener('click',()=>{state.traces=[];state.coords=[];render();});
     byId('streetHistoryToggle').addEventListener('click',()=>toggleHistory());
     byId('streetDiagnostic').addEventListener('click',async()=>{
@@ -729,19 +740,19 @@
       catch(_error){setMessage('La copie automatique a échoué sur ce navigateur.',true);}
     });
     byId('streetWavePreference').addEventListener('change',event=>{
-      wavePreference=event.target.value;selectedWaveEdge=null;
+      wavePreference=event.target.value;clearDirectionChoicesTimer();selectedWaveEdge=null;
       try{localStorage.setItem(WAVE_PREFERENCE_KEY,wavePreference);}catch(_error){}
       render();
     });
     const narrowScreen=window.matchMedia('(max-width: 640px)');
-    const refreshAutomaticControls=()=>{if(wavePreference==='auto'&&!byId('streetPrototype').hidden){selectedWaveEdge=null;render();}};
+    const refreshAutomaticControls=()=>{if(wavePreference==='auto'&&!byId('streetPrototype').hidden){clearDirectionChoicesTimer();selectedWaveEdge=null;render();}};
     if(narrowScreen.addEventListener)narrowScreen.addEventListener('change',refreshAutomaticControls);else narrowScreen.addListener(refreshAutomaticControls);
   }
   function open(){
     byId('createModeModal')?.classList.remove('open');
     byId('streetPrototype').hidden=false;document.body.classList.add('street-open');document.body.classList.remove('home-view');load();render();
   }
-  function close(){byId('streetPrototype').hidden=true;document.body.classList.remove('street-open');document.body.classList.add('home-view');}
+  function close(){clearDirectionChoicesTimer();selectedWaveEdge=null;byId('streetPrototype').hidden=true;document.body.classList.remove('street-open');document.body.classList.add('home-view');}
 
   window.OrapaStreetPrototype={open,close,debug:{BOARD,LANES,PIECES,axialTransform,pieceGeometry,visualWallsFor,visualWallPolygonsFor,snapPieceAnchor,coordinateForTriangle,traceRay,validatePieces}};
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',bind);else bind();
