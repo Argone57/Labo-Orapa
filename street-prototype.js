@@ -433,6 +433,20 @@
     return false;
   }
   function pointsAttr(points){return points.map(p=>`${p.x},${p.y}`).join(' ');}
+  function clipPolygonToHalfPlane(points,center,normal){
+    const output=[];
+    points.forEach((current,index)=>{
+      const previous=points[(index+points.length-1)%points.length];
+      const currentDistance=dot(sub(current,center),normal),previousDistance=dot(sub(previous,center),normal);
+      const currentInside=currentDistance>=-EPS,previousInside=previousDistance>=-EPS;
+      if(currentInside!==previousInside){
+        const ratio=previousDistance/(previousDistance-currentDistance);
+        output.push(add(previous,mul(sub(current,previous),ratio)));
+      }
+      if(currentInside)output.push(current);
+    });
+    return output;
+  }
   function svgClientPoint(clientX,clientY,svg){
     const point=svg.createSVGPoint();point.x=clientX;point.y=clientY;
     return point.matrixTransform(svg.getScreenCTM().inverse());
@@ -537,7 +551,18 @@
     BOARD.boundary.forEach((edge,edgeIndex)=>{
       const labelPos=add(edge.mid,mul(edge.outward,useDirectionChoices?19:31));
       if(useDirectionChoices){
-        const hit=svgEl('rect',{x:labelPos.x-16,y:labelPos.y-13,width:32,height:26,rx:6,class:`street-label-hit${selectedWaveEdge===edgeIndex?' active':''}${state.started?'':' disabled'}`});
+        const box={left:labelPos.x-16,right:labelPos.x+16,top:labelPos.y-13,bottom:labelPos.y+13};
+        const clipId=`street-label-clip-${edgeIndex}`;
+        const clip=svgEl('clipPath',{id:clipId});clip.appendChild(svgEl('rect',{x:box.left,y:box.top,width:32,height:26,rx:6}));labelGroup.appendChild(clip);
+        labelGroup.appendChild(svgEl('rect',{x:box.left,y:box.top,width:32,height:26,rx:6,class:'street-label-base'}));
+        const rectangle=[{x:box.left,y:box.top},{x:box.right,y:box.top},{x:box.right,y:box.bottom},{x:box.left,y:box.bottom}];
+        edge.directions.forEach((direction,directionIndex)=>{
+          const usedTrace=findTraceAt(edgeIndex,directionIndex);if(!usedTrace)return;
+          const otherDirection=edge.directions[directionIndex===0?1:0];
+          const half=clipPolygonToHalfPlane(rectangle,labelPos,sub(direction,otherDirection));
+          labelGroup.appendChild(svgEl('polygon',{points:pointsAttr(half),class:`street-label-result${usedTrace.color.name==='Transparent'?' transparent':''}`,style:`--street-result:${usedTrace.color.hex}`,'clip-path':`url(#${clipId})`}));
+        });
+        const hit=svgEl('rect',{x:box.left,y:box.top,width:32,height:26,rx:6,class:`street-label-hit${selectedWaveEdge===edgeIndex?' active':''}${state.started?'':' disabled'}`});
         hit.addEventListener('click',event=>{event.stopPropagation();if(!state.started)return;selectedWaveEdge=selectedWaveEdge===edgeIndex?null:edgeIndex;render();});
         labelGroup.appendChild(hit);
       }
@@ -546,7 +571,7 @@
       if(useDirectionChoices&&state.started&&selectedWaveEdge===edgeIndex){
         edge.directions.forEach((direction,directionIndex)=>{
           const lane=emptyLane(edge,directionIndex),destination=lane?.labels?.find(value=>value!==edge.label)||'?';
-          const center=add(labelPos,mul(direction,29));
+          const center=add(labelPos,mul(direction,62));
           const usedTrace=findTraceAt(edgeIndex,directionIndex);
           const choice=svgEl('g',{class:`street-direction-choice-svg${usedTrace?' used':''}${usedTrace?.color?.name==='Transparent'?' transparent':''}`,'data-edge':edgeIndex,'data-direction':directionIndex});
           const box=svgEl('rect',{x:center.x-19,y:center.y-12,width:38,height:24,rx:5,style:usedTrace?`--street-result:${usedTrace.color.hex}`:''});
