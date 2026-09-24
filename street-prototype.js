@@ -513,6 +513,14 @@
       items.push(`<li class="street-history-item"><span class="street-history-swatch${special}" style="--street-result:${color.hex}"></span><span>${result} — ${color.name}</span>${trace.time?`<span class="street-history-time">${trace.time}</span>`:''}</li>`);
     });
     host.innerHTML=items.length?items.join(''):'<li class="empty">Aucun coup joué.</li>';
+    byId('streetHistoryMoveCount').textContent=`${state.traces.length}🔦 / ${state.coords.length}📍`;
+  }
+  function toggleHistory(forceOpen){
+    const disclosure=byId('streetHistoryDisclosure');
+    const open=forceOpen===undefined?disclosure.classList.contains('collapsed'):!!forceOpen;
+    disclosure.classList.toggle('collapsed',!open);
+    byId('streetHistoryToggle').setAttribute('aria-expanded',String(open));
+    byId('streetHistoryToggleIndicator').textContent=open?'−':'+';
   }
   function setMessage(text,error=false){const el=byId('streetMessage');el.textContent=text;el.classList.toggle('error',error);}
   function render(){
@@ -533,6 +541,7 @@
     byId('streetRemove').addEventListener('click',()=>{const p=state.pieces.find(x=>x.id===state.selected);if(p?.anchor){p.anchor=null;render();}});
     byId('streetReset').addEventListener('click',()=>{if(!confirm('Effacer tous les placements et l’historique Street ?'))return;state={pieces:PIECES.map(def=>({id:def.id,anchor:null,rotation:0,flipped:false})),selected:'blueSmall',tool:'pieces',traces:[],coords:[]};localStorage.removeItem(SAVE_KEY);render();});
     byId('streetClearTests').addEventListener('click',()=>{state.traces=[];state.coords=[];render();});
+    byId('streetHistoryToggle').addEventListener('click',()=>toggleHistory());
     byId('streetDiagnostic').addEventListener('click',async()=>{
       const issues=validatePieces(state.pieces);
       const report={prototype:'ORAPA-STREET-2',appVersion:APP_VERSION,createdAt:new Date().toISOString(),pieces:state.pieces.map(piece=>({...piece})),validation:[...issues.entries()].map(([piece,message])=>({piece,message})),coordinates:state.coords.map(item=>({...item})),rays:state.traces.map(trace=>({entry:trace.entry.label,entryDirection:trace.entryDirectionIndex,exit:trace.exit?.label||null,exitDirection:trace.exitDirectionIndex??null,bounced:!!trace.bounced,loop:!!trace.loop,colors:trace.colors,color:trace.color,time:trace.time||null,points:trace.points.map(p=>({x:+p.x.toFixed(2),y:+p.y.toFixed(2)}))}))};
