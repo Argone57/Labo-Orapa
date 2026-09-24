@@ -543,14 +543,27 @@
       }
       const label=svgEl('text',{x:labelPos.x,y:labelPos.y,'text-anchor':'middle','dominant-baseline':'central',class:`street-label${useDirectionChoices?' clickable':''}${selectedWaveEdge===edgeIndex?' active':''}`});label.textContent=edge.label;labelGroup.appendChild(label);
       const tangent=norm(sub(edge.b,edge.a));
+      if(useDirectionChoices&&state.started&&selectedWaveEdge===edgeIndex){
+        edge.directions.forEach((direction,directionIndex)=>{
+          const lane=emptyLane(edge,directionIndex),destination=lane?.labels?.find(value=>value!==edge.label)||'?';
+          const center=add(labelPos,mul(direction,29));
+          const usedTrace=findTraceAt(edgeIndex,directionIndex);
+          const choice=svgEl('g',{class:`street-direction-choice-svg${usedTrace?' used':''}${usedTrace?.color?.name==='Transparent'?' transparent':''}`,'data-edge':edgeIndex,'data-direction':directionIndex});
+          const box=svgEl('rect',{x:center.x-19,y:center.y-12,width:38,height:24,rx:5,style:usedTrace?`--street-result:${usedTrace.color.hex}`:''});
+          const text=svgEl('text',{x:center.x,y:center.y,'text-anchor':'middle','dominant-baseline':'central'});text.textContent=`→ ${destination}`;
+          choice.appendChild(box);choice.appendChild(text);
+          choice.addEventListener('click',event=>{event.stopPropagation();if(usedTrace)showStreetTraceFeedback(usedTrace,edgeIndex,directionIndex);else launchWave(edgeIndex,directionIndex);});
+          labelGroup.appendChild(choice);
+        });
+      }
       if(!useDirectionChoices)edge.directions.forEach((direction,directionIndex)=>{
         const side=dot(direction,tangent)<0?-1:1;
         const pos=add(add(edge.mid,mul(edge.outward,10)),mul(tangent,side*10));
         const perpendicular={x:-direction.y,y:direction.x};
         const arrow=[add(pos,mul(direction,7)),add(add(pos,mul(direction,-5)),mul(perpendicular,4.5)),add(add(pos,mul(direction,-5)),mul(perpendicular,-4.5))];
-        const usedTrace=state.traces.find(trace=>(trace.entry.index===edgeIndex&&trace.entryDirectionIndex===directionIndex)||(trace.exit?.index===edgeIndex&&trace.exitDirectionIndex===directionIndex));
+        const usedTrace=findTraceAt(edgeIndex,directionIndex);
         const button=svgEl('polygon',{points:pointsAttr(arrow),class:`street-ray-button${usedTrace?' used':''}${state.started?'':' disabled'}`,'data-edge':edgeIndex,'data-direction':directionIndex,style:usedTrace?`--street-result:${usedTrace.color.hex}`:''});
-        button.addEventListener('click',event=>{event.stopPropagation();if(!usedTrace)launchWave(edgeIndex,directionIndex);});labelGroup.appendChild(button);
+        button.addEventListener('click',event=>{event.stopPropagation();if(usedTrace)showStreetTraceFeedback(usedTrace,edgeIndex,directionIndex);else launchWave(edgeIndex,directionIndex);});labelGroup.appendChild(button);
       });
     });svg.appendChild(labelGroup);
     state.traces.forEach((trace,index)=>{
@@ -577,32 +590,50 @@
         svg.appendChild(group);
       }else svg.appendChild(svgEl('circle',{cx:center.x,cy:center.y,r:5.5,fill:item.hex,class:'street-coordinate-color'}));
     });
+    svg.appendChild(labelGroup);
+  }
+  function findTraceAt(edgeIndex,directionIndex){
+    return state.traces.find(trace=>(trace.entry.index===edgeIndex&&trace.entryDirectionIndex===directionIndex)||(trace.exit?.index===edgeIndex&&trace.exitDirectionIndex===directionIndex));
+  }
+  function traceControl(edgeIndex,directionIndex){
+    return byId('streetBoard').querySelector(`[data-edge="${edgeIndex}"][data-direction="${directionIndex}"]`);
+  }
+  function pulseStreetControl(edgeIndex,directionIndex){
+    const control=traceControl(edgeIndex,directionIndex);if(!control)return;
+    control.classList.remove('pulse');void control.getBoundingClientRect();control.classList.add('pulse');
+    setTimeout(()=>control.classList.remove('pulse'),1000);
+  }
+  function showStreetBubble(element,text){
+    if(!element)return;
+    let bubble=byId('labelBubble');
+    if(!bubble){bubble=document.createElement('div');bubble.id='labelBubble';bubble.className='label-bubble';document.body.appendChild(bubble);}
+    bubble.textContent=text;bubble.style.whiteSpace='pre';bubble.classList.add('show');
+    const rect=element.getBoundingClientRect(),width=bubble.offsetWidth,height=bubble.offsetHeight,margin=8;
+    let left=rect.left+rect.width/2;left=Math.max(width/2+margin,Math.min(window.innerWidth-width/2-margin,left));
+    const above=rect.top-height-10>=0;bubble.classList.toggle('below',!above);bubble.style.left=`${left}px`;bubble.style.top=`${above?rect.top:rect.bottom}px`;
+    clearTimeout(showStreetBubble._timer);showStreetBubble._timer=setTimeout(()=>bubble.classList.remove('show'),1600);
+  }
+  function showStreetTraceFeedback(trace,edgeIndex,directionIndex){
+    const origin=trace.entry.index===edgeIndex&&trace.entryDirectionIndex===directionIndex;
+    const partner=origin?trace.exit:trace.entry;
+    let text;
+    if(!trace.exit)text=trace.loop?'Onde prisonnière':'Aucune sortie';
+    else if(trace.exit.index===trace.entry.index)text=`${trace.entry.label} ↔\n${trace.color.name}`;
+    else text=`Sort en ${partner.label}\n${trace.color.name}`;
+    const control=traceControl(edgeIndex,directionIndex);showStreetBubble(control,text);pulseStreetControl(edgeIndex,directionIndex);
+    if(partner){
+      const partnerDirection=origin?trace.exitDirectionIndex:trace.entryDirectionIndex;
+      pulseStreetControl(partner.index,partnerDirection);
+    }
   }
   function launchWave(edgeIndex,directionIndex){
     if(!state.started)return;
-    const usedTrace=state.traces.find(trace=>(trace.entry.index===edgeIndex&&trace.entryDirectionIndex===directionIndex)||(trace.exit?.index===edgeIndex&&trace.exitDirectionIndex===directionIndex));
-    if(usedTrace)return;
+    const usedTrace=findTraceAt(edgeIndex,directionIndex);
+    if(usedTrace)return showStreetTraceFeedback(usedTrace,edgeIndex,directionIndex);
     if(validatePieces(state.pieces).size)return setMessage('Corrige les placements rouges avant de lancer une onde.',true);
     const trace=traceRay(edgeIndex,directionIndex,state.pieces);
     trace.time=new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
-    state.traces.push(trace);selectedWaveEdge=null;render();
-  }
-  function renderDirectionChooser(){
-    const host=byId('streetDirectionChooser'),choices=byId('streetDirectionChoices');
-    const visible=state.started&&resolvedWavePreference()==='choices'&&selectedWaveEdge!==null;
-    host.hidden=!visible;choices.innerHTML='';
-    if(!visible)return;
-    const edge=BOARD.boundary[selectedWaveEdge];
-    byId('streetDirectionTitle').textContent=`Onde depuis ${edge.label}`;
-    edge.directions.forEach((direction,directionIndex)=>{
-      const lane=emptyLane(edge,directionIndex);
-      const destination=lane?.labels?.find(label=>label!==edge.label)||'?';
-      const usedTrace=state.traces.find(trace=>(trace.entry.index===edge.index&&trace.entryDirectionIndex===directionIndex)||(trace.exit?.index===edge.index&&trace.exitDirectionIndex===directionIndex));
-      const button=document.createElement('button');button.className=`ghost street-direction-choice${usedTrace?' used':''}`;
-      button.textContent=`→ ${destination}`;button.disabled=!!usedTrace;
-      if(usedTrace)button.style.setProperty('--street-result',usedTrace.color.hex);
-      button.addEventListener('click',()=>launchWave(edge.index,directionIndex));choices.appendChild(button);
-    });
+    state.traces.push(trace);render();setTimeout(()=>showStreetTraceFeedback(trace,edgeIndex,directionIndex),0);
   }
   function renderHistory(){
     const host=byId('streetHistory'),items=[];
@@ -628,7 +659,7 @@
   }
   function setMessage(text,error=false){const el=byId('streetStartBlockMsg');el.textContent=text;el.style.color=error?'#f5b8ae':'var(--text-faint)';}
   function render(){
-    renderPalette();renderBoard();renderDirectionChooser();renderHistory();
+    renderPalette();renderBoard();renderHistory();
     const issues=validatePieces(state.pieces),placed=state.pieces.filter(p=>p.anchor).length;
     const complete=placed===PIECES.length&&!issues.size;
     const preStart=!state.started;
