@@ -178,7 +178,8 @@
     return Math.abs(cross(ab,ap))<=tolerance&&dot(ap,ab)>=-tolerance&&dot(sub(p,b),ab)<=tolerance;
   }
   function pointInPolygon(point,poly,includeBoundary=true){
-    if(includeBoundary&&poly.some((p,i)=>pointOnSegment(point,p,poly[(i+1)%poly.length])))return true;
+    const onBoundary=poly.some((p,i)=>pointOnSegment(point,p,poly[(i+1)%poly.length]));
+    if(onBoundary)return includeBoundary;
     let inside=false;
     for(let i=0,j=poly.length-1;i<poly.length;j=i++){
       const a=poly[i],b=poly[j];
@@ -208,9 +209,36 @@
       const hit=segmentIntersection(a1,a2,b1,b2,false);if(hit)return 'overlap';
     }
     if(pointInPolygon(a[0],b,false)||pointInPolygon(b[0],a,false))return 'overlap';
+    const sharedTriangle=BOARD.triangles.some(triangle=>{
+      const center=triangle.points.reduce((sum,point)=>add(sum,point),{x:0,y:0});
+      center.x/=3;center.y/=3;
+      return pointInPolygon(center,a,false)&&pointInPolygon(center,b,false);
+    });
+    if(sharedTriangle)return 'overlap';
     return null;
   }
-  function validatePieces(pieces){
+  function directlyReachablePieceIds(placed,geometries){
+    const segments=[];
+    placed.forEach(piece=>{
+      const geometry=geometries.get(piece.id);
+      geometry.poly.forEach((point,index)=>segments.push({a:point,b:geometry.poly[(index+1)%geometry.poly.length],piece}));
+      geometry.walls.forEach(wall=>segments.push({a:wall[0],b:wall[1],piece}));
+    });
+    const reachable=new Set();
+    BOARD.boundary.forEach(edge=>edge.directions.forEach(direction=>{
+      const contacts=segments.filter(segment=>pointOnSegment(edge.mid,segment.a,segment.b,.2));
+      if(contacts.length){contacts.forEach(segment=>reachable.add(segment.piece.id));return;}
+      const origin=add(edge.mid,mul(direction,.1));
+      let nearest=null;
+      segments.forEach(segment=>{
+        const hit=raySegmentHit(origin,direction,segment.a,segment.b);
+        if(hit&&(!nearest||hit.t<nearest.t))nearest={...hit,...segment};
+      });
+      if(nearest)reachable.add(nearest.piece.id);
+    }));
+    return reachable;
+  }
+  function validatePieces(pieces,checkReachability=true){
     const issues=new Map();
     const placed=pieces.filter(piece=>piece.anchor);
     const geometries=new Map(placed.map(piece=>[piece.id,pieceGeometry(piece)]));
@@ -223,11 +251,15 @@
       const conflict=polygonsConflict(a.poly,b.poly);
       if(conflict){const message=conflict==='side'?'Deux pièces ne peuvent pas partager un côté.':'Deux pièces ne peuvent pas se chevaucher.';issues.set(pa.id,message);issues.set(pb.id,message);}
       for(const wall of a.walls){
-        if(b.poly.some((p,k)=>segmentIntersection(wall[0],wall[1],p,b.poly[(k+1)%b.poly.length],false))||pointInPolygon(midpoint(wall[0],wall[1]),b.poly,false)){issues.set(pa.id,'Un mur traverse une autre pièce.');issues.set(pb.id,'Un mur traverse une autre pièce.');}
+        if(b.poly.some((p,k)=>collinearOverlap(wall[0],wall[1],p,b.poly[(k+1)%b.poly.length])||segmentIntersection(wall[0],wall[1],p,b.poly[(k+1)%b.poly.length],false))||pointInPolygon(midpoint(wall[0],wall[1]),b.poly,false)){issues.set(pa.id,'Un mur traverse ou longe une autre pièce.');issues.set(pb.id,'Un mur traverse ou longe une autre pièce.');}
       }
       for(const wall of b.walls){
-        if(a.poly.some((p,k)=>segmentIntersection(wall[0],wall[1],p,a.poly[(k+1)%a.poly.length],false))||pointInPolygon(midpoint(wall[0],wall[1]),a.poly,false)){issues.set(pa.id,'Un mur traverse une autre pièce.');issues.set(pb.id,'Un mur traverse une autre pièce.');}
+        if(a.poly.some((p,k)=>collinearOverlap(wall[0],wall[1],p,a.poly[(k+1)%a.poly.length])||segmentIntersection(wall[0],wall[1],p,a.poly[(k+1)%a.poly.length],false))||pointInPolygon(midpoint(wall[0],wall[1]),a.poly,false)){issues.set(pa.id,'Un mur traverse ou longe une autre pièce.');issues.set(pb.id,'Un mur traverse ou longe une autre pièce.');}
       }
+    }
+    if(checkReachability){
+      const reachable=directlyReachablePieceIds(placed,geometries);
+      placed.forEach(piece=>{if(!reachable.has(piece.id)&&!issues.has(piece.id))issues.set(piece.id,'Chaque pièce doit pouvoir être atteinte par au moins une onde sans rebond.');});
     }
     return issues;
   }
@@ -371,14 +403,15 @@
       for(const definition of definitions){
         let accepted=null;
         for(let pieceAttempt=0;pieceAttempt<420;pieceAttempt++){
-          const anchor=vertices[Math.floor(Math.random()*vertices.length)];
-          const candidate={id:definition.id,anchor:{...anchor},rotation:Math.floor(Math.random()*6),flipped:Math.random()<.5};
-          if(validatePieces([...placed,candidate]).size===0){accepted=candidate;break;}
+          const target=vertices[Math.floor(Math.random()*vertices.length)];
+          const candidate={id:definition.id,anchor:{...target},rotation:Math.floor(Math.random()*6),flipped:Math.random()<.5};
+          candidate.anchor=snapPieceAnchor(candidate,target);
+          if(validatePieces([...placed,candidate],false).size===0){accepted=candidate;break;}
         }
         if(!accepted){failed=true;break;}
         placed.push(accepted);
       }
-      if(!failed){
+      if(!failed&&validatePieces(placed,true).size===0){
         const byPiece=new Map(placed.map(piece=>[piece.id,piece]));
         state.pieces=PIECES.map(definition=>byPiece.get(definition.id));
         state.selected=state.pieces[0].id;state.traces=[];state.coords=[];state.tool='pieces';
@@ -422,6 +455,7 @@
       if(state.started||state.tool!=='pieces')return;
       event.preventDefault();event.stopPropagation();state.selected=piece.id;
       const startX=event.clientX,startY=event.clientY,pointerId=event.pointerId;
+      try{element.setPointerCapture?.(pointerId);}catch(_error){}
       let moved=false,longPressed=false,ghost=null,ghostFrame=0,ghostX=startX,ghostY=startY;
       element.classList.add('gesture-active');
       const timer=setTimeout(()=>{
@@ -433,7 +467,7 @@
       },480);
       const positionGhost=(x,y)=>{ghostX=x;ghostY=y;if(ghostFrame)return;ghostFrame=requestAnimationFrame(()=>{ghostFrame=0;if(ghost?.isConnected)ghost.style.transform=`translate3d(${ghostX}px,${ghostY}px,0)`;});};
       const startDrag=()=>{ghost=createPieceGhost(piece);element.classList.add('dragging');positionGhost(startX,startY);};
-      const cleanup=()=>{clearTimeout(timer);if(ghostFrame)cancelAnimationFrame(ghostFrame);element.classList.remove('gesture-active','dragging');window.removeEventListener('pointermove',onMove);window.removeEventListener('pointerup',onUp);window.removeEventListener('pointercancel',onCancel);};
+      const cleanup=()=>{clearTimeout(timer);if(ghostFrame)cancelAnimationFrame(ghostFrame);element.classList.remove('gesture-active','dragging');try{if(element.hasPointerCapture?.(pointerId))element.releasePointerCapture(pointerId);}catch(_error){}window.removeEventListener('pointermove',onMove);window.removeEventListener('pointerup',onUp);window.removeEventListener('pointercancel',onCancel);};
       const onMove=moveEvent=>{
         if(moveEvent.pointerId!==pointerId)return;
         if(moveEvent.cancelable)moveEvent.preventDefault();
@@ -471,7 +505,8 @@
     const svg=byId('streetBoard');svg.innerHTML='';
     svg.classList.toggle('coordinate-mode',state.tool==='coords');
     svg.classList.toggle('started',!!state.started);
-    svg.setAttribute('viewBox',`${-70} ${-62} ${BOARD.width+140} ${BOARD.height+124}`);
+    const margin=48;
+    svg.setAttribute('viewBox',`${-margin} ${-margin} ${BOARD.width+margin*2} ${BOARD.height+margin*2}`);
     const boardGroup=svgEl('g',{class:'street-grid'});
     BOARD.triangles.forEach(triangle=>{
       const poly=svgEl('polygon',{points:pointsAttr(triangle.points),class:'street-cell','data-cell':triangle.id});
@@ -551,7 +586,7 @@
   function setMessage(text,error=false){const el=byId('streetStartBlockMsg');el.textContent=text;el.style.color=error?'#f5b8ae':'var(--text-faint)';}
   function render(){
     renderPalette();renderBoard();renderHistory();
-    const selected=state.pieces.find(p=>p.id===state.selected),issues=validatePieces(state.pieces),placed=state.pieces.filter(p=>p.anchor).length;
+    const issues=validatePieces(state.pieces),placed=state.pieces.filter(p=>p.anchor).length;
     const complete=placed===PIECES.length&&!issues.size;
     const preStart=!state.started;
     byId('streetRandom').hidden=!preStart;
