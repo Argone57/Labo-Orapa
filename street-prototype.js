@@ -674,7 +674,7 @@
   function renderHistory(){
     const host=byId('streetHistory'),items=[];
     state.coords.slice().reverse().forEach(item=>{
-      const marker=item.empty?'<span class="street-history-cross">×</span>':`<span class="street-history-swatch" style="--street-result:${item.hex}"></span>`;
+      const marker=`<span class="street-history-swatch" style="--street-result:${item.empty?'#6b6355':item.hex}"></span>`;
       items.push(`<li class="street-history-item">${marker}<span><b>${item.text}</b> — ${item.name}</span>${item.time?`<span class="street-history-time">${item.time}</span>`:''}</li>`);
     });
     state.traces.slice().reverse().forEach(trace=>{
