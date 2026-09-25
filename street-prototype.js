@@ -31,6 +31,7 @@
     {id:'yellowBent',name:'Jaune — 2 demi-hexagones décalés',color:'yellow',pivot:[1.5,0],poly:[[0,0],[1,0],[2,-1],[3,-1],[3,0],[2,0],[1,1],[0,1]],walls:[]},
     {id:'redWall',name:'Rouge — 2 triangles + mur',color:'red',pivot:[1,1],poly:[[0,0],[1,0],[1,1],[0,1]],walls:[[[1,1],[2,1]]]},
   ];
+  const MIRROR_DISABLED=new Set(['blueSmall','whiteSmall','whiteLarge']);
 
   const byId=id=>document.getElementById(id);
   const svgEl=(name,attrs={})=>{
@@ -136,6 +137,14 @@
     return [a,b];
   }
   function axialVectorToScreen([a,b]){return {x:(a+b/2)*EDGE,y:b*TRI_H};}
+  function applyPieceMirror(piece){
+    if(MIRROR_DISABLED.has(piece.id))return false;
+    const turningOn=!piece.flipped;
+    const rotationCompensation=piece.id==='redWall'?1:(piece.id==='blueLarge'||piece.id==='yellowLarge'?2:0);
+    piece.rotation=(piece.rotation+(turningOn?rotationCompensation:6-rotationCompensation))%6;
+    piece.flipped=turningOn;
+    return true;
+  }
   function pieceGeometry(piece){
     const definition=PIECES.find(item=>item.id===piece.id);
     const legacyAnchor=piece.anchor?.q!==undefined;
@@ -567,17 +576,21 @@
       event.preventDefault();event.stopPropagation();state.selected=piece.id;
       const startX=event.clientX,startY=event.clientY,pointerId=event.pointerId;
       try{element.setPointerCapture?.(pointerId);}catch(_error){}
-      let moved=false,longPressed=false,ghost=null,ghostFrame=0,ghostX=startX,ghostY=startY;
+      let moved=false,longPressed=false,ghost=null,ghostFrame=0,ghostX=startX,ghostY=startY,ghostScale=1;
       element.classList.add('gesture-active');
       const timer=setTimeout(()=>{
         if(moved)return;
-        longPressed=true;piece.flipped=!piece.flipped;
-        if(piece.anchor&&piece.anchor.q===undefined)piece.anchor=snapPieceAnchor(piece,piece.anchor);
+        longPressed=true;
+        if(!applyPieceMirror(piece))return;
         if(navigator.vibrate)navigator.vibrate(15);
         render();
       },480);
-      const positionGhost=(x,y)=>{ghostX=x;ghostY=y;if(ghostFrame)return;ghostFrame=requestAnimationFrame(()=>{ghostFrame=0;if(ghost?.isConnected)ghost.style.transform=`translate3d(${ghostX}px,${ghostY}px,0)`;});};
-      const startDrag=()=>{ghost=createPieceGhost(piece);element.classList.add('dragging');positionGhost(startX,startY);};
+      const positionGhost=(x,y)=>{ghostX=x;ghostY=y;if(ghostFrame)return;ghostFrame=requestAnimationFrame(()=>{ghostFrame=0;if(ghost?.isConnected)ghost.style.transform=`translate3d(${ghostX}px,${ghostY}px,0) scale(${ghostScale})`;});};
+      const startDrag=()=>{
+        const matrix=byId('streetBoard')?.getScreenCTM();
+        ghostScale=matrix?Math.hypot(matrix.a,matrix.b):1;
+        ghost=createPieceGhost(piece);element.classList.add('dragging');positionGhost(startX,startY);
+      };
       const cleanup=()=>{clearTimeout(timer);if(ghostFrame)cancelAnimationFrame(ghostFrame);element.classList.remove('gesture-active','dragging');try{if(element.hasPointerCapture?.(pointerId))element.releasePointerCapture(pointerId);}catch(_error){}window.removeEventListener('pointermove',onMove);window.removeEventListener('pointerup',onUp);window.removeEventListener('pointercancel',onCancel);};
       const onMove=moveEvent=>{
         if(moveEvent.pointerId!==pointerId)return;
@@ -797,7 +810,9 @@
   function showPreviewWave(edgeIndex,directionIndex){
     if(!state.started||state.mode!=='solo'||state.tool!=='wave')return;
     state.previewWave={edgeIndex,directionIndex};
+    const trace=traceRay(edgeIndex,directionIndex,state.pieces);
     render();
+    setTimeout(()=>showStreetTraceFeedback(trace,edgeIndex,directionIndex),0);
   }
   function launchWave(edgeIndex,directionIndex){
     if(!state.started)return;
@@ -1026,6 +1041,6 @@
     const payload={schemaVersion:1,source:'orapa-mine',gameId:101482,gameVariant:'street',isDaily:false,dedupeReference:state.gridId,solo:true,online:true,win:state.result==='win',playerName:preferences.player_mode==='custom'?preferences.custom_player_name:'',resultPlayerName:currentPlayerAccount?.display_name||'',score:preferences.fill_score?(state.traces.length+state.coords.length*3):null,date:new Date().toISOString().slice(0,10),durationMinutes:Math.max(1,Math.round(elapsedMs()/60000)),location:preferences.location_mode==='custom'?preferences.custom_location:'Orapa-Mine',excludeFromStatistics:!!preferences.exclude_from_statistics,autoSubmit:!!preferences.auto_submit,duplicateDetection:preferences.duplicate_detection!==false,comment:streetSummary(),options:{}};
     document.dispatchEvent(new CustomEvent('orapa:myludo-result',{detail:JSON.stringify(payload)}));
   });
-  window.OrapaStreetPrototype={open:openCreation,openCreation,openSolo,resume:attempt=>openSolo(attempt.reference,attempt),close,decode:decodeStreetGrid,encode:encodeStreetGrid,openRanking:openStreetRanking,openGlobalHistory:openStreetGlobalHistory,openCatalog:openStreetCatalog,openMyHistory:openMyStreetHistory,openMyShared:openMySharedStreet,debug:{BOARD,LANES,PIECES,axialTransform,pieceGeometry,visualWallsFor,visualWallPolygonsFor,snapPieceAnchor,coordinateForTriangle,traceRay,validatePieces}};
+  window.OrapaStreetPrototype={open:openCreation,openCreation,openSolo,resume:attempt=>openSolo(attempt.reference,attempt),close,decode:decodeStreetGrid,encode:encodeStreetGrid,openRanking:openStreetRanking,openGlobalHistory:openStreetGlobalHistory,openCatalog:openStreetCatalog,openMyHistory:openMyStreetHistory,openMyShared:openMySharedStreet,debug:{BOARD,LANES,PIECES,axialTransform,applyPieceMirror,pieceGeometry,visualWallsFor,visualWallPolygonsFor,snapPieceAnchor,coordinateForTriangle,traceRay,validatePieces}};
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',bind);else bind();
 })();
