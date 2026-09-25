@@ -626,7 +626,7 @@
     svg.classList.toggle('cell-tool-active',state.mode==='solo'&&(state.tool==='hint'||state.tool==='draft'));
     svg.classList.toggle('hint-mode',state.mode==='solo'&&state.tool==='hint');
     svg.classList.toggle('draft-mode',state.mode==='solo'&&state.tool==='draft');
-    const margin=useDirectionChoices?31:58;
+    const margin=useDirectionChoices?31:43;
     svg.setAttribute('viewBox',`${-margin} ${-margin} ${BOARD.width+margin*2} ${BOARD.height+margin*2}`);
     const boardGroup=svgEl('g',{class:'street-grid'});
     BOARD.triangles.forEach(triangle=>{
@@ -695,14 +695,18 @@
         const side=dot(direction,tangent)<0?-1:1;
         const pos=add(add(edge.mid,mul(edge.outward,10)),mul(tangent,side*10));
         const perpendicular={x:-direction.y,y:direction.x};
-        const arrow=[add(pos,mul(direction,7)),add(add(pos,mul(direction,-5)),mul(perpendicular,4.5)),add(add(pos,mul(direction,-5)),mul(perpendicular,-4.5))];
+        const rearA=add(add(pos,mul(direction,-5)),mul(perpendicular,4.5));
+        const rearB=add(add(pos,mul(direction,-5)),mul(perpendicular,-4.5));
+        const arrow=[add(pos,mul(direction,7)),rearA,rearB];
         const usedTrace=displayTraceAt(edgeIndex,directionIndex);
         const button=svgEl('polygon',{points:pointsAttr(arrow),class:`street-ray-button${usedTrace?' used':''}${state.started?'':' disabled'}`,'data-edge':edgeIndex,'data-direction':directionIndex,style:usedTrace?`--street-result:${usedTrace.color.hex}`:''});
         button.addEventListener('click',event=>{event.stopPropagation();if(state.mode==='solo'&&state.tool==='wave')showPreviewWave(edgeIndex,directionIndex);else if(usedTrace)showStreetTraceFeedback(usedTrace,edgeIndex,directionIndex);else launchWave(edgeIndex,directionIndex);});labelGroup.appendChild(button);
         const exitInfo=usedTrace&&traceExitInfo(usedTrace,edgeIndex,directionIndex);
         if(exitInfo){
-          const infoPos=add(add(edge.mid,mul(edge.outward,48)),mul(tangent,side*10));
-          const info=svgEl('text',{x:infoPos.x,y:infoPos.y,'text-anchor':'middle','dominant-baseline':'central',class:'street-ray-exit-info'});info.textContent=exitInfo;labelGroup.appendChild(info);
+          const rearOuter=dot(sub(rearA,edge.mid),tangent)*side>dot(sub(rearB,edge.mid),tangent)*side?rearA:rearB;
+          const extension=norm(sub(rearOuter,pos)),infoPos=add(rearOuter,mul(extension,5));
+          const anchor=Math.abs(extension.x)<.28?'middle':extension.x>0?'end':'start';
+          const info=svgEl('text',{x:infoPos.x,y:infoPos.y,'text-anchor':anchor,'dominant-baseline':'central',class:'street-ray-exit-info'});info.textContent=exitInfo;labelGroup.appendChild(info);
         }
       });
     });svg.appendChild(labelGroup);
