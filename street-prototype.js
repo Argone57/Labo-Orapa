@@ -703,9 +703,22 @@
         button.addEventListener('click',event=>{event.stopPropagation();if(state.mode==='solo'&&state.tool==='wave')showPreviewWave(edgeIndex,directionIndex);else if(usedTrace)showStreetTraceFeedback(usedTrace,edgeIndex,directionIndex);else launchWave(edgeIndex,directionIndex);});labelGroup.appendChild(button);
         const exitInfo=usedTrace&&traceExitInfo(usedTrace,edgeIndex,directionIndex);
         if(exitInfo){
-          const rearOuter=dot(sub(rearA,edge.mid),tangent)*side>dot(sub(rearB,edge.mid),tangent)*side?rearA:rearB;
-          const extension=norm(sub(rearOuter,pos)),infoPos=add(rearOuter,mul(extension,5));
-          const anchor=Math.abs(extension.x)<.28?'middle':extension.x>0?'end':'start';
+          const leftSide=['1','2','3','4','A','B','C'].includes(edge.label);
+          const rightSide=['12','13','14','N','M','L','K'].includes(edge.label);
+          let rearOuter,extension,infoPos,anchor;
+          if(leftSide){
+            rearOuter=rearA.x>rearB.x?rearA:rearB;
+            extension=norm(sub(rearOuter,pos));infoPos=add(rearOuter,mul(extension,5));
+            infoPos.x=rearOuter.x-2;anchor='end';
+          }else if(rightSide){
+            rearOuter=rearA.x<rearB.x?rearA:rearB;
+            extension=norm(sub(rearOuter,pos));infoPos=add(rearOuter,mul(extension,5));
+            infoPos.x=rearOuter.x+2;anchor='start';
+          }else{
+            rearOuter=dot(sub(rearA,edge.mid),tangent)*side>dot(sub(rearB,edge.mid),tangent)*side?rearA:rearB;
+            extension=norm(sub(rearOuter,pos));infoPos=add(rearOuter,mul(extension,5));
+            anchor=Math.abs(extension.x)<.28?'middle':extension.x>0?'end':'start';
+          }
           const info=svgEl('text',{x:infoPos.x,y:infoPos.y,'text-anchor':anchor,'dominant-baseline':'central',class:'street-ray-exit-info'});info.textContent=exitInfo;labelGroup.appendChild(info);
         }
       });
