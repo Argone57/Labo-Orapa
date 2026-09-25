@@ -631,7 +631,7 @@
           const half=clipPolygonToHalfPlane(rectangle,labelPos,sub(direction,otherDirection));
           labelGroup.appendChild(svgEl('polygon',{points:pointsAttr(half),class:`street-label-result${usedTrace.color.name==='Transparent'?' transparent':''}`,style:`--street-result:${usedTrace.color.hex}`,'clip-path':`url(#${clipId})`}));
         });
-        const hit=svgEl('rect',{x:box.left,y:box.top,width:32,height:26,rx:6,class:`street-label-hit${selectedWaveEdge===edgeIndex?' active':''}${state.started?'':' disabled'}`});
+        const hit=svgEl('rect',{x:box.left,y:box.top,width:32,height:26,rx:6,class:`street-label-hit${selectedWaveEdge===edgeIndex?' active':''}${state.started?'':' disabled'}`,'data-label-edge':edgeIndex});
         hit.addEventListener('click',event=>{event.stopPropagation();if(!state.started)return;clearDirectionChoicesTimer();selectedWaveEdge=selectedWaveEdge===edgeIndex?null:edgeIndex;render();});
         labelGroup.appendChild(hit);
       }
@@ -660,7 +660,7 @@
         button.addEventListener('click',event=>{event.stopPropagation();if(usedTrace)showStreetTraceFeedback(usedTrace,edgeIndex,directionIndex);else launchWave(edgeIndex,directionIndex);});labelGroup.appendChild(button);
       });
     });svg.appendChild(labelGroup);
-    state.traces.forEach((trace,index)=>{
+    if(state.mode!=='solo')state.traces.forEach(trace=>{
       if(trace.points.length>1){
         const stroke=trace.color?.hex||STREET_TRANSPARENT.hex;
         svg.appendChild(svgEl('polyline',{points:pointsAttr(trace.points),class:'street-trace-halo',stroke}));
@@ -690,7 +690,8 @@
     return state.traces.find(trace=>(trace.entry.index===edgeIndex&&trace.entryDirectionIndex===directionIndex)||(trace.exit?.index===edgeIndex&&trace.exitDirectionIndex===directionIndex));
   }
   function traceControl(edgeIndex,directionIndex){
-    return byId('streetBoard').querySelector(`[data-edge="${edgeIndex}"][data-direction="${directionIndex}"]`);
+    const board=byId('streetBoard');
+    return board.querySelector(`[data-edge="${edgeIndex}"][data-direction="${directionIndex}"]`)||board.querySelector(`[data-label-edge="${edgeIndex}"]`);
   }
   function pulseStreetControl(edgeIndex,directionIndex){
     const control=traceControl(edgeIndex,directionIndex);if(!control)return;
@@ -710,15 +711,13 @@
   function showStreetTraceFeedback(trace,edgeIndex,directionIndex){
     const origin=trace.entry.index===edgeIndex&&trace.entryDirectionIndex===directionIndex;
     const partner=origin?trace.exit:trace.entry;
+    const partnerDirection=origin?trace.exitDirectionIndex:trace.entryDirectionIndex;
     let text;
     if(!trace.exit)text=trace.loop?'Onde prisonnière':'Aucune sortie';
     else if(trace.exit.index===trace.entry.index)text=`${trace.entry.label} ↔\n${trace.color.name}`;
-    else text=`Sort en ${partner.label}\n${trace.color.name}`;
+    else text=`Sort en ${partner.label} ${historyDirectionArrow(partner,partnerDirection)}\n${trace.color.name}`;
     const control=traceControl(edgeIndex,directionIndex);showStreetBubble(control,text);pulseStreetControl(edgeIndex,directionIndex);
-    if(partner){
-      const partnerDirection=origin?trace.exitDirectionIndex:trace.entryDirectionIndex;
-      pulseStreetControl(partner.index,partnerDirection);
-    }
+    if(partner)pulseStreetControl(partner.index,partnerDirection);
   }
   function launchWave(edgeIndex,directionIndex){
     if(!state.started)return;
@@ -801,10 +800,10 @@
     modal.querySelectorAll('.street-row-open').forEach(button=>button.onclick=()=>{const row=rows[Number(button.dataset.index)];if(row.grid_id)openStreetRanking(row.grid_id);});
     modal.classList.add('open');
   }
-  async function openStreetGlobalHistory(){try{const [rows,stats]=await Promise.all([supabaseRpc('orapa_street_global_history',{p_session_token:currentPlayerAccount?.session_token||'',p_limit:100,p_offset:0}),supabaseRpc('orapa_street_global_stats')]);openStreetRowsModal(`🔺 Orapa Street · ${stats?.played||0} parties · ${stats?.success_rate||0} %`,rows||[]);}catch(error){showErrorToast(error.message);}}
-  async function openStreetCatalog(){try{const rows=await supabaseRpc('orapa_street_grid_catalog',{p_sort:'popular',p_limit:100,p_offset:0,p_session_token:currentPlayerAccount?.session_token||''});openStreetRowsModal('🔺 Grilles Orapa Street',rows||[],'Aucune grille Street partagée.');}catch(error){showErrorToast(error.message);}}
-  async function openMyStreetHistory(){try{const rows=await supabaseRpc('orapa_my_street_grid_history',{p_session_token:currentPlayerAccount.session_token,p_limit:100,p_offset:0});openStreetRowsModal('🔺 Mes parties Orapa Street',(rows||[]).map(row=>({...row,player_name:currentPlayerAccount.display_name})));}catch(error){showErrorToast(error.message);}}
-  async function openMySharedStreet(){try{const rows=await supabaseRpc('orapa_my_shared_street_grids',{p_session_token:currentPlayerAccount.session_token,p_limit:100,p_offset:0});openStreetRowsModal('🔺 Mes grilles Street partagées',rows||[],'Aucune grille Street partagée.');}catch(error){showErrorToast(error.message);}}
+  async function openStreetGlobalHistory(){try{const [rows,stats]=await Promise.all([supabaseRpc('orapa_street_global_history',{p_session_token:currentPlayerAccount?.session_token||'',p_limit:100,p_offset:0}),supabaseRpc('orapa_street_global_stats')]);openStreetRowsModal(`🏠 Orapa Street · ${stats?.played||0} parties · ${stats?.success_rate||0} %`,rows||[]);}catch(error){showErrorToast(error.message);}}
+  async function openStreetCatalog(){try{const rows=await supabaseRpc('orapa_street_grid_catalog',{p_sort:'popular',p_limit:100,p_offset:0,p_session_token:currentPlayerAccount?.session_token||''});openStreetRowsModal('🏠 Grilles Orapa Street',rows||[],'Aucune grille Street partagée.');}catch(error){showErrorToast(error.message);}}
+  async function openMyStreetHistory(){try{const rows=await supabaseRpc('orapa_my_street_grid_history',{p_session_token:currentPlayerAccount.session_token,p_limit:100,p_offset:0});openStreetRowsModal('🏠 Mes parties Orapa Street',(rows||[]).map(row=>({...row,player_name:currentPlayerAccount.display_name})));}catch(error){showErrorToast(error.message);}}
+  async function openMySharedStreet(){try{const rows=await supabaseRpc('orapa_my_shared_street_grids',{p_session_token:currentPlayerAccount.session_token,p_limit:100,p_offset:0});openStreetRowsModal('🏠 Mes grilles Street partagées',rows||[],'Aucune grille Street partagée.');}catch(error){showErrorToast(error.message);}}
   async function finishStreetAttempt(success){
     state.over=true;state.result=success?'win':'lose';
     if(!success)state.pieces=state.secretPieces.map(piece=>({...piece,anchor:{...piece.anchor}}));
@@ -852,6 +851,7 @@
     const issues=validatePieces(state.pieces),placed=state.pieces.filter(p=>p.anchor).length;
     const complete=placed===PIECES.length&&!issues.size;
     const preStart=!state.started;
+    const showPalette=preStart||(state.mode==='solo'&&!state.over);
     byId('streetRandom').hidden=!preStart;
     byId('streetShare').hidden=!preStart;
     byId('streetStart').hidden=!preStart;
@@ -860,11 +860,11 @@
     byId('streetEnd').disabled=state.mode==='solo'&&!complete;
     byId('streetStart').disabled=!complete;
     byId('streetShare').disabled=!complete;
-    byId('streetPaletteTitle').style.display=preStart?'flex':'none';
-    byId('streetPalette').style.display=preStart?'flex':'none';
-    byId('streetSetupHint').style.display=preStart?'block':'none';
+    byId('streetPaletteTitle').style.display=showPalette?'flex':'none';
+    byId('streetPalette').style.display=showPalette?'flex':'none';
+    byId('streetSetupHint').style.display=showPalette?'block':'none';
     byId('streetStartBlockMsg').style.display=preStart?'block':'none';
-    byId('streetWaveSetting').hidden=preStart;
+    byId('streetWaveSetting').hidden=true;
     byId('streetWavePreference').value=wavePreference;
     const pill=byId('streetPrototype').querySelector('.mode-pill');
     pill.classList.toggle('live',state.started);
@@ -882,7 +882,7 @@
     create.addEventListener('click',()=>openCreation());
     byId('streetClose').addEventListener('click',()=>close());
     byId('streetRandom').addEventListener('click',()=>{if(state.started)return;if(!randomizePieces())setMessage('Impossible de trouver un placement valide. Réessaie.',true);render();});
-    byId('streetStart').addEventListener('click',()=>{if(state.started||byId('streetStart').disabled)return;state.started=true;state.startedAt=Date.now();state.tool='pieces';state.traces=[];state.coords=[];clearDirectionChoicesTimer();selectedWaveEdge=null;render();});
+    byId('streetStart').addEventListener('click',()=>{if(state.started||byId('streetStart').disabled)return;state.started=true;state.startedAt=Date.now();state.tool='pieces';state.traces=[];state.coords=[];clearDirectionChoicesTimer();selectedWaveEdge=null;toggleHistory(false);render();});
     byId('streetEnd').addEventListener('click',()=>void proposeStreetSolution());
     byId('streetShare').addEventListener('click',()=>void shareStreet());
     byId('streetReset').addEventListener('click',async()=>{
@@ -891,15 +891,7 @@
       if(state.mode==='solo'){await openSolo();return;}
       state={mode:'gm',pieces:freshPieces(),secretPieces:[],selected:'blueSmall',tool:'pieces',started:false,traces:[],coords:[],gridId:null,attempts:0,over:false,result:null,startedAt:null,rank:null};clearDirectionChoicesTimer();selectedWaveEdge=null;localStorage.removeItem(SAVE_KEY);render();
     });
-    byId('streetClearTests').addEventListener('click',()=>{state.traces=[];state.coords=[];render();});
     byId('streetHistoryToggle').addEventListener('click',()=>toggleHistory());
-    byId('streetDiagnostic').addEventListener('click',async()=>{
-      const issues=validatePieces(state.pieces);
-      const report={prototype:'ORAPA-STREET-2',appVersion:APP_VERSION,createdAt:new Date().toISOString(),pieces:state.pieces.map(piece=>({...piece})),validation:[...issues.entries()].map(([piece,message])=>({piece,message})),coordinates:state.coords.map(item=>({...item})),rays:state.traces.map(trace=>({entry:trace.entry.label,entryDirection:trace.entryDirectionIndex,exit:trace.exit?.label||null,exitDirection:trace.exitDirectionIndex??null,bounced:!!trace.bounced,loop:!!trace.loop,colors:trace.colors,color:trace.color,time:trace.time||null,points:trace.points.map(p=>({x:+p.x.toFixed(2),y:+p.y.toFixed(2)}))}))};
-      const text=`ORAPA STREET — RAPPORT DE CRÉATION\n${JSON.stringify(report,null,2)}`;
-      try{await navigator.clipboard.writeText(text);setMessage('Diagnostic copié. Tu peux le coller avec une capture pour signaler un problème.');}
-      catch(_error){setMessage('La copie automatique a échoué sur ce navigateur.',true);}
-    });
     byId('streetWavePreference').addEventListener('change',event=>{
       wavePreference=event.target.value;clearDirectionChoicesTimer();selectedWaveEdge=null;render();
       if(currentPlayerAccount?.session_token)void supabaseRpc('orapa_set_street_preferences',{p_session_token:currentPlayerAccount.session_token,p_wave_controls:wavePreference}).then(()=>showToast('Préférence Street enregistrée')).catch(error=>showErrorToast('Enregistrement impossible : '+error.message));
@@ -914,7 +906,7 @@
     await loadStreetPreference();
     state={mode:'gm',pieces:freshPieces(),secretPieces:[],selected:'blueSmall',tool:'pieces',started:false,traces:[],coords:[],gridId:null,attempts:0,over:false,result:null,startedAt:null,rank:null};load();
     byId('streetPrototype').querySelector('.subtitle').textContent='Console du maître du jeu';
-    byId('streetPrototype').hidden=false;document.body.classList.add('street-open');document.body.classList.remove('home-view');render();
+    byId('streetPrototype').hidden=false;document.body.classList.add('street-open');document.body.classList.remove('home-view');toggleHistory(false);render();
   }
   async function openSolo(gridId=null,resumeAttempt=null){
     if(!currentPlayerAccount?.session_token){closeSoloChoiceModal?.();openAccountModal();return false;}
@@ -935,7 +927,7 @@
     if(start.resumed)restoreStreetProgress(start.attempt?.progress);
     byId('soloChoiceModal')?.classList.remove('open');document.body.classList.remove('solo-menu-open');
     byId('streetPrototype').querySelector('.subtitle').textContent='Grille classique';
-    byId('streetPrototype').hidden=false;document.body.classList.add('street-open');document.body.classList.remove('home-view');render();return true;
+    byId('streetPrototype').hidden=false;document.body.classList.add('street-open');document.body.classList.remove('home-view');toggleHistory(false);render();return true;
   }
   function close(force=false){
     if(state.mode==='solo'&&!state.over&&!force){showToast('La partie Street reste en cours sur ce compte.');}
