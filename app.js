@@ -1230,7 +1230,7 @@ async function playGridFromRanking(gridId,button){
   try{
     const decoded=await resolveGridReference(String(gridId||'').trim().toUpperCase());
     if(!decoded||!decodedGridLayoutIsValid(decoded)){openInvalidGridIdModal();return;}
-    ['nestedGridRankingModal','gridDataModal','rankingsModal','accountModal','victoryModal','sharedGridPreviewModal'].forEach(id=>$(`#${id}`)?.classList.remove('open'));
+    ['nestedGridRankingModal','gridDataModal','rankingsModal','accountModal','victoryModal','streetResultModal','sharedGridPreviewModal'].forEach(id=>$(`#${id}`)?.classList.remove('open'));
     document.body.classList.remove('solo-menu-open');
     await (decoded.variant==='street'?window.OrapaStreetPrototype.openSolo(decoded.id):(decoded.variant==='lost'?startLostGame(decoded.id):(decoded.variant==='space'?startSpaceSoloGame(decoded.id):(decoded.variant==='earthSky'?startEarthSkySoloGame(decoded.id):startSoloGame(decoded.id)))));
   }catch(error){showErrorToast(`Impossible de lancer cette grille : ${error.message}`);}
@@ -6301,6 +6301,10 @@ let gridDisplayMode='classic',historyDisplayMode='classic';
 const globalHistoryOptionFilters={classic:newHistoryOptionFilters('classic'),space:newHistoryOptionFilters('space'),earthSky:newHistoryOptionFilters('earthSky')};
 let gridCatalogState={popular:null,searched:null,searchError:'',accountId:null};
 async function fetchGridCatalog(sort,limit,offset=0){
+  if(gridDisplayMode==='street'){
+    const rows=await supabaseRpc('orapa_street_grid_catalog',{p_sort:sort,p_limit:limit,p_offset:offset,p_session_token:currentPlayerAccount?.session_token||''});
+    return Array.isArray(rows)?rows:[];
+  }
   if(gridDisplayMode==='earthSky'){
     const rows=await supabaseRpc('orapa_earth_sky_grid_catalog',{p_sort:sort,p_limit:limit,p_offset:offset,p_session_token:currentPlayerAccount?.session_token||''});
     return Array.isArray(rows)?rows:[];
@@ -6320,7 +6324,7 @@ async function fetchGridCatalog(sort,limit,offset=0){
 }
 function gridCatalogCard(row,section,index){
   const id=String(row.grid_id||''),displayedId=publicGridId(id),decoded=decodeGridId(id);
-  const gems=decoded?.variant==='lost'?'💎 Gemme perdue':decoded?.variant==='space'?`🪐 Orapa Space · ${spaceFlagsEmojiLine(decoded)}`:decoded?.variant==='earthSky'?earthSkyFlagsEmojiLine(decoded):(decoded?gemFlagsEmojiLine(decoded.includeGray,decoded.includeOnyx,decoded.includeSapphire):'');
+  const gems=decoded?.variant==='lost'?'💎 Gemme perdue':decoded?.variant==='space'?`🪐 Orapa Space · ${spaceFlagsEmojiLine(decoded)}`:decoded?.variant==='earthSky'?earthSkyFlagsEmojiLine(decoded):decoded?.variant==='street'?'🏠 Orapa Street':(decoded?gemFlagsEmojiLine(decoded.includeGray,decoded.includeOnyx,decoded.includeSapphire):'');
   const count=Number(row.participation_count)||0,wins=Number(row.success_count)||0,rate=count?Math.round(wins/count*100):0;
   const key=`gridcatalog:${section}:${id}`,expanded=expandedScores.has(key);
   const lastDate=row.last_played_at?new Date(row.last_played_at).toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'2-digit'}):'—';
@@ -6328,7 +6332,7 @@ function gridCatalogCard(row,section,index){
   const statusKind=row.shared_by_me?'shared':row.solved_by_me===true?'win':row.solved_by_me===false?'fail':'';
   const playedResult=statusKind==='shared'?'<span class="grid-catalog-status-icon share" aria-label="Grille partagée par ce compte">📤</span>':statusKind==='win'?'<span class="grid-catalog-status-icon win" aria-label="Grille réussie">✓</span>':statusKind==='fail'?'<span class="grid-catalog-status-icon fail" aria-label="Grille échouée">✕</span>':'';
   const detail=expanded?`<div class="grid-catalog-detail"><div class="grid-catalog-id">ID : ${escapeHtml(displayedId)}</div><div>${wins} réussite${wins===1?'':'s'} · ${count-wins} échec${count-wins===1?'':'s'} · meilleur score : <b>${row.best_score==null?'—':row.best_score+' pts'}</b> · meilleur temps : <b>${row.best_time_ms==null?'—':formatDuration(Number(row.best_time_ms))}</b> · dernière partie : ${lastDate}</div></div><div class="controls grid-catalog-actions"><button class="grid-catalog-copy ghost" data-grid-id="${escapeHtml(id)}" data-public-grid-id="${escapeHtml(displayedId)}">📋 Copier l’ID</button><button class="grid-catalog-ranking primary" data-grid-id="${escapeHtml(id)}">🏆 Classement</button></div>`:'';
-  return `<div class="ranking-row grid-catalog-row${decoded?.variant==='space'||decoded?.variant==='earthSky'?' grid-catalog-space':''}${expanded?' expanded':''}" data-grid-catalog-key="${escapeHtml(key)}"><div class="ranking-row-top"><span class="grid-catalog-label">${label}</span><span class="grid-catalog-gems ranking-gems">${gems}</span><span class="grid-catalog-solved ${statusKind}">${playedResult}</span><span class="grid-catalog-count">${count} 👥</span><span class="grid-catalog-rate">${count?rate+' %':'—'}</span></div>${detail}</div>`;
+  return `<div class="ranking-row grid-catalog-row${['space','earthSky','street'].includes(decoded?.variant)?' grid-catalog-space':''}${expanded?' expanded':''}" data-grid-catalog-key="${escapeHtml(key)}"><div class="ranking-row-top"><span class="grid-catalog-label">${label}</span><span class="grid-catalog-gems ranking-gems">${gems}</span><span class="grid-catalog-solved ${statusKind}">${playedResult}</span><span class="grid-catalog-count">${count} 👥</span><span class="grid-catalog-rate">${count?rate+' %':'—'}</span></div>${detail}</div>`;
 }
 function bindGridCatalogActions(){
   const el=$('#rankingList');
@@ -6364,9 +6368,13 @@ async function searchGridCatalog(input){
   if(!decoded){gridCatalogState.searched=null;gridCatalogState.searchError='Identifiant de grille incorrect.';renderGridCatalog();return;}
   gridCatalogState.searchError='';
   $('#rankingList').innerHTML='<div class="history-empty">Recherche de la grille…</div>';
-  const expectedVariant=gridDisplayMode==='lost'?'lost':gridDisplayMode==='space'?'space':gridDisplayMode==='earthSky'?'earthSky':'classic';
-  if(decoded.variant!==expectedVariant){gridCatalogState.searched=null;gridCatalogState.searchError=`Cet identifiant correspond à une grille ${decoded.variant==='lost'?'Gemme perdue':decoded.variant==='space'?'Orapa Space':decoded.variant==='earthSky'?'Terre et Ciel':'Orapa Mine'}.`;renderGridCatalog();return;}
+  const expectedVariant=gridDisplayMode==='lost'?'lost':gridDisplayMode==='space'?'space':gridDisplayMode==='earthSky'?'earthSky':gridDisplayMode==='street'?'street':'classic';
+  if(decoded.variant!==expectedVariant){gridCatalogState.searched=null;gridCatalogState.searchError=`Cet identifiant correspond à une grille ${decoded.variant==='lost'?'Gemme perdue':decoded.variant==='space'?'Orapa Space':decoded.variant==='earthSky'?'Terre et Ciel':decoded.variant==='street'?'Orapa Street':'Orapa Mine'}.`;renderGridCatalog();return;}
   try{
+    if(gridDisplayMode==='street'){
+      const rows=await supabaseRpc('orapa_street_grid_overview',{p_grid_id:decoded.id,p_session_token:currentPlayerAccount?.session_token||''});
+      gridCatalogState.searched=Array.isArray(rows)&&rows[0]?rows[0]:{grid_id:decoded.id,participation_count:0,success_count:0};renderGridCatalog();return;
+    }
     if(gridDisplayMode==='earthSky'){
       const rows=await supabaseRpc('orapa_earth_sky_grid_overview',{p_grid_id:decoded.id,p_session_token:currentPlayerAccount?.session_token||''});
       gridCatalogState.searched=Array.isArray(rows)&&rows[0]?rows[0]:{grid_id:decoded.id,participation_count:0,success_count:0};renderGridCatalog();return;
@@ -6784,11 +6792,17 @@ $('#dailyRankingClassic').addEventListener('click',()=>{dailyRankingKind='classi
 $('#dailyRankingRemix').addEventListener('click',()=>{dailyRankingKind='remix';$('#dailyRankingRemix').classList.add('active');$('#dailyRankingClassic').classList.remove('active');renderRankingList();});
 $('#achievementListTab').addEventListener('click',()=>{achievementMode='list';renderAchievementsRankingView();});
 $('#achievementRankingTab').addEventListener('click',()=>{achievementMode='ranking';renderAchievementsRankingView();});
-$('#gridModeClassic').addEventListener('click',()=>{gridDisplayMode='classic';gridCatalogState={popular:null,searched:null,searchError:'',accountId:null};$('#gridModeClassic').classList.add('active');$('#gridModeLost').classList.remove('active');$('#gridModeSpace').classList.remove('active');$('#gridModeEarthSky').classList.remove('active');renderGridCatalog(true);});
-$('#gridModeLost').addEventListener('click',()=>{gridDisplayMode='lost';gridCatalogState={popular:null,searched:null,searchError:'',accountId:null};$('#gridModeLost').classList.add('active');$('#gridModeClassic').classList.remove('active');$('#gridModeSpace').classList.remove('active');$('#gridModeEarthSky').classList.remove('active');renderGridCatalog(true);});
-$('#gridModeSpace').addEventListener('click',()=>{gridDisplayMode='space';gridCatalogState={popular:null,searched:null,searchError:'',accountId:null};$('#gridModeSpace').classList.add('active');$('#gridModeClassic').classList.remove('active');$('#gridModeLost').classList.remove('active');$('#gridModeEarthSky').classList.remove('active');renderGridCatalog(true);});
-$('#gridModeEarthSky').addEventListener('click',()=>{gridDisplayMode='earthSky';gridCatalogState={popular:null,searched:null,searchError:'',accountId:null};['Classic','Lost','Space','EarthSky'].forEach(name=>$('#gridMode'+name).classList.toggle('active',name==='EarthSky'));renderGridCatalog(true);});
-$('#gridModeStreet').addEventListener('click',()=>window.OrapaStreetPrototype?.openCatalog());
+function selectGridCatalogMode(mode){
+  gridDisplayMode=mode;gridCatalogState={popular:null,searched:null,searchError:'',accountId:null};
+  const names={classic:'Classic',lost:'Lost',space:'Space',earthSky:'EarthSky',street:'Street'};
+  Object.entries(names).forEach(([key,name])=>$('#gridMode'+name).classList.toggle('active',key===mode));
+  renderGridCatalog(true);
+}
+$('#gridModeClassic').addEventListener('click',()=>selectGridCatalogMode('classic'));
+$('#gridModeLost').addEventListener('click',()=>selectGridCatalogMode('lost'));
+$('#gridModeSpace').addEventListener('click',()=>selectGridCatalogMode('space'));
+$('#gridModeEarthSky').addEventListener('click',()=>selectGridCatalogMode('earthSky'));
+$('#gridModeStreet').addEventListener('click',()=>selectGridCatalogMode('street'));
 function selectGridHistoryMode(mode){
   historyDisplayMode=mode;
   const names={classic:'Classic',lost:'Lost',space:'Space',earthSky:'EarthSky',street:'Street'};
