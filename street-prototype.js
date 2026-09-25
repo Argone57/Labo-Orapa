@@ -710,12 +710,12 @@
           const leftSide=upperLeft||lowerLeft,rightSide=upperRight||lowerRight;
           let rearOuter,extension,infoPos,anchor;
           if(leftSide){
-            const useRightmost=upperLeft&&pos.y<edge.mid.y;
+            const useRightmost=(upperLeft&&pos.y<edge.mid.y)||(lowerLeft&&pos.y>edge.mid.y);
             rearOuter=useRightmost?(rearA.x>rearB.x?rearA:rearB):(rearA.x<rearB.x?rearA:rearB);
             extension=norm(sub(rearOuter,pos));infoPos=add(rearOuter,mul(extension,5));
             infoPos.x=rearOuter.x-2;anchor='end';
           }else if(rightSide){
-            const useRightmost=upperRight||(lowerRight&&pos.y<edge.mid.y);
+            const useRightmost=(upperRight&&pos.y>edge.mid.y)||(lowerRight&&pos.y<edge.mid.y);
             rearOuter=useRightmost?(rearA.x>rearB.x?rearA:rearB):(rearA.x<rearB.x?rearA:rearB);
             extension=norm(sub(rearOuter,pos));infoPos=add(rearOuter,mul(extension,5));
             infoPos.x=rearOuter.x+2;anchor='start';
