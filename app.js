@@ -621,26 +621,54 @@ function openUpdatesModal(history=false){
   $('#updatesModal').classList.add('open');
 }
 let globalGamesTotalCache=null;
+let globalGamesActivityCache=null;
 let publicPlayerDirectoryCache=null;
 const publicPlayerStatsCache=new Map();
+function activityDateLabel(value){
+  const parts=String(value||'').slice(0,10).split('-');
+  return parts.length===3?`${parts[2]}/${parts[1]}`:String(value||'');
+}
+function renderAboutGamesActivity(rows){
+  const host=$('#aboutGamesActivity');if(!host)return;
+  const activity=(Array.isArray(rows)?rows:[]).map(row=>({date:String(row.activity_date||''),games:Math.max(0,Number(row.games)||0)}));
+  if(!activity.length){host.innerHTML='<div class="about-activity-loading">Activité temporairement indisponible.</div>';return;}
+  const width=420,height=142,pad={left:31,right:8,top:8,bottom:23},plotWidth=width-pad.left-pad.right,plotHeight=height-pad.top-pad.bottom;
+  const maximum=Math.max(1,...activity.map(row=>row.games));
+  const x=index=>pad.left+(activity.length===1?plotWidth/2:index*plotWidth/(activity.length-1));
+  const y=value=>pad.top+plotHeight-(value/maximum)*plotHeight;
+  const points=activity.map((row,index)=>`${x(index).toFixed(1)},${y(row.games).toFixed(1)}`).join(' ');
+  const area=`${pad.left},${pad.top+plotHeight} ${points} ${pad.left+plotWidth},${pad.top+plotHeight}`;
+  const middle=Math.floor((activity.length-1)/2),labelIndexes=[0,middle,activity.length-1];
+  const tickValues=[maximum,Math.round(maximum/2),0].filter((value,index,array)=>array.indexOf(value)===index);
+  const total=activity.reduce((sum,row)=>sum+row.games,0);
+  host.innerHTML=`<div class="about-activity-head"><b>Activité des 30 derniers jours</b><span>${total.toLocaleString('fr-FR')} partie${total===1?'':'s'}</span></div><svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Évolution du nombre de parties jouées pendant les 30 derniers jours"><defs><linearGradient id="aboutActivityGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#e6c27a" stop-opacity=".32"/><stop offset="100%" stop-color="#e6c27a" stop-opacity=".025"/></linearGradient></defs>${tickValues.map(value=>`<line class="about-chart-grid" x1="${pad.left}" y1="${y(value)}" x2="${pad.left+plotWidth}" y2="${y(value)}"/><text class="about-chart-axis" x="${pad.left-6}" y="${y(value)+3}" text-anchor="end">${value}</text>`).join('')}<polygon class="about-chart-area" points="${area}"/><polyline class="about-chart-line" points="${points}"/>${activity.map((row,index)=>`<circle class="about-chart-point" cx="${x(index)}" cy="${y(row.games)}" r="2.7" tabindex="0"><title>${activityDateLabel(row.date)} : ${row.games} partie${row.games===1?'':'s'}</title></circle>`).join('')}${labelIndexes.map((index,labelIndex)=>`<text class="about-chart-axis" x="${x(index)}" y="${height-5}" text-anchor="${labelIndex===0?'start':labelIndex===labelIndexes.length-1?'end':'middle'}">${activityDateLabel(activity[index].date)}</text>`).join('')}</svg>`;
+}
 async function openAboutModal(){
-  const modal=$('#aboutModal'),total=$('#aboutGamesTotal');
+  const modal=$('#aboutModal'),total=$('#aboutGamesTotal'),activity=$('#aboutGamesActivity'),jobs=[];
   modal.classList.add('open');
   if(globalGamesTotalCache!==null){
     total.textContent=`${globalGamesTotalCache.toLocaleString('fr-FR')} partie${globalGamesTotalCache===1?'':'s'} jouée${globalGamesTotalCache===1?'':'s'} au total`;
     total.disabled=false;
-    return;
+  }else{
+    total.disabled=true;
+    total.textContent='Nombre de parties jouées : chargement…';
+    jobs.push(supabaseRpc('orapa_total_games_played').then(value=>{
+      globalGamesTotalCache=Math.max(0,Number(value)||0);
+      if(!modal.classList.contains('open'))return;
+      total.textContent=`${globalGamesTotalCache.toLocaleString('fr-FR')} partie${globalGamesTotalCache===1?'':'s'} jouée${globalGamesTotalCache===1?'':'s'} au total`;
+      total.disabled=false;
+    }).catch(()=>{if(modal.classList.contains('open')){total.textContent='Nombre total de parties temporairement indisponible.';total.disabled=true;}}));
   }
-  total.disabled=true;
-  total.textContent='Nombre de parties jouées : chargement…';
-  try{
-    globalGamesTotalCache=Math.max(0,Number(await supabaseRpc('orapa_total_games_played'))||0);
-    if(!modal.classList.contains('open'))return;
-    total.textContent=`${globalGamesTotalCache.toLocaleString('fr-FR')} partie${globalGamesTotalCache===1?'':'s'} jouée${globalGamesTotalCache===1?'':'s'} au total`;
-    total.disabled=false;
-  }catch(error){
-    if(modal.classList.contains('open')){total.textContent='Nombre total de parties temporairement indisponible.';total.disabled=true;}
+  if(globalGamesActivityCache){
+    renderAboutGamesActivity(globalGamesActivityCache);
+  }else{
+    activity.innerHTML='<div class="about-activity-loading">Chargement de l’activité…</div>';
+    jobs.push(supabaseRpc('orapa_games_activity',{p_days:30}).then(rows=>{
+      globalGamesActivityCache=Array.isArray(rows)?rows:[];
+      if(modal.classList.contains('open'))renderAboutGamesActivity(globalGamesActivityCache);
+    }).catch(()=>{if(modal.classList.contains('open'))activity.innerHTML='<div class="about-activity-loading">Activité temporairement indisponible.</div>';}));
   }
+  await Promise.allSettled(jobs);
 }
 function normalizePlayerSearch(value){return String(value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLocaleLowerCase('fr-FR').trim();}
 function renderPublicPlayerDirectory(){
