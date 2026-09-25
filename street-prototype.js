@@ -380,7 +380,7 @@
   }
 
   const freshPieces=()=>PIECES.map(def=>({id:def.id,anchor:null,rotation:0,flipped:false}));
-  let state={mode:'gm',pieces:freshPieces(),secretPieces:[],selected:'blueSmall',tool:'pieces',started:false,traces:[],coords:[],gridId:null,attempts:0,over:false,result:null,startedAt:null,rank:null};
+  let state={mode:'gm',pieces:freshPieces(),secretPieces:[],selected:'blueSmall',tool:'pieces',started:false,traces:[],coords:[],draftCells:{},gridId:null,attempts:0,over:false,result:null,startedAt:null,rank:null};
   let wavePreference='auto';
   let streetAttempt=null;
   let streetSync=Promise.resolve();
@@ -485,11 +485,11 @@
       return guess?.anchor&&secret?.anchor&&geometrySignature(guess)===geometrySignature(secret);
     });
   }
-  function streetProgress(){return {pieces:state.pieces,traces:state.traces.map(trace=>({entryIndex:trace.entry.index,entryDirectionIndex:trace.entryDirectionIndex,exitIndex:trace.exit?.index??null,exitDirectionIndex:trace.exitDirectionIndex,points:trace.points,colors:trace.colors,color:trace.color,bounced:trace.bounced,loop:trace.loop,time:trace.time})),coords:state.coords,attempts:state.attempts,startedAt:state.startedAt};}
+  function streetProgress(){return {pieces:state.pieces,traces:state.traces.map(trace=>({entryIndex:trace.entry.index,entryDirectionIndex:trace.entryDirectionIndex,exitIndex:trace.exit?.index??null,exitDirectionIndex:trace.exitDirectionIndex,points:trace.points,colors:trace.colors,color:trace.color,bounced:trace.bounced,loop:trace.loop,time:trace.time})),coords:state.coords,draftCells:state.draftCells,attempts:state.attempts,startedAt:state.startedAt};}
   function restoreStreetProgress(progress){
     if(!progress||typeof progress!=='object')return;
     if(Array.isArray(progress.pieces)&&progress.pieces.length===PIECES.length)state.pieces=progress.pieces;
-    state.coords=Array.isArray(progress.coords)?progress.coords:[];state.attempts=Math.max(0,Number(progress.attempts)||0);state.startedAt=Number(progress.startedAt)||Date.now();
+    state.coords=Array.isArray(progress.coords)?progress.coords:[];state.draftCells=progress.draftCells&&typeof progress.draftCells==='object'?progress.draftCells:{};state.attempts=Math.max(0,Number(progress.attempts)||0);state.startedAt=Number(progress.startedAt)||Date.now();
     state.traces=(Array.isArray(progress.traces)?progress.traces:[]).map(item=>({...item,entry:BOARD.boundary[item.entryIndex],exit:item.exitIndex==null?null:BOARD.boundary[item.exitIndex]})).filter(item=>item.entry);
   }
   function recordStreetAction(kind){
@@ -546,6 +546,7 @@
     element.addEventListener('touchmove',event=>event.preventDefault(),{passive:false});
     element.addEventListener('pointerdown',event=>{
       if((state.started&&state.mode!=='solo')||state.over)return;
+      if(state.mode==='solo'&&state.tool!=='pieces')return;
       event.preventDefault();event.stopPropagation();state.selected=piece.id;
       const startX=event.clientX,startY=event.clientY,pointerId=event.pointerId;
       try{element.setPointerCapture?.(pointerId);}catch(_error){}
@@ -601,18 +602,32 @@
     svg.classList.toggle('solo',state.mode==='solo');
     svg.classList.toggle('wave-choice-mode',useDirectionChoices);
     svg.classList.toggle('started',!!state.started);
+    svg.classList.toggle('cell-tool-active',state.mode==='solo'&&(state.tool==='hint'||state.tool==='draft'));
+    svg.classList.toggle('hint-mode',state.mode==='solo'&&state.tool==='hint');
+    svg.classList.toggle('draft-mode',state.mode==='solo'&&state.tool==='draft');
     const margin=useDirectionChoices?31:39;
     svg.setAttribute('viewBox',`${-margin} ${-margin} ${BOARD.width+margin*2} ${BOARD.height+margin*2}`);
     const boardGroup=svgEl('g',{class:'street-grid'});
     BOARD.triangles.forEach(triangle=>{
-      const poly=svgEl('polygon',{points:pointsAttr(triangle.points),class:'street-cell','data-cell':triangle.id});
-      poly.addEventListener('click',event=>{
+      const key=String(triangle.id),draftEmpty=!!state.draftCells?.[key];
+      const poly=svgEl('polygon',{points:pointsAttr(triangle.points),class:`street-cell${draftEmpty?' draft-empty':''}`,'data-cell':triangle.id});
+      poly.addEventListener('click',async event=>{
         if(!state.started)return;
         if(useDirectionChoices&&selectedWaveEdge!==null)return;
         event.stopPropagation();
+        if(state.mode==='solo'&&state.tool==='draft'){
+          state.draftCells=state.draftCells&&typeof state.draftCells==='object'?state.draftCells:{};
+          if(state.draftCells[key])delete state.draftCells[key];else state.draftCells[key]=true;
+          render();return;
+        }
+        if(state.mode==='solo'&&state.tool!=='hint')return;
         if(state.coords.some(item=>item.triangle===triangle.id))return;
-        const coord=coordinateForTriangle(triangle),result=coordinateResultForTriangle(triangle);
-        state.coords.push({triangle:triangle.id,text:coord,...result,time:new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit',second:'2-digit'})});render();void recordStreetAction('coord');
+        const coord=coordinateForTriangle(triangle);
+        if(state.mode==='solo'&&!await gameConfirm(`Révéler le contenu de la case ${coord} ?`,'Demander un indice','Révéler','Annuler'))return;
+        const result=coordinateResultForTriangle(triangle);
+        state.coords.push({triangle:triangle.id,text:coord,...result,time:new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit',second:'2-digit'})});
+        if(state.mode==='solo')state.tool='pieces';
+        render();void recordStreetAction('coord');
       });boardGroup.appendChild(poly);
     });
     svg.appendChild(boardGroup);
@@ -669,7 +684,7 @@
     });
     const issues=validatePieces(state.pieces);
     state.pieces.filter(piece=>piece.anchor).forEach(piece=>{
-      const geo=pieceGeometry(piece),group=svgEl('g',{class:`street-piece${state.selected===piece.id?' selected':''}${issues.has(piece.id)?' invalid':''}`,'data-piece':piece.id});
+      const geo=pieceGeometry(piece),group=svgEl('g',{class:`street-piece${state.selected===piece.id?' selected':''}${state.mode!=='solo'&&issues.has(piece.id)?' invalid':''}`,'data-piece':piece.id});
       const poly=svgEl('polygon',{points:pointsAttr(geo.poly),fill:COLORS[geo.definition.color]});group.appendChild(poly);
       visualWallPolygonsFor(geo).forEach(wall=>group.appendChild(svgEl('polygon',{points:pointsAttr(wall),fill:COLORS[geo.definition.color],class:'street-wall'})));
       attachPieceGesture(group,piece);svg.appendChild(group);
@@ -866,6 +881,12 @@
     byId('streetStartBlockMsg').style.display=preStart?'block':'none';
     byId('streetWaveSetting').hidden=true;
     byId('streetWavePreference').value=wavePreference;
+    const showCellTools=state.mode==='solo'&&state.started&&!state.over;
+    byId('streetCellTools').hidden=!showCellTools;
+    byId('streetHint').classList.toggle('active',showCellTools&&state.tool==='hint');
+    byId('streetHint').textContent=state.tool==='hint'?'🔍 Mode indice actif — touche une case':'🔍 Demander un indice';
+    byId('streetDraft').classList.toggle('active',showCellTools&&state.tool==='draft');
+    byId('streetDraft').textContent=state.tool==='draft'?'◻️ Masquage actif — touche une case':'◻️ Masquer les cases';
     const pill=byId('streetPrototype').querySelector('.mode-pill');
     pill.classList.toggle('live',state.started);
     pill.querySelector('span:last-child').textContent=state.over?(state.result==='win'?'Victoire':'Défaite'):(state.started?(state.mode==='solo'?'Partie en cours':'Test de la grille'):'Placement des pièces');
@@ -889,9 +910,11 @@
       if(!confirm(state.mode==='solo'?'Abandonner cette partie et recommencer ?':'Effacer tous les placements et l’historique Street ?'))return;
       if(state.mode==='solo'&&streetAttempt?.attempt_id)try{await supabaseRpc('orapa_abandon_street_attempt',{p_session_token:currentPlayerAccount.session_token,p_attempt_id:streetAttempt.attempt_id});streetAttempt=null;}catch(error){showErrorToast('Abandon impossible : '+error.message);return;}
       if(state.mode==='solo'){await openSolo();return;}
-      state={mode:'gm',pieces:freshPieces(),secretPieces:[],selected:'blueSmall',tool:'pieces',started:false,traces:[],coords:[],gridId:null,attempts:0,over:false,result:null,startedAt:null,rank:null};clearDirectionChoicesTimer();selectedWaveEdge=null;localStorage.removeItem(SAVE_KEY);render();
+      state={mode:'gm',pieces:freshPieces(),secretPieces:[],selected:'blueSmall',tool:'pieces',started:false,traces:[],coords:[],draftCells:{},gridId:null,attempts:0,over:false,result:null,startedAt:null,rank:null};clearDirectionChoicesTimer();selectedWaveEdge=null;localStorage.removeItem(SAVE_KEY);render();
     });
     byId('streetHistoryToggle').addEventListener('click',()=>toggleHistory());
+    byId('streetHint').addEventListener('click',()=>{state.tool=state.tool==='hint'?'pieces':'hint';clearDirectionChoicesTimer();selectedWaveEdge=null;render();});
+    byId('streetDraft').addEventListener('click',()=>{state.tool=state.tool==='draft'?'pieces':'draft';clearDirectionChoicesTimer();selectedWaveEdge=null;render();});
     byId('streetWavePreference').addEventListener('change',event=>{
       wavePreference=event.target.value;clearDirectionChoicesTimer();selectedWaveEdge=null;render();
       if(currentPlayerAccount?.session_token)void supabaseRpc('orapa_set_street_preferences',{p_session_token:currentPlayerAccount.session_token,p_wave_controls:wavePreference}).then(()=>showToast('Préférence Street enregistrée')).catch(error=>showErrorToast('Enregistrement impossible : '+error.message));
@@ -904,7 +927,7 @@
     if(!currentPlayerAccount){byId('createModeModal')?.classList.remove('open');openAccountModal();return;}
     byId('createModeModal')?.classList.remove('open');
     await loadStreetPreference();
-    state={mode:'gm',pieces:freshPieces(),secretPieces:[],selected:'blueSmall',tool:'pieces',started:false,traces:[],coords:[],gridId:null,attempts:0,over:false,result:null,startedAt:null,rank:null};load();
+    state={mode:'gm',pieces:freshPieces(),secretPieces:[],selected:'blueSmall',tool:'pieces',started:false,traces:[],coords:[],draftCells:{},gridId:null,attempts:0,over:false,result:null,startedAt:null,rank:null};load();
     byId('streetPrototype').querySelector('.subtitle').textContent='Console du maître du jeu';
     byId('streetPrototype').hidden=false;document.body.classList.add('street-open');document.body.classList.remove('home-view');toggleHistory(false);render();
   }
@@ -923,7 +946,7 @@
     const start=resumeAttempt?{ok:true,attempt:resumeAttempt,resumed:true}:await prepareNewActiveAttempt(target,true);
     if(!start?.ok){if(start?.reason==='already_played')showErrorToast('Cette grille Street a déjà été jouée avec ce compte.');return false;}
     streetAttempt=start.attempt;
-    state={mode:'solo',pieces:freshPieces(),secretPieces:decoded.pieces.map(piece=>({...piece,anchor:{...piece.anchor}})),selected:'blueSmall',tool:'pieces',started:true,traces:[],coords:[],gridId:decoded.id,attempts:0,over:false,result:null,startedAt:null,rank:null};
+    state={mode:'solo',pieces:freshPieces(),secretPieces:decoded.pieces.map(piece=>({...piece,anchor:{...piece.anchor}})),selected:'blueSmall',tool:'pieces',started:true,traces:[],coords:[],draftCells:{},gridId:decoded.id,attempts:0,over:false,result:null,startedAt:null,rank:null};
     if(start.resumed)restoreStreetProgress(start.attempt?.progress);
     byId('soloChoiceModal')?.classList.remove('open');document.body.classList.remove('solo-menu-open');
     byId('streetPrototype').querySelector('.subtitle').textContent='Grille classique';
