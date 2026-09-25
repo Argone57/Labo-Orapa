@@ -672,6 +672,19 @@
     trace.time=new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
     state.traces.push(trace);render();setTimeout(()=>showStreetTraceFeedback(trace,edgeIndex,directionIndex),0);
   }
+  function historyDirectionArrow(edge,directionIndex){
+    const direction=edge?.directions?.[directionIndex];if(!direction)return '';
+    const angle=Math.atan2(direction.y,direction.x)*180/Math.PI;
+    if(angle>=-30&&angle<30)return '🡺';
+    if(angle>=30&&angle<90)return '🡾';
+    if(angle>=90&&angle<150)return '🡿';
+    if(angle>=150||angle<-150)return '🡸';
+    if(angle>=-150&&angle<-90)return '🡼';
+    return '🡽';
+  }
+  function historyEndpoint(edge,directionIndex){
+    return `<b>${edge.label} <span class="street-history-arrow">${historyDirectionArrow(edge,directionIndex)}</span></b>`;
+  }
   function renderHistory(){
     const host=byId('streetHistory'),items=[];
     state.coords.slice().reverse().forEach(item=>{
@@ -680,7 +693,9 @@
     });
     state.traces.slice().reverse().forEach(trace=>{
       const color=trace.color||resolveStreetColor(new Set(trace.colors||[]));
-      const result=trace.loop?'Prisonnière':(!trace.exit?'Sans sortie':(trace.exit===trace.entry?`<b>${trace.entry.label}</b> ↔`:`<b>${trace.entry.label}</b> — <b>${trace.exit.label}</b>`));
+      const entry=historyEndpoint(trace.entry,trace.entryDirectionIndex);
+      const exit=trace.exit?historyEndpoint(trace.exit,trace.exitDirectionIndex):'';
+      const result=trace.loop?`${entry} — Prisonnière`:(!trace.exit?`${entry} — Sans sortie`:(trace.exit.index===trace.entry.index?`${entry} ↔ ${exit}`:`${entry} — ${exit}`));
       const special=color.name==='Transparent'?' transparent':'';
       items.push(`<li class="street-history-item"><span class="street-history-swatch${special}" style="--street-result:${color.hex}"></span><span>${result} — ${color.name}</span>${trace.time?`<span class="street-history-time">${trace.time}</span>`:''}</li>`);
     });
