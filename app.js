@@ -5065,11 +5065,11 @@ function updateCellToolsUI(){
   const hintButton=document.getElementById('btnHint'),draftButton=document.getElementById('btnDraft');
   if(hintButton){
     hintButton.classList.toggle('active',hintModeActive);
-    hintButton.textContent=hintModeActive?'🔍 Mode indice actif — touche une case':'🔍 Demander un indice';
+    hintButton.textContent=hintModeActive?'🔍 Mode indice activé':'🔍 Demander un indice';
   }
   if(draftButton){
     draftButton.classList.toggle('active',draftModeActive);
-    draftButton.textContent=draftModeActive?'◻️ Marquage actif — touche une case':'◻️ Marquer les cases vides';
+    draftButton.textContent=draftModeActive?'◻️ Masquage activé':'◻️ Masquer les cases';
   }
   document.getElementById('board')?.classList.toggle('cell-tool-active',hintModeActive||draftModeActive);
 }
