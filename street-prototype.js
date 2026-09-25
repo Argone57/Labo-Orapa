@@ -703,20 +703,15 @@
         button.addEventListener('click',event=>{event.stopPropagation();if(state.mode==='solo'&&state.tool==='wave')showPreviewWave(edgeIndex,directionIndex);else if(usedTrace)showStreetTraceFeedback(usedTrace,edgeIndex,directionIndex);else launchWave(edgeIndex,directionIndex);});labelGroup.appendChild(button);
         const exitInfo=usedTrace&&traceExitInfo(usedTrace,edgeIndex,directionIndex);
         if(exitInfo){
-          const upperLeft=['1','2','3','4'].includes(edge.label);
-          const lowerLeft=['A','B','C'].includes(edge.label);
-          const upperRight=['12','13','14'].includes(edge.label);
-          const lowerRight=['N','M','L','K'].includes(edge.label);
-          const leftSide=upperLeft||lowerLeft,rightSide=upperRight||lowerRight;
+          const leftSide=['1','2','3','4','A','B','C'].includes(edge.label);
+          const rightSide=['12','13','14','N','M','L','K'].includes(edge.label);
           let rearOuter,extension,infoPos,anchor;
           if(leftSide){
-            const useRightmost=(upperLeft&&pos.y<edge.mid.y)||(lowerLeft&&pos.y>edge.mid.y);
-            rearOuter=useRightmost?(rearA.x>rearB.x?rearA:rearB):(rearA.x<rearB.x?rearA:rearB);
+            rearOuter=dot(sub(rearA,edge.mid),edge.outward)>dot(sub(rearB,edge.mid),edge.outward)?rearA:rearB;
             extension=norm(sub(rearOuter,pos));infoPos=add(rearOuter,mul(extension,5));
             infoPos.x=rearOuter.x-2;anchor='end';
           }else if(rightSide){
-            const useRightmost=(upperRight&&pos.y>edge.mid.y)||(lowerRight&&pos.y<edge.mid.y);
-            rearOuter=useRightmost?(rearA.x>rearB.x?rearA:rearB):(rearA.x<rearB.x?rearA:rearB);
+            rearOuter=dot(sub(rearA,edge.mid),edge.outward)>dot(sub(rearB,edge.mid),edge.outward)?rearA:rearB;
             extension=norm(sub(rearOuter,pos));infoPos=add(rearOuter,mul(extension,5));
             infoPos.x=rearOuter.x+2;anchor='start';
           }else{
