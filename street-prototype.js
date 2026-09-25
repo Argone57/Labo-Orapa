@@ -380,7 +380,7 @@
   }
 
   const freshPieces=()=>PIECES.map(def=>({id:def.id,anchor:null,rotation:0,flipped:false}));
-  let state={mode:'gm',pieces:freshPieces(),secretPieces:[],selected:'blueSmall',tool:'pieces',started:false,traces:[],coords:[],draftCells:{},gridId:null,attempts:0,over:false,result:null,startedAt:null,rank:null};
+  let state={mode:'gm',pieces:freshPieces(),secretPieces:[],selected:'blueSmall',tool:'pieces',started:false,traces:[],coords:[],draftCells:{},gridId:null,gridAlias:null,attempts:0,over:false,result:null,startedAt:null,rank:null};
   let wavePreference='auto';
   let streetAttempt=null;
   let streetSync=Promise.resolve();
@@ -784,7 +784,7 @@
   function elapsedMs(){return Math.max(0,Date.now()-(state.startedAt||Date.now()));}
   function streetSummary(success=state.result==='win'){
     const name=currentPlayerAccount?.display_name||'Anonyme',cost=state.traces.length+state.coords.length*3,date=new Date().toLocaleDateString('fr-FR');
-    return `Orapa Street · ${date}\n${name} - ${success?'🏅':'😞'} - ${cost} pts (${state.traces.length}🔦/${state.coords.length}📍) - ID: ${state.gridId}\nhttps://argone57.github.io/Orapa-Mine/`;
+    return `Orapa Street · ${date}\n${name} - ${success?'🏅':'😞'} - ${cost} pts (${state.traces.length}🔦/${state.coords.length}📍) - ID: ${publicGridId(state.gridId)}\nhttps://argone57.github.io/Orapa-Mine/`;
   }
   function ensureStreetModal(){
     let backdrop=byId('streetResultModal');if(backdrop)return backdrop;
@@ -799,25 +799,26 @@
   }
   async function openStreetRanking(gridId){
     try{
+      await ensureGridAlias(gridId,'street');
       const rows=await supabaseRpc('orapa_street_grid_ranking',{p_grid_id:gridId,p_session_token:currentPlayerAccount?.session_token||''});
       let modal=byId('streetRankingModal');if(!modal){modal=document.createElement('div');modal.id='streetRankingModal';modal.className='modal-backdrop';document.body.appendChild(modal);}
-      modal.innerHTML=`<div class="modal"><button class="close-x" id="streetRankingClose">×</button><h2>🏆 Classement Orapa Street</h2><p>Grille <b>${gridId}</b></p><div class="ranking-list">${(rows||[]).map(row=>`<div class="ranking-row"><span><b>#${row.rank}</b> ${escapeHtml(row.player_name)}</span><span>${row.success?'✅':'❌'} ${row.cost} pts · ${formatDuration(row.time_ms)}</span></div>`).join('')||'<div class="history-empty">Aucune partie enregistrée.</div>'}</div><div class="controls" style="justify-content:space-between;margin-top:14px"><button class="ghost" id="streetRankingCopy">📋 Copier ID</button><button class="primary" id="streetRankingPlay">▶ Jouer cette grille</button></div></div>`;
+      modal.innerHTML=`<div class="modal"><button class="close-x" id="streetRankingClose">×</button><h2>🏆 Classement Orapa Street</h2><p>Grille <b>${escapeHtml(publicGridId(gridId))}</b></p><div class="ranking-list">${(rows||[]).map(row=>`<div class="ranking-row"><span><b>#${row.rank}</b> ${escapeHtml(row.player_name)}</span><span>${row.success?'✅':'❌'} ${row.cost} pts · ${formatDuration(row.time_ms)}</span></div>`).join('')||'<div class="history-empty">Aucune partie enregistrée.</div>'}</div><div class="controls" style="justify-content:space-between;margin-top:14px"><button class="ghost" id="streetRankingCopy">📋 Copier ID</button><button class="primary" id="streetRankingPlay">▶ Jouer cette grille</button></div></div>`;
       byId('streetRankingClose').onclick=()=>modal.classList.remove('open');
-      byId('streetRankingCopy').onclick=()=>navigator.clipboard?.writeText(gridId).then(()=>showToast('Identifiant copié !'));
+      byId('streetRankingCopy').onclick=()=>navigator.clipboard?.writeText(publicGridId(gridId)).then(()=>showToast('Identifiant copié !'));
       byId('streetRankingPlay').onclick=()=>{modal.classList.remove('open');ensureStreetModal().classList.remove('open');void openSolo(gridId);};
       modal.classList.add('open');
     }catch(error){showErrorToast(`Classement Street indisponible : ${error.message}`);}
   }
   function openStreetRowsModal(title,rows,empty='Aucune partie enregistrée.'){
     let modal=byId('streetRowsModal');if(!modal){modal=document.createElement('div');modal.id='streetRowsModal';modal.className='modal-backdrop';document.body.appendChild(modal);}
-    modal.innerHTML=`<div class="modal"><button class="close-x" id="streetRowsClose">×</button><h2>${title}</h2><div class="ranking-list">${rows.length?rows.map((row,index)=>`<button class="ranking-row street-row-open" data-index="${index}" style="width:100%;text-align:left"><span>${row.player_name?escapeHtml(row.player_name):`<b>${escapeHtml(row.grid_id)}</b>`}</span><span>${row.success===undefined?`${row.participation_count||0} 👥`:`${row.success?'✅':'❌'} ${row.cost} pts · ${formatDuration(row.time_ms)}`}</span></button>`).join(''):`<div class="history-empty">${empty}</div>`}</div></div>`;
+    modal.innerHTML=`<div class="modal"><button class="close-x" id="streetRowsClose">×</button><h2>${title}</h2><div class="ranking-list">${rows.length?rows.map((row,index)=>`<button class="ranking-row street-row-open" data-index="${index}" style="width:100%;text-align:left"><span>${row.player_name?escapeHtml(row.player_name):`<b>${escapeHtml(publicGridId(row.grid_id))}</b>`}</span><span>${row.success===undefined?`${row.participation_count||0} 👥`:`${row.success?'✅':'❌'} ${row.cost} pts · ${formatDuration(row.time_ms)}`}</span></button>`).join(''):`<div class="history-empty">${empty}</div>`}</div></div>`;
     byId('streetRowsClose').onclick=()=>modal.classList.remove('open');
     modal.querySelectorAll('.street-row-open').forEach(button=>button.onclick=()=>{const row=rows[Number(button.dataset.index)];if(row.grid_id)openStreetRanking(row.grid_id);});
     modal.classList.add('open');
   }
-  async function openStreetGlobalHistory(){try{const [rows,stats]=await Promise.all([supabaseRpc('orapa_street_global_history',{p_session_token:currentPlayerAccount?.session_token||'',p_limit:100,p_offset:0}),supabaseRpc('orapa_street_global_stats')]);openStreetRowsModal(`🏠 Orapa Street · ${stats?.played||0} parties · ${stats?.success_rate||0} %`,rows||[]);}catch(error){showErrorToast(error.message);}}
+  async function openStreetGlobalHistory(){selectGridHistoryMode('street');byId('rankingsModal')?.classList.add('open');}
   async function openStreetCatalog(){try{const rows=await supabaseRpc('orapa_street_grid_catalog',{p_sort:'popular',p_limit:100,p_offset:0,p_session_token:currentPlayerAccount?.session_token||''});openStreetRowsModal('🏠 Grilles Orapa Street',rows||[],'Aucune grille Street partagée.');}catch(error){showErrorToast(error.message);}}
-  async function openMyStreetHistory(){try{const rows=await supabaseRpc('orapa_my_street_grid_history',{p_session_token:currentPlayerAccount.session_token,p_limit:100,p_offset:0});openStreetRowsModal('🏠 Mes parties Orapa Street',(rows||[]).map(row=>({...row,player_name:currentPlayerAccount.display_name})));}catch(error){showErrorToast(error.message);}}
+  async function openMyStreetHistory(){return openMyStreetGridHistory();}
   async function openMySharedStreet(){try{const rows=await supabaseRpc('orapa_my_shared_street_grids',{p_session_token:currentPlayerAccount.session_token,p_limit:100,p_offset:0});openStreetRowsModal('🏠 Mes grilles Street partagées',rows||[],'Aucune grille Street partagée.');}catch(error){showErrorToast(error.message);}}
   async function finishStreetAttempt(success){
     state.over=true;state.result=success?'win':'lose';
@@ -835,7 +836,7 @@
     byId('streetResultMessage').textContent=success?'Tu as retrouvé la disposition exacte des sept pièces !':'La seconde proposition est incorrecte : la grille secrète est révélée.';
     byId('streetResultScore').textContent=`${cost} pts (${state.traces.length}🔦 + ${state.coords.length}📍) · ${formatDuration(time)}`;
     byId('streetResultRank').textContent=state.rank?`Classé #${state.rank} dans le classement de cette grille`:'';
-    byId('streetResultId').textContent=state.gridId;
+    byId('streetResultId').textContent=publicGridId(state.gridId);
     byId('streetResultActions').dataset.orapaMyludoResult=submitted?.accepted===false?'false':'true';
     modal.classList.add('open');
   }
@@ -858,7 +859,7 @@
   }
   async function shareStreet(){
     const id=encodeStreetGrid(state.pieces);if(!id)return;
-    try{await supabaseRpc('orapa_share_street_grid',{p_grid_id:id,p_session_token:currentPlayerAccount.session_token});state.gridId=id;await navigator.clipboard?.writeText(`Je te défie à Orapa Street !\nID: ${id}\nhttps://argone57.github.io/Orapa-Mine/`);showToast('Grille Street partagée et identifiant copié !');}
+    try{await supabaseRpc('orapa_share_street_grid',{p_grid_id:id,p_session_token:currentPlayerAccount.session_token});state.gridId=id;state.gridAlias=await ensureGridAlias(id,'street');await navigator.clipboard?.writeText(gridChallengeText(id));showToast('Grille Street partagée et identifiant copié !');}
     catch(error){showErrorToast(`Partage impossible : ${error.message}`);}
   }
   function render(){
@@ -910,7 +911,7 @@
       if(!confirm(state.mode==='solo'?'Abandonner cette partie et recommencer ?':'Effacer tous les placements et l’historique Street ?'))return;
       if(state.mode==='solo'&&streetAttempt?.attempt_id)try{await supabaseRpc('orapa_abandon_street_attempt',{p_session_token:currentPlayerAccount.session_token,p_attempt_id:streetAttempt.attempt_id});streetAttempt=null;}catch(error){showErrorToast('Abandon impossible : '+error.message);return;}
       if(state.mode==='solo'){await openSolo();return;}
-      state={mode:'gm',pieces:freshPieces(),secretPieces:[],selected:'blueSmall',tool:'pieces',started:false,traces:[],coords:[],draftCells:{},gridId:null,attempts:0,over:false,result:null,startedAt:null,rank:null};clearDirectionChoicesTimer();selectedWaveEdge=null;localStorage.removeItem(SAVE_KEY);render();
+      state={mode:'gm',pieces:freshPieces(),secretPieces:[],selected:'blueSmall',tool:'pieces',started:false,traces:[],coords:[],draftCells:{},gridId:null,gridAlias:null,attempts:0,over:false,result:null,startedAt:null,rank:null};clearDirectionChoicesTimer();selectedWaveEdge=null;localStorage.removeItem(SAVE_KEY);render();
     });
     byId('streetHistoryToggle').addEventListener('click',()=>toggleHistory());
     byId('streetHint').addEventListener('click',()=>{state.tool=state.tool==='hint'?'pieces':'hint';clearDirectionChoicesTimer();selectedWaveEdge=null;render();});
@@ -927,7 +928,7 @@
     if(!currentPlayerAccount){byId('createModeModal')?.classList.remove('open');openAccountModal();return;}
     byId('createModeModal')?.classList.remove('open');
     await loadStreetPreference();
-    state={mode:'gm',pieces:freshPieces(),secretPieces:[],selected:'blueSmall',tool:'pieces',started:false,traces:[],coords:[],draftCells:{},gridId:null,attempts:0,over:false,result:null,startedAt:null,rank:null};load();
+    state={mode:'gm',pieces:freshPieces(),secretPieces:[],selected:'blueSmall',tool:'pieces',started:false,traces:[],coords:[],draftCells:{},gridId:null,gridAlias:null,attempts:0,over:false,result:null,startedAt:null,rank:null};load();
     byId('streetPrototype').querySelector('.subtitle').textContent='Console du maître du jeu';
     byId('streetPrototype').hidden=false;document.body.classList.add('street-open');document.body.classList.remove('home-view');toggleHistory(false);render();
   }
@@ -942,11 +943,12 @@
       if(status?.is_creator){showErrorToast('Cette grille Street est la tienne et ne peut pas être résolue avec ce compte.');return false;}
       if(status?.already_played){showErrorToast('Cette grille Street a déjà été jouée avec ce compte.');return false;}
     }
+    const gridAlias=await ensureGridAlias(decoded.id,'street');
     const target={kind:'street',reference:decoded.id,context:{},progress:{}};
     const start=resumeAttempt?{ok:true,attempt:resumeAttempt,resumed:true}:await prepareNewActiveAttempt(target,true);
     if(!start?.ok){if(start?.reason==='already_played')showErrorToast('Cette grille Street a déjà été jouée avec ce compte.');return false;}
     streetAttempt=start.attempt;
-    state={mode:'solo',pieces:freshPieces(),secretPieces:decoded.pieces.map(piece=>({...piece,anchor:{...piece.anchor}})),selected:'blueSmall',tool:'pieces',started:true,traces:[],coords:[],draftCells:{},gridId:decoded.id,attempts:0,over:false,result:null,startedAt:null,rank:null};
+    state={mode:'solo',pieces:freshPieces(),secretPieces:decoded.pieces.map(piece=>({...piece,anchor:{...piece.anchor}})),selected:'blueSmall',tool:'pieces',started:true,traces:[],coords:[],draftCells:{},gridId:decoded.id,gridAlias,attempts:0,over:false,result:null,startedAt:null,rank:null};
     if(start.resumed)restoreStreetProgress(start.attempt?.progress);
     byId('soloChoiceModal')?.classList.remove('open');document.body.classList.remove('solo-menu-open');
     byId('streetPrototype').querySelector('.subtitle').textContent='Grille classique';

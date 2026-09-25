@@ -1201,7 +1201,7 @@ function openGridDataShell(title,intro='',returnToAccount=false,returnToVictory=
   $('#gridDataTitle').textContent=title;
   $('#gridDataIntro').innerHTML=intro;
   const modeTabs=$('#gridDataIntro .achievement-subtabs');
-  if(modeTabs&&title.includes('Historique des grilles')){const button=document.createElement('button');button.className='ghost';button.textContent='Street';button.onclick=()=>window.OrapaStreetPrototype?.openMyHistory();modeTabs.appendChild(button);}
+  if(modeTabs&&title.includes('Historique des grilles')&&!$('#accountHistoryStreet')){const button=document.createElement('button');button.id='accountHistoryStreet';button.className='ghost';button.textContent='Street';button.onclick=openMyStreetGridHistory;modeTabs.appendChild(button);}
   if(modeTabs&&title.includes('Mes grilles partagées')){const button=document.createElement('button');button.className='ghost';button.textContent='Street';button.onclick=()=>window.OrapaStreetPrototype?.openMyShared();modeTabs.appendChild(button);}
   $('#gridDataContent').innerHTML='<div class="history-empty">Chargement…</div>';
   $('#gridDataBack').textContent='← Retour au compte';
@@ -1221,7 +1221,7 @@ function gridRankingRows(rows){
 }
 function gridRankingIntro(gridId,copyButtonId,playButtonId,returnToVictory=false){
   const decoded=decodeGridId(gridId);
-  const gems=decoded?.variant==='lost'?'💎 Gemme perdue':(decoded?.variant==='space'?`🪐 Orapa Space · ${spaceFlagsEmojiLine(decoded)}`:(decoded?.variant==='earthSky'?`🌍☁️ Terre et Ciel · ${earthSkyFlagsEmojiLine(decoded)}`:(decoded?gemFlagsEmojiLine(decoded.includeGray,decoded.includeOnyx,decoded.includeSapphire):'')));
+  const gems=decoded?.variant==='lost'?'💎 Gemme perdue':(decoded?.variant==='space'?`🪐 Orapa Space · ${spaceFlagsEmojiLine(decoded)}`:(decoded?.variant==='earthSky'?`🌍☁️ Terre et Ciel · ${earthSkyFlagsEmojiLine(decoded)}`:(decoded?.variant==='street'?'🏠 Orapa Street':(decoded?gemFlagsEmojiLine(decoded.includeGray,decoded.includeOnyx,decoded.includeSapphire):''))));
   return `<div class="grid-ranking-idline"><p>Grille <b>${escapeHtml(publicGridId(gridId))}</b></p><span class="ranking-gems">${gems}</span></div><div class="controls ranked-grid-actions"><button id="${copyButtonId}" class="ghost">📋 Copier ID</button>${returnToVictory?'<button id="gridResultBack" class="ghost">← Retour au résultat</button>':''}<button id="${playButtonId}" class="primary ranked-grid-play">▶ Jouer cette grille</button></div>`;
 }
 async function playGridFromRanking(gridId,button){
@@ -1240,8 +1240,8 @@ async function openGridRanking(gridId,returnToAccount=false,returnToVictory=fals
   if(!gridId) return;
   const variant=decodeGridId(gridId)?.variant;
   await ensureGridAlias(gridId,variant||'classic');
-  const lost=variant==='lost',space=variant==='space',earthSky=variant==='earthSky';
-  const rankingRpc=earthSky?'orapa_earth_sky_grid_ranking':(space?'orapa_space_grid_ranking':(lost?'orapa_lost_grid_ranking':'orapa_get_grid_scores'));
+  const lost=variant==='lost',space=variant==='space',earthSky=variant==='earthSky',street=variant==='street';
+  const rankingRpc=street?'orapa_street_grid_ranking':(earthSky?'orapa_earth_sky_grid_ranking':(space?'orapa_space_grid_ranking':(lost?'orapa_lost_grid_ranking':'orapa_get_grid_scores')));
   const rankingArgs={p_grid_id:gridId,p_session_token:currentPlayerAccount?.session_token||''};
   if(returnToAccount&&$('#gridDataModal').classList.contains('open')){
     $('#nestedGridRankingIntro').innerHTML=gridRankingIntro(gridId,'copyNestedRankedGridId','playNestedRankedGrid');
@@ -1398,6 +1398,49 @@ async function openMyEarthSkyGridHistory(){
     if($('#earthSkyAccountMore'))$('#earthSkyAccountMore').onclick=async()=>{const button=$('#earthSkyAccountMore');button.disabled=true;button.textContent='Chargement…';try{await render(true);}catch(error){showErrorToast(`Chargement impossible : ${error.message}`);button.disabled=false;button.textContent='Afficher les résultats suivants';}};
   };
   try{bindTabs();bindHistoryOptionFilters('accountHistoryEarthSkyFilters',optionFilters,()=>render());$('#accountHistoryEarthSkySort').onchange=()=>render();$('#accountHistoryEarthSkyReverse').onclick=()=>{list.reverse=!list.reverse;$('#accountHistoryEarthSkyReverse').textContent=list.reverse?'↑':'↓';render();};await render();}catch(error){$('#gridDataContent').innerHTML=`<div class="account-error" style="display:block">${escapeHtml(error.message)}</div>`;}
+}
+async function openMyStreetGridHistory(){
+  if(!currentPlayerAccount)return;
+  const viewRevision=++accountHistoryViewRevision;
+  openGridDataShell('🕘 Historique des grilles',`<div class="achievement-subtabs"><button id="accountHistoryClassic" class="ghost">Mine</button><button id="accountHistoryLost" class="ghost">Gemme perdue</button><button id="accountHistorySpace" class="ghost">Space</button><button id="accountHistoryEarthSky" class="ghost">Terre et Ciel</button></div><div class="shared-grid-toolbar"><select id="accountHistoryStreetFilter" class="ranking-select"><option value="ALL">Toutes les parties</option><option value="WIN">Réussites</option><option value="FAIL">Échecs</option></select><select id="accountHistoryStreetSort" class="ranking-select"><option value="date">Date</option><option value="points">Points</option><option value="time">Temps</option></select><button id="accountHistoryStreetReverse" class="ghost shared-sort-reverse" aria-label="Inverser le tri">↓</button></div>`,true);
+  $('#accountHistoryStreet')?.classList.add('active');
+  const list={rows:[],hasMore:true,loading:false,reverse:false};
+  const loadPage=async()=>{
+    if(list.loading||!list.hasMore)return;
+    list.loading=true;
+    try{
+      const page=await supabaseRpc('orapa_my_street_grid_history',{p_session_token:currentPlayerAccount.session_token,p_limit:11,p_offset:list.rows.length});
+      const rows=Array.isArray(page)?page:[];
+      list.rows.push(...rows.slice(0,10));list.hasMore=rows.length>10;
+    }finally{list.loading=false;}
+  };
+  const render=()=>{
+    if(viewRevision!==accountHistoryViewRevision)return;
+    const filter=$('#accountHistoryStreetFilter')?.value||'ALL',sort=$('#accountHistoryStreetSort')?.value||'date';
+    const rows=list.rows.filter(row=>filter==='ALL'||(filter==='WIN'&&row.success)||(filter==='FAIL'&&!row.success)).sort((a,b)=>{
+      let value=sort==='points'?Number(a.cost)-Number(b.cost):sort==='time'?Number(a.time_ms)-Number(b.time_ms):new Date(b.played_at)-new Date(a.played_at);
+      if(value===0)value=String(a.grid_id).localeCompare(String(b.grid_id));
+      return list.reverse?-value:value;
+    });
+    $('#gridDataContent').innerHTML=(rows.length?rows.map((row,index)=>{
+      const key=`street-account:${row.grid_id}`,expanded=expandedScores.has(key),date=new Date(row.played_at).toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'2-digit'}),moves=`${row.ray_count} 🔦 + ${row.coord_count} 📍`;
+      return `<div class="ranking-row account-history-row account-ranked-history${expanded?' expanded':''}" data-index="${index}"><div class="ranking-row-top"><span class="account-result-position"><span class="solo-result-mark ${row.success?'win':'fail'}">${row.success?'✓':'✕'}</span><b>#${row.rank}</b></span><span class="ranking-query-cell">${moves}</span><span class="ranking-points">${row.cost} pts</span><span class="ranking-date">${date}</span></div>${expanded?`<div class="ranking-row-detail">ID <b>${escapeHtml(publicGridId(row.grid_id))}</b> · ${formatDuration(row.time_ms)}</div><div class="controls ranking-compact-actions three"${myludoHistoryEntryAttribute(row,'street')}><button class="street-account-summary ghost" data-index="${index}">📋 Résumé</button><button class="street-account-id ghost" data-index="${index}">📋 ID</button><button class="street-account-ranking primary" data-index="${index}">🏆 Grille</button></div>`:''}</div>`;
+    }).join(''):'<div class="history-empty">Aucune partie correspondant à ce filtre.</div>')+(list.hasMore?'<button id="streetAccountMore" class="ghost solo-load-more">Afficher les résultats suivants</button>':'');
+    $('#gridDataContent').querySelectorAll('.account-history-row').forEach(node=>node.onclick=event=>{if(event.target.closest('button'))return;const row=rows[Number(node.dataset.index)],key=`street-account:${row.grid_id}`;expandedScores.has(key)?expandedScores.delete(key):expandedScores.add(key);render();});
+    $('#gridDataContent').querySelectorAll('.street-account-ranking').forEach(button=>button.onclick=()=>openGridRanking(rows[Number(button.dataset.index)].grid_id,true));
+    $('#gridDataContent').querySelectorAll('.street-account-id').forEach(button=>button.onclick=()=>{const id=publicGridId(rows[Number(button.dataset.index)].grid_id);navigator.clipboard?.writeText(id).then(()=>showToast('Identifiant copié : '+id));});
+    $('#gridDataContent').querySelectorAll('.street-account-summary').forEach(button=>button.onclick=()=>{const row=rows[Number(button.dataset.index)];navigator.clipboard?.writeText(formatShareText({gameVariant:'street',gridId:row.grid_id,name:currentPlayerAccount.display_name,success:row.success,cost:row.cost,rayCount:row.ray_count,coordCount:row.coord_count,timeMs:row.time_ms,date:new Date(row.played_at).getTime()})).then(()=>showToast('Résumé copié !'));});
+    if($('#streetAccountMore'))$('#streetAccountMore').onclick=async()=>{const button=$('#streetAccountMore');button.disabled=true;button.textContent='Chargement…';try{await loadPage();render();}catch(error){showErrorToast(`Chargement impossible : ${error.message}`);button.disabled=false;button.textContent='Afficher les résultats suivants';}};
+  };
+  $('#accountHistoryClassic').onclick=openMyGridHistory;
+  $('#accountHistoryLost').onclick=openMyLostGridHistory;
+  $('#accountHistorySpace').onclick=openMySpaceGridHistory;
+  $('#accountHistoryEarthSky').onclick=openMyEarthSkyGridHistory;
+  $('#accountHistoryStreet').onclick=openMyStreetGridHistory;
+  $('#accountHistoryStreetFilter').onchange=render;
+  $('#accountHistoryStreetSort').onchange=render;
+  $('#accountHistoryStreetReverse').onclick=()=>{list.reverse=!list.reverse;$('#accountHistoryStreetReverse').textContent=list.reverse?'↑':'↓';render();};
+  try{await loadPage();render();}catch(error){$('#gridDataContent').innerHTML=`<div class="account-error" style="display:block">${escapeHtml(error.message)}</div>`;}
 }
 async function openMyDailyHistory(kind='classic'){
   if(!currentPlayerAccount)return;
@@ -2231,7 +2274,7 @@ function decodeGridId(input){
 }
 const gridAliasByCanonical=new Map(),gridCanonicalByAlias=new Map();
 function normalizeGridAlias(value){return String(value||'').trim().toUpperCase().replace(/[^A-Z0-9]/g,'');}
-function looksLikeGridAlias(value){const clean=normalizeGridAlias(value);return clean.length===10&&/[MLST]$/.test(clean);}
+function looksLikeGridAlias(value){const clean=normalizeGridAlias(value);return clean.length===10&&/[MLSTR]$/.test(clean);}
 function rememberGridAlias(gridId,alias){
   const canonical=String(gridId||'').trim().toUpperCase(),formatted=String(alias||'').trim().toUpperCase();
   if(!canonical||!formatted)return;
@@ -6205,13 +6248,14 @@ function buildRankingConfigOptions(){
     if(historyDisplayMode==='lost'){select.innerHTML='<option value="LOST_HISTORY:ALL">Gemme perdue</option>';return;}
     if(historyDisplayMode==='space'){select.innerHTML='<option value="SPACE_HISTORY:ALL">Orapa Space</option>';return;}
     if(historyDisplayMode==='earthSky'){select.innerHTML='<option value="EARTH_SKY_HISTORY:ALL">Terre et Ciel</option>';return;}
+    if(historyDisplayMode==='street'){select.innerHTML='<option value="STREET_HISTORY:ALL">Orapa Street</option>';return;}
     select.innerHTML='<option value="GLOBAL_SOLO:ALL">Orapa Mine</option>';
   }
 }
 function renderGlobalHistoryOptionFilters(){
   const host=$('#rankingOptionFilters');
   const variant=historyDisplayMode==='earthSky'?'earthSky':historyDisplayMode;
-  const visible=rankingView==='solo'&&variant!=='lost';
+  const visible=rankingView==='solo'&&['classic','space','earthSky'].includes(variant);
   host.style.display=visible?'':'none';
   if(!visible){host.innerHTML='';return;}
   host.innerHTML=historyOptionFilterHtml('globalHistoryOptionFilterBar',variant);
@@ -6233,7 +6277,7 @@ function setRankingView(view){
   $('#btnRefreshGlobal').style.display = (view==='global'||view==='grids') ? '' : 'none';
   $('#btnRefreshGlobal').textContent=view==='grids'?'↻ Actualiser les grilles':'↻ Actualiser';
   $('#btnStatsGlobal').style.display = (view==='global'||view==='solo') ? '' : 'none';
-  $('#btnStatsGlobal').textContent=view==='solo'?(historyDisplayMode==='lost'?'📊 Statistiques Gemme perdue':historyDisplayMode==='space'?'📊 Statistiques Orapa Space':historyDisplayMode==='earthSky'?'📊 Statistiques Terre et Ciel':'📊 Statistiques Orapa Mine'):'📊 Statistiques';
+  $('#btnStatsGlobal').textContent=view==='solo'?(historyDisplayMode==='lost'?'📊 Statistiques Gemme perdue':historyDisplayMode==='space'?'📊 Statistiques Orapa Space':historyDisplayMode==='earthSky'?'📊 Statistiques Terre et Ciel':historyDisplayMode==='street'?'📊 Statistiques Orapa Street':'📊 Statistiques Orapa Mine'):'📊 Statistiques';
   const picker=$('#rankingDatePicker');
   $('#rankingDatePickerWrap').style.display=view==='global'?'flex':'none';
   $('#rankingDatePrevious').style.display=view==='global'?'flex':'none';
@@ -6244,6 +6288,7 @@ function setRankingView(view){
   if(view==='solo'&&historyDisplayMode==='lost')$('#rankingConfigSelect').value='LOST_HISTORY:ALL';
   if(view==='solo'&&historyDisplayMode==='space')$('#rankingConfigSelect').value='SPACE_HISTORY:ALL';
   if(view==='solo'&&historyDisplayMode==='earthSky')$('#rankingConfigSelect').value='EARTH_SKY_HISTORY:ALL';
+  if(view==='solo'&&historyDisplayMode==='street')$('#rankingConfigSelect').value='STREET_HISTORY:ALL';
   if(view==='global'){
     picker.value=($('#rankingConfigSelect').value||'').replace('GLOBAL:','')||parisDateKey();
     $('#rankingDateNext').disabled=picker.value>=parisDateKey();
@@ -6552,15 +6597,19 @@ async function openEarthSkyGlobalStats(){
   $('#globalStatsModal').classList.add('open');$('#globalStatsToolbar').style.display='none';$('#globalStatsContent').innerHTML='<div class="history-empty">Calcul des statistiques Terre et Ciel…</div>';
   try{const [stats,rows]=await Promise.all([supabaseRpc('orapa_earth_sky_global_stats'),supabaseRpc('orapa_earth_sky_stats_rows')]);globalStatsRows=Array.isArray(rows)?rows:[];$('#globalStatsContent').innerHTML=renderGridModeGlobalStats('🌍☁️ Terre et Ciel',stats,false)+statsPlayerButtons(globalStatsRows,false);bindStatsPlayerButtons();}catch(error){$('#globalStatsContent').innerHTML=`<div class="account-error" style="display:block">${escapeHtml(error.message)}</div>`;}
 }
+async function openStreetGlobalStats(){
+  $('#globalStatsModal').classList.add('open');$('#globalStatsToolbar').style.display='none';$('#globalStatsContent').innerHTML='<div class="history-empty">Calcul des statistiques Orapa Street…</div>';
+  try{const stats=await supabaseRpc('orapa_street_global_stats');globalStatsRows=[];$('#globalStatsContent').innerHTML=renderGridModeGlobalStats('🏠 Orapa Street',stats,false);}catch(error){$('#globalStatsContent').innerHTML=`<div class="account-error" style="display:block">${escapeHtml(error.message)}</div>`;}
+}
 
 const GLOBAL_SOLO_PAGE_SIZE=10;
 let globalSoloRenderRevision=0;
-let globalFilteredHistoryPagers={classic:null,space:null,earthSky:null};
-let globalFilteredHistoryRenderRevision={classic:0,space:0,earthSky:0};
+let globalFilteredHistoryPagers={classic:null,space:null,earthSky:null,street:null};
+let globalFilteredHistoryRenderRevision={classic:0,space:0,earthSky:0,street:0};
 function invalidateGlobalSoloScores(){
   globalSoloRenderRevision=0;
-  globalFilteredHistoryPagers={classic:null,space:null,earthSky:null};
-  globalFilteredHistoryRenderRevision={classic:0,space:0,earthSky:0};
+  globalFilteredHistoryPagers={classic:null,space:null,earthSky:null,street:null};
+  globalFilteredHistoryRenderRevision={classic:0,space:0,earthSky:0,street:0};
 }
 async function renderGlobalSoloScores(optionFilters=globalHistoryOptionFilters.classic,addPage=false){
   const el=$('#rankingList');
@@ -6640,6 +6689,7 @@ function renderRankingList(){
   if(key.startsWith('SPACE_HISTORY:')){renderSpaceHistoryRanking(globalHistoryOptionFilters.space);return;}
   if(key.startsWith('EARTH_SKY_HISTORY:')){renderEarthSkyHistoryRanking(globalHistoryOptionFilters.earthSky);return;}
   if(key.startsWith('LOST_HISTORY:')){renderLostHistoryRanking();return;}
+  if(key.startsWith('STREET_HISTORY:')){renderStreetHistoryRanking();return;}
   if(key.startsWith('GLOBAL_SOLO:')){
     renderGlobalSoloScores(globalHistoryOptionFilters.classic);
     return;
@@ -6689,6 +6739,30 @@ async function renderEarthSkyHistoryRanking(optionFilters=globalHistoryOptionFil
     const more=$('#earthSkyHistoryMore');if(more)more.onclick=async()=>{more.disabled=true;more.textContent='Chargement…';try{await renderEarthSkyHistoryRanking(optionFilters,true);}catch(error){showErrorToast(`Chargement impossible : ${error.message}`);more.disabled=false;more.textContent='Afficher les résultats suivants';}};
   }catch(error){el.innerHTML=`<div class="account-error" style="display:block">${escapeHtml(error.message)}</div>`;}
 }
+async function renderStreetHistoryRanking(addPage=false){
+  const el=$('#rankingList');
+  const revision=++globalFilteredHistoryRenderRevision.street;
+  if(!globalFilteredHistoryPagers.street){
+    el.innerHTML='<div class="history-empty">Chargement des parties Orapa Street…</div>';
+    globalFilteredHistoryPagers.street=createFilteredHistoryPager((_filters,offset,limit)=>supabaseRpc('orapa_street_global_history',{p_session_token:currentPlayerAccount?.session_token||'',p_limit:limit,p_offset:offset}));
+  }
+  const pager=globalFilteredHistoryPagers.street;
+  try{
+    const pageResult=await pager.result({},addPage);
+    if(revision!==globalFilteredHistoryRenderRevision.street||rankingView!=='solo'||historyDisplayMode!=='street')return;
+    const rows=pageResult.rows;
+    el.innerHTML=(rows.length?rows.map((row,index)=>{
+      const key=`global-street-history:${row.id}`,expanded=expandedScores.has(key),date=new Date(row.played_at).toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'2-digit'}),moves=`${row.ray_count} 🔦 + ${row.coord_count} 📍`;
+      return `<div class="ranking-row solo-global-row${expanded?' expanded':''}" data-index="${index}"><div class="ranking-row-top"><span class="solo-ranking-player"><span class="ranking-rank solo-result-mark ${row.success?'win':'fail'}">${row.success?'✓':'✕'}</span><span class="ranking-name${row.is_mine?' mine':''}">${escapeHtml(row.player_name||'Anonyme')}</span></span><span class="solo-ranking-config ranking-query-cell">${moves}</span><span class="solo-ranking-score"><span class="ranking-points">${row.cost} pts</span><span class="ranking-date">${date}</span></span></div>${expanded?`<div class="ranking-row-detail">ID <b>${escapeHtml(publicGridId(row.grid_id))}</b> · ${formatDuration(row.time_ms)}</div><div class="controls ranking-compact-actions three"><button class="street-history-summary ghost" data-index="${index}">📋 Résumé</button><button class="street-history-id ghost" data-index="${index}">📋 ID</button><button class="street-history-ranking primary" data-index="${index}">🏆 Grille</button></div>`:''}</div>`;
+    }).join(''):'<div class="history-empty">Aucune partie Orapa Street enregistrée.</div>')+(pageResult.hasMore?'<button id="streetHistoryLoadMore" class="ghost solo-load-more">Afficher les résultats suivants</button>':'');
+    el.querySelectorAll('.solo-global-row').forEach(node=>node.onclick=event=>{if(event.target.closest('button'))return;const row=rows[Number(node.dataset.index)],key=`global-street-history:${row.id}`;expandedScores.has(key)?expandedScores.delete(key):expandedScores.add(key);renderStreetHistoryRanking();});
+    el.querySelectorAll('.street-history-ranking').forEach(button=>button.onclick=()=>openGridRanking(rows[Number(button.dataset.index)].grid_id));
+    el.querySelectorAll('.street-history-id').forEach(button=>button.onclick=()=>{const id=publicGridId(rows[Number(button.dataset.index)].grid_id);navigator.clipboard?.writeText(id).then(()=>showToast('Identifiant copié : '+id));});
+    el.querySelectorAll('.street-history-summary').forEach(button=>button.onclick=()=>{const row=rows[Number(button.dataset.index)];navigator.clipboard?.writeText(formatShareText({gameVariant:'street',gridId:row.grid_id,name:row.player_name||'Anonyme',success:row.success,cost:row.cost,rayCount:row.ray_count,coordCount:row.coord_count,timeMs:row.time_ms,date:new Date(row.played_at).getTime()})).then(()=>showToast('Résumé copié !'));});
+    const more=$('#streetHistoryLoadMore');
+    if(more)more.onclick=async()=>{more.disabled=true;more.textContent='Chargement…';try{await renderStreetHistoryRanking(true);}catch(error){showErrorToast(`Chargement impossible : ${error.message}`);more.disabled=false;more.textContent='Afficher les résultats suivants';}};
+  }catch(error){el.innerHTML=`<div class="account-error" style="display:block">${escapeHtml(error.message)}</div>`;}
+}
 async function renderLostHistoryRanking(){
   const el=$('#rankingList');el.innerHTML='<div class="history-empty">Chargement des parties Gemme perdue…</div>';
   const state={rows:[],hasMore:true,loading:false};
@@ -6715,18 +6789,24 @@ $('#gridModeLost').addEventListener('click',()=>{gridDisplayMode='lost';gridCata
 $('#gridModeSpace').addEventListener('click',()=>{gridDisplayMode='space';gridCatalogState={popular:null,searched:null,searchError:'',accountId:null};$('#gridModeSpace').classList.add('active');$('#gridModeClassic').classList.remove('active');$('#gridModeLost').classList.remove('active');$('#gridModeEarthSky').classList.remove('active');renderGridCatalog(true);});
 $('#gridModeEarthSky').addEventListener('click',()=>{gridDisplayMode='earthSky';gridCatalogState={popular:null,searched:null,searchError:'',accountId:null};['Classic','Lost','Space','EarthSky'].forEach(name=>$('#gridMode'+name).classList.toggle('active',name==='EarthSky'));renderGridCatalog(true);});
 $('#gridModeStreet').addEventListener('click',()=>window.OrapaStreetPrototype?.openCatalog());
-$('#historyModeClassic').addEventListener('click',()=>{historyDisplayMode='classic';$('#historyModeClassic').classList.add('active');$('#historyModeLost').classList.remove('active');$('#historyModeSpace').classList.remove('active');$('#historyModeEarthSky').classList.remove('active');buildRankingConfigOptions();setRankingView('solo');});
-$('#historyModeLost').addEventListener('click',()=>{historyDisplayMode='lost';$('#historyModeLost').classList.add('active');$('#historyModeClassic').classList.remove('active');$('#historyModeSpace').classList.remove('active');$('#historyModeEarthSky').classList.remove('active');buildRankingConfigOptions();setRankingView('solo');});
-$('#historyModeSpace').addEventListener('click',()=>{historyDisplayMode='space';$('#historyModeSpace').classList.add('active');$('#historyModeClassic').classList.remove('active');$('#historyModeLost').classList.remove('active');$('#historyModeEarthSky').classList.remove('active');buildRankingConfigOptions();setRankingView('solo');});
-$('#historyModeEarthSky').addEventListener('click',()=>{historyDisplayMode='earthSky';['Classic','Lost','Space','EarthSky'].forEach(name=>$('#historyMode'+name).classList.toggle('active',name==='EarthSky'));buildRankingConfigOptions();setRankingView('solo');});
-$('#historyModeStreet').addEventListener('click',()=>window.OrapaStreetPrototype?.openGlobalHistory());
+function selectGridHistoryMode(mode){
+  historyDisplayMode=mode;
+  const names={classic:'Classic',lost:'Lost',space:'Space',earthSky:'EarthSky',street:'Street'};
+  Object.entries(names).forEach(([key,name])=>$('#historyMode'+name).classList.toggle('active',key===mode));
+  buildRankingConfigOptions();setRankingView('solo');
+}
+$('#historyModeClassic').addEventListener('click',()=>selectGridHistoryMode('classic'));
+$('#historyModeLost').addEventListener('click',()=>selectGridHistoryMode('lost'));
+$('#historyModeSpace').addEventListener('click',()=>selectGridHistoryMode('space'));
+$('#historyModeEarthSky').addEventListener('click',()=>selectGridHistoryMode('earthSky'));
+$('#historyModeStreet').addEventListener('click',()=>selectGridHistoryMode('street'));
 $('#btnRefreshGlobal').addEventListener('click', ()=>{
   if(rankingView==='grids'){renderGridCatalog(true);return;}
   const key=$('#rankingConfigSelect').value;
   if(key.startsWith('GLOBAL:')) renderGlobalRanking(key.slice(7),true);
 });
 $('#gridSearchForm').addEventListener('submit',event=>{event.preventDefault();searchGridCatalog($('#gridSearchInput').value);});
-$('#btnStatsGlobal').addEventListener('click',()=>rankingView==='solo'?(historyDisplayMode==='lost'?openLostGlobalStats():historyDisplayMode==='space'?openSpaceGlobalStats():historyDisplayMode==='earthSky'?openEarthSkyGlobalStats():openClassicGridGlobalStats()):openGlobalStats());
+$('#btnStatsGlobal').addEventListener('click',()=>rankingView==='solo'?(historyDisplayMode==='lost'?openLostGlobalStats():historyDisplayMode==='space'?openSpaceGlobalStats():historyDisplayMode==='earthSky'?openEarthSkyGlobalStats():historyDisplayMode==='street'?openStreetGlobalStats():openClassicGridGlobalStats()):openGlobalStats());
 $('#closeGlobalStats').addEventListener('click', ()=>{ $('#playerStatsModal').classList.remove('open'); $('#globalStatsModal').classList.remove('open'); });
 $('#globalStatsModal').addEventListener('click', e=>{ if(e.target.id==='globalStatsModal') $('#globalStatsModal').classList.remove('open'); });
 $('#closePlayerStats').addEventListener('click',()=>$('#playerStatsModal').classList.remove('open'));
