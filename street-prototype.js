@@ -389,7 +389,7 @@
   }
 
   const freshPieces=()=>PIECES.map(def=>({id:def.id,anchor:null,rotation:0,flipped:false}));
-  let state={mode:'gm',pieces:freshPieces(),secretPieces:[],selected:'blueSmall',tool:'pieces',previewWave:null,started:false,traces:[],coords:[],draftCells:{},gridId:null,gridAlias:null,attempts:0,over:false,result:null,startedAt:null,rank:null};
+  let state={mode:'gm',pieces:freshPieces(),secretPieces:[],selected:'blueSmall',tool:'pieces',waveModeActive:false,previewWave:null,started:false,traces:[],coords:[],draftCells:{},gridId:null,gridAlias:null,attempts:0,over:false,result:null,startedAt:null,rank:null};
   let wavePreference='auto';
   let streetAttempt=null;
   let streetSync=Promise.resolve();
@@ -628,7 +628,7 @@
   function renderBoard(){
     const svg=byId('streetBoard');svg.innerHTML='';
     const useDirectionChoices=resolvedWavePreference()==='choices';
-    const previewTrace=state.mode==='solo'&&state.tool==='wave'&&state.previewWave
+    const previewTrace=state.mode==='solo'&&state.waveModeActive&&state.previewWave
       ?traceRay(state.previewWave.edgeIndex,state.previewWave.directionIndex,state.pieces)
       :null;
     const displayTraceAt=(edgeIndex,directionIndex)=>findTraceAt(edgeIndex,directionIndex);
@@ -700,7 +700,7 @@
           const box=svgEl('rect',{x:center.x-15,y:center.y-11,width:30,height:22,rx:5,style:usedTrace?`--street-result:${usedTrace.color.hex}`:''});
           const text=svgEl('text',{x:center.x,y:center.y,'text-anchor':'middle','dominant-baseline':'central'});text.textContent=`→ ${destination}`;
           choice.appendChild(box);choice.appendChild(text);
-          choice.addEventListener('click',event=>{event.stopPropagation();if(state.mode==='solo'&&state.tool==='wave')showPreviewWave(edgeIndex,directionIndex);else if(usedTrace)showStreetTraceFeedback(usedTrace,edgeIndex,directionIndex);else launchWave(edgeIndex,directionIndex);scheduleDirectionChoicesHide(edgeIndex);});
+          choice.addEventListener('click',event=>{event.stopPropagation();if(state.mode==='solo'&&state.waveModeActive&&usedTrace)showPreviewWave(edgeIndex,directionIndex,usedTrace);else if(usedTrace)showStreetTraceFeedback(usedTrace,edgeIndex,directionIndex);else launchWave(edgeIndex,directionIndex);scheduleDirectionChoicesHide(edgeIndex);});
           labelGroup.appendChild(choice);
         });
       }
@@ -713,7 +713,7 @@
         const arrow=[add(pos,mul(direction,7)),rearA,rearB];
         const usedTrace=displayTraceAt(edgeIndex,directionIndex);
         const button=svgEl('polygon',{points:pointsAttr(arrow),class:`street-ray-button${usedTrace?' used':''}${state.started?'':' disabled'}`,'data-edge':edgeIndex,'data-direction':directionIndex,style:usedTrace?`--street-result:${usedTrace.color.hex}`:''});
-        button.addEventListener('click',event=>{event.stopPropagation();if(state.mode==='solo'&&state.tool==='wave')showPreviewWave(edgeIndex,directionIndex);else if(usedTrace)showStreetTraceFeedback(usedTrace,edgeIndex,directionIndex);else launchWave(edgeIndex,directionIndex);});labelGroup.appendChild(button);
+        button.addEventListener('click',event=>{event.stopPropagation();if(state.mode==='solo'&&state.waveModeActive&&usedTrace)showPreviewWave(edgeIndex,directionIndex,usedTrace);else if(usedTrace)showStreetTraceFeedback(usedTrace,edgeIndex,directionIndex);else launchWave(edgeIndex,directionIndex);});labelGroup.appendChild(button);
         const exitInfo=usedTrace&&traceExitInfo(usedTrace,edgeIndex,directionIndex);
         if(exitInfo){
           const leftSide=['1','2','3','4','A','B','C'].includes(edge.label);
@@ -807,22 +807,22 @@
     const control=traceControl(edgeIndex,directionIndex);showStreetBubble(control,text);pulseStreetControl(edgeIndex,directionIndex);
     if(partner)pulseStreetControl(partner.index,partnerDirection);
   }
-  function showPreviewWave(edgeIndex,directionIndex){
-    if(!state.started||state.mode!=='solo'||state.tool!=='wave')return;
+  function showPreviewWave(edgeIndex,directionIndex,realTrace=null){
+    if(!state.started||state.mode!=='solo'||!state.waveModeActive)return;
     state.previewWave={edgeIndex,directionIndex};
-    const trace=traceRay(edgeIndex,directionIndex,state.pieces);
     render();
-    setTimeout(()=>showStreetTraceFeedback(trace,edgeIndex,directionIndex),0);
+    if(realTrace)setTimeout(()=>showStreetTraceFeedback(realTrace,edgeIndex,directionIndex),0);
   }
   function launchWave(edgeIndex,directionIndex){
     if(!state.started)return;
-    if(state.mode==='solo'&&state.tool==='wave'){showPreviewWave(edgeIndex,directionIndex);return;}
     const usedTrace=findTraceAt(edgeIndex,directionIndex);
     if(usedTrace)return showStreetTraceFeedback(usedTrace,edgeIndex,directionIndex);
     if(state.mode!=='solo'&&validatePieces(state.pieces).size)return setMessage('Corrige les placements rouges avant de lancer une onde.',true);
     const trace=traceRay(edgeIndex,directionIndex,queryPieces());
     trace.time=new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
-    state.traces.push(trace);render();void recordStreetAction('ray');setTimeout(()=>showStreetTraceFeedback(trace,edgeIndex,directionIndex),0);
+    state.traces.push(trace);
+    if(state.mode==='solo'&&state.waveModeActive)state.previewWave={edgeIndex,directionIndex};
+    render();void recordStreetAction('ray');setTimeout(()=>showStreetTraceFeedback(trace,edgeIndex,directionIndex),0);
   }
   function historyDirectionArrow(edge,directionIndex){
     const direction=edge?.directions?.[directionIndex];if(!direction)return '';
@@ -960,8 +960,8 @@
     byId('streetHint').textContent=state.tool==='hint'?'🔍 Mode indice activé':'🔍 Demander un indice';
     byId('streetDraft').classList.toggle('active',showCellTools&&state.tool==='draft');
     byId('streetDraft').textContent=state.tool==='draft'?'◻️ Masquage activé':'◻️ Masquer les cases';
-    byId('streetShowWave').classList.toggle('active',showCellTools&&state.tool==='wave');
-    byId('streetShowWave').textContent=state.tool==='wave'?'〽️ Mode onde activé':'〽️ Afficher une onde';
+    byId('streetShowWave').classList.toggle('active',showCellTools&&state.waveModeActive);
+    byId('streetShowWave').textContent=state.waveModeActive?'〽️ Mode onde activé':'〽️ Afficher une onde';
     const pill=byId('streetPrototype').querySelector('.mode-pill');
     pill.classList.toggle('live',state.started);
     pill.querySelector('span:last-child').textContent=state.over?(state.result==='win'?'Victoire':'Défaite'):(state.started?(state.mode==='solo'?'Partie en cours':'Test de la grille'):'Placement des pièces');
@@ -985,12 +985,12 @@
       if(!confirm(state.mode==='solo'?'Abandonner cette partie et recommencer ?':'Effacer tous les placements et l’historique Street ?'))return;
       if(state.mode==='solo'&&streetAttempt?.attempt_id)try{await supabaseRpc('orapa_abandon_street_attempt',{p_session_token:currentPlayerAccount.session_token,p_attempt_id:streetAttempt.attempt_id});streetAttempt=null;}catch(error){showErrorToast('Abandon impossible : '+error.message);return;}
       if(state.mode==='solo'){await openSolo();return;}
-      state={mode:'gm',pieces:freshPieces(),secretPieces:[],selected:'blueSmall',tool:'pieces',previewWave:null,started:false,traces:[],coords:[],draftCells:{},gridId:null,gridAlias:null,attempts:0,over:false,result:null,startedAt:null,rank:null};clearDirectionChoicesTimer();selectedWaveEdge=null;localStorage.removeItem(SAVE_KEY);render();
+      state={mode:'gm',pieces:freshPieces(),secretPieces:[],selected:'blueSmall',tool:'pieces',waveModeActive:false,previewWave:null,started:false,traces:[],coords:[],draftCells:{},gridId:null,gridAlias:null,attempts:0,over:false,result:null,startedAt:null,rank:null};clearDirectionChoicesTimer();selectedWaveEdge=null;localStorage.removeItem(SAVE_KEY);render();
     });
     byId('streetHistoryToggle').addEventListener('click',()=>toggleHistory());
-    byId('streetHint').addEventListener('click',()=>{state.tool=state.tool==='hint'?'pieces':'hint';state.previewWave=null;clearDirectionChoicesTimer();selectedWaveEdge=null;render();});
-    byId('streetDraft').addEventListener('click',()=>{state.tool=state.tool==='draft'?'pieces':'draft';state.previewWave=null;clearDirectionChoicesTimer();selectedWaveEdge=null;render();});
-    byId('streetShowWave').addEventListener('click',()=>{state.tool=state.tool==='wave'?'pieces':'wave';if(state.tool!=='wave')state.previewWave=null;clearDirectionChoicesTimer();selectedWaveEdge=null;render();});
+    byId('streetHint').addEventListener('click',()=>{state.tool=state.tool==='hint'?'pieces':'hint';clearDirectionChoicesTimer();selectedWaveEdge=null;render();});
+    byId('streetDraft').addEventListener('click',()=>{state.tool=state.tool==='draft'?'pieces':'draft';clearDirectionChoicesTimer();selectedWaveEdge=null;render();});
+    byId('streetShowWave').addEventListener('click',()=>{state.waveModeActive=!state.waveModeActive;if(!state.waveModeActive)state.previewWave=null;clearDirectionChoicesTimer();selectedWaveEdge=null;render();});
     byId('streetWavePreference').addEventListener('change',event=>{
       wavePreference=event.target.value;clearDirectionChoicesTimer();selectedWaveEdge=null;render();
       if(currentPlayerAccount?.session_token)void supabaseRpc('orapa_set_street_preferences',{p_session_token:currentPlayerAccount.session_token,p_wave_controls:wavePreference}).then(()=>showToast('Préférence Street enregistrée')).catch(error=>showErrorToast('Enregistrement impossible : '+error.message));
@@ -1003,7 +1003,7 @@
     if(!currentPlayerAccount){byId('createModeModal')?.classList.remove('open');openAccountModal();return;}
     byId('createModeModal')?.classList.remove('open');
     await loadStreetPreference();
-    state={mode:'gm',pieces:freshPieces(),secretPieces:[],selected:'blueSmall',tool:'pieces',previewWave:null,started:false,traces:[],coords:[],draftCells:{},gridId:null,gridAlias:null,attempts:0,over:false,result:null,startedAt:null,rank:null};load();
+    state={mode:'gm',pieces:freshPieces(),secretPieces:[],selected:'blueSmall',tool:'pieces',waveModeActive:false,previewWave:null,started:false,traces:[],coords:[],draftCells:{},gridId:null,gridAlias:null,attempts:0,over:false,result:null,startedAt:null,rank:null};load();
     byId('streetPrototype').querySelector('.subtitle').textContent='Console du maître du jeu';
     byId('streetPrototype').hidden=false;document.body.classList.add('street-open');document.body.classList.remove('home-view');toggleHistory(false);render();
   }
@@ -1023,7 +1023,7 @@
     const start=resumeAttempt?{ok:true,attempt:resumeAttempt,resumed:true}:await prepareNewActiveAttempt(target,true);
     if(!start?.ok){if(start?.reason==='already_played')showErrorToast('Cette grille Street a déjà été jouée avec ce compte.');return false;}
     streetAttempt=start.attempt;
-    state={mode:'solo',pieces:freshPieces(),secretPieces:decoded.pieces.map(piece=>({...piece,anchor:{...piece.anchor}})),selected:'blueSmall',tool:'pieces',previewWave:null,started:true,traces:[],coords:[],draftCells:{},gridId:decoded.id,gridAlias,attempts:0,over:false,result:null,startedAt:null,rank:null};
+    state={mode:'solo',pieces:freshPieces(),secretPieces:decoded.pieces.map(piece=>({...piece,anchor:{...piece.anchor}})),selected:'blueSmall',tool:'pieces',waveModeActive:false,previewWave:null,started:true,traces:[],coords:[],draftCells:{},gridId:decoded.id,gridAlias,attempts:0,over:false,result:null,startedAt:null,rank:null};
     if(start.resumed)restoreStreetProgress(start.attempt?.progress);
     byId('soloChoiceModal')?.classList.remove('open');document.body.classList.remove('solo-menu-open');
     byId('streetPrototype').querySelector('.subtitle').textContent='Grille classique';
