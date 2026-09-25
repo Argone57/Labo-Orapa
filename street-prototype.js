@@ -19,8 +19,7 @@
   };
   const STREET_TRANSPARENT={name:'Transparent',hex:'#8a93a3'};
   const LABELS=['5','6','7','8','9','10','11','12','13','14','N','M','L','K','J','I','H','G','F','E','D','C','B','A','1','2','3','4'];
-  const SAVE_KEY='orapa_street_prototype_v2';
-  const WAVE_PREFERENCE_KEY='orapa_street_wave_preference_v1';
+  const SAVE_KEY='orapa_street_creation_v3';
   const EPS=1e-6;
 
   const PIECES=[
@@ -367,10 +366,11 @@
     center.x/=3;center.y/=3;
     return center;
   }
+  function queryPieces(){return state.mode==='solo'?(state.secretPieces||[]):state.pieces;}
   function coordinateResultForTriangle(triangle){
     const center=triangleCenter(triangle);
     const colors=new Set();
-    state.pieces.filter(piece=>piece.anchor).forEach(piece=>{
+    queryPieces().filter(piece=>piece.anchor).forEach(piece=>{
       const geometry=pieceGeometry(piece);
       if(pointInPolygon(center,geometry.poly,true))colors.add(geometry.definition.color);
     });
@@ -379,15 +379,13 @@
     return {empty:false,name:result.name,hex:result.hex,colors:[...colors]};
   }
 
-  let state={pieces:PIECES.map(def=>({id:def.id,anchor:null,rotation:0,flipped:false})),selected:'blueSmall',tool:'pieces',started:false,traces:[],coords:[]};
+  const freshPieces=()=>PIECES.map(def=>({id:def.id,anchor:null,rotation:0,flipped:false}));
+  let state={mode:'gm',pieces:freshPieces(),secretPieces:[],selected:'blueSmall',tool:'pieces',started:false,traces:[],coords:[],gridId:null,attempts:0,over:false,result:null,startedAt:null,rank:null};
   let wavePreference='auto';
+  let streetAttempt=null;
+  let streetSync=Promise.resolve();
   let selectedWaveEdge=null;
   let directionChoicesHideTimer=null;
-  try{
-    const savedPreference=localStorage.getItem(WAVE_PREFERENCE_KEY);
-    if(['auto','arrows','choices'].includes(savedPreference))wavePreference=savedPreference;
-  }catch(_error){}
-
   function resolvedWavePreference(){
     if(wavePreference!=='auto')return wavePreference;
     return window.matchMedia('(max-width: 640px)').matches?'choices':'arrows';
@@ -443,6 +441,64 @@
     }
     return false;
   }
+  const STREET_VERTICES=[...BOARD.vertices.values()].map(screenPoint);
+  function encodeStreetGrid(pieces){
+    if(pieces.length!==PIECES.length||validatePieces(pieces,true).size)return null;
+    const bytes=[];
+    for(const definition of PIECES){
+      const piece=pieces.find(item=>item.id===definition.id);if(!piece?.anchor)return null;
+      const first=pieceGeometry(piece).poly[0];
+      let index=0,distance=Infinity;
+      STREET_VERTICES.forEach((point,i)=>{const value=Math.hypot(point.x-first.x,point.y-first.y);if(value<distance){distance=value;index=i;}});
+      if(distance>.1||index>255)return null;
+      bytes.push(index,(piece.rotation%6)|((piece.flipped?1:0)<<3));
+    }
+    bytes.push(bytes.reduce((value,byte)=>value^byte,0)^0x5a);
+    const hex=bytes.map(byte=>byte.toString(16).padStart(2,'0')).join('').toUpperCase();
+    return `ST1-${hex.match(/.{1,4}/g).join('-')}`;
+  }
+  function decodeStreetGrid(input){
+    const clean=String(input||'').trim().toUpperCase().replace(/[^A-Z0-9]/g,'');
+    if(!clean.startsWith('ST1'))return null;
+    const hex=clean.slice(3);if(hex.length!==PIECES.length*4+2||!/^[0-9A-F]+$/.test(hex))return null;
+    const bytes=hex.match(/../g).map(value=>parseInt(value,16));
+    const checksum=bytes.pop();if(((bytes.reduce((value,byte)=>value^byte,0)^0x5a)&255)!==checksum)return null;
+    const pieces=[];
+    for(let i=0;i<PIECES.length;i++){
+      const vertex=STREET_VERTICES[bytes[i*2]],meta=bytes[i*2+1];if(!vertex||meta>13||(meta&7)>5)return null;
+      const piece={id:PIECES[i].id,anchor:{...vertex},rotation:meta&7,flipped:!!(meta&8)};
+      const definition=PIECES[i],first=definition.poly[0],relative=[first[0]-definition.pivot[0],first[1]-definition.pivot[1]];
+      piece.anchor=sub(vertex,axialVectorToScreen(axialTransform(relative,piece.rotation,piece.flipped)));pieces.push(piece);
+    }
+    if(validatePieces(pieces,true).size)return null;
+    return {variant:'street',pieces,id:encodeStreetGrid(pieces)};
+  }
+  function geometrySignature(piece){
+    const geometry=pieceGeometry(piece),point=p=>`${p.x.toFixed(2)},${p.y.toFixed(2)}`;
+    const polygon=geometry.poly.map(point).sort().join('|');
+    const walls=geometry.walls.map(wall=>wall.map(point).sort().join('>')).sort().join('|');
+    return `${polygon}#${walls}`;
+  }
+  function guessIsCorrect(){
+    return PIECES.every(definition=>{
+      const guess=state.pieces.find(piece=>piece.id===definition.id),secret=state.secretPieces.find(piece=>piece.id===definition.id);
+      return guess?.anchor&&secret?.anchor&&geometrySignature(guess)===geometrySignature(secret);
+    });
+  }
+  function streetProgress(){return {pieces:state.pieces,traces:state.traces.map(trace=>({entryIndex:trace.entry.index,entryDirectionIndex:trace.entryDirectionIndex,exitIndex:trace.exit?.index??null,exitDirectionIndex:trace.exitDirectionIndex,points:trace.points,colors:trace.colors,color:trace.color,bounced:trace.bounced,loop:trace.loop,time:trace.time})),coords:state.coords,attempts:state.attempts,startedAt:state.startedAt};}
+  function restoreStreetProgress(progress){
+    if(!progress||typeof progress!=='object')return;
+    if(Array.isArray(progress.pieces)&&progress.pieces.length===PIECES.length)state.pieces=progress.pieces;
+    state.coords=Array.isArray(progress.coords)?progress.coords:[];state.attempts=Math.max(0,Number(progress.attempts)||0);state.startedAt=Number(progress.startedAt)||Date.now();
+    state.traces=(Array.isArray(progress.traces)?progress.traces:[]).map(item=>({...item,entry:BOARD.boundary[item.entryIndex],exit:item.exitIndex==null?null:BOARD.boundary[item.exitIndex]})).filter(item=>item.entry);
+  }
+  function recordStreetAction(kind){
+    if(state.mode!=='solo'||state.over||!streetAttempt?.attempt_id||!currentPlayerAccount?.session_token)return;
+    if(!state.startedAt)state.startedAt=Date.now();
+    const payload={p_session_token:currentPlayerAccount.session_token,p_attempt_id:streetAttempt.attempt_id,p_action_id:crypto.randomUUID(),p_action_kind:kind,p_progress:streetProgress()};
+    streetSync=streetSync.then(async()=>{const result=await supabaseRpc('orapa_record_active_attempt_action',payload);if(result?.attempt)streetAttempt=result.attempt;}).catch(error=>{console.warn('Synchronisation Street différée :',error);showErrorToast('Le coup est conservé à l’écran, mais sa synchronisation a échoué.');});
+    return streetSync;
+  }
   function pointsAttr(points){return points.map(p=>`${p.x},${p.y}`).join(' ');}
   function clipPolygonToHalfPlane(points,center,normal){
     const output=[];
@@ -489,7 +545,7 @@
     element.addEventListener('touchstart',event=>event.preventDefault(),{passive:false});
     element.addEventListener('touchmove',event=>event.preventDefault(),{passive:false});
     element.addEventListener('pointerdown',event=>{
-      if(state.started)return;
+      if((state.started&&state.mode!=='solo')||state.over)return;
       event.preventDefault();event.stopPropagation();state.selected=piece.id;
       const startX=event.clientX,startY=event.clientY,pointerId=event.pointerId;
       try{element.setPointerCapture?.(pointerId);}catch(_error){}
@@ -542,6 +598,7 @@
     const svg=byId('streetBoard');svg.innerHTML='';
     const useDirectionChoices=resolvedWavePreference()==='choices';
     svg.classList.toggle('coordinate-mode',state.started);
+    svg.classList.toggle('solo',state.mode==='solo');
     svg.classList.toggle('wave-choice-mode',useDirectionChoices);
     svg.classList.toggle('started',!!state.started);
     const margin=useDirectionChoices?31:39;
@@ -555,7 +612,7 @@
         event.stopPropagation();
         if(state.coords.some(item=>item.triangle===triangle.id))return;
         const coord=coordinateForTriangle(triangle),result=coordinateResultForTriangle(triangle);
-        state.coords.push({triangle:triangle.id,text:coord,...result,time:new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit',second:'2-digit'})});render();
+        state.coords.push({triangle:triangle.id,text:coord,...result,time:new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit',second:'2-digit'})});render();void recordStreetAction('coord');
       });boardGroup.appendChild(poly);
     });
     svg.appendChild(boardGroup);
@@ -667,10 +724,10 @@
     if(!state.started)return;
     const usedTrace=findTraceAt(edgeIndex,directionIndex);
     if(usedTrace)return showStreetTraceFeedback(usedTrace,edgeIndex,directionIndex);
-    if(validatePieces(state.pieces).size)return setMessage('Corrige les placements rouges avant de lancer une onde.',true);
-    const trace=traceRay(edgeIndex,directionIndex,state.pieces);
+    if(state.mode!=='solo'&&validatePieces(state.pieces).size)return setMessage('Corrige les placements rouges avant de lancer une onde.',true);
+    const trace=traceRay(edgeIndex,directionIndex,queryPieces());
     trace.time=new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
-    state.traces.push(trace);render();setTimeout(()=>showStreetTraceFeedback(trace,edgeIndex,directionIndex),0);
+    state.traces.push(trace);render();void recordStreetAction('ray');setTimeout(()=>showStreetTraceFeedback(trace,edgeIndex,directionIndex),0);
   }
   function historyDirectionArrow(edge,directionIndex){
     const direction=edge?.directions?.[directionIndex];if(!direction)return '';
@@ -710,6 +767,86 @@
     byId('streetHistoryToggleIndicator').textContent=open?'−':'+';
   }
   function setMessage(text,error=false){const el=byId('streetStartBlockMsg');el.textContent=text;el.style.color=error?'#f5b8ae':'var(--text-faint)';}
+  function elapsedMs(){return Math.max(0,Date.now()-(state.startedAt||Date.now()));}
+  function streetSummary(success=state.result==='win'){
+    const name=currentPlayerAccount?.display_name||'Anonyme',cost=state.traces.length+state.coords.length*3,date=new Date().toLocaleDateString('fr-FR');
+    return `Orapa Street · ${date}\n${name} - ${success?'🏅':'😞'} - ${cost} pts (${state.traces.length}🔦/${state.coords.length}📍) - ID: ${state.gridId}\nhttps://argone57.github.io/Orapa-Mine/`;
+  }
+  function ensureStreetModal(){
+    let backdrop=byId('streetResultModal');if(backdrop)return backdrop;
+    backdrop=document.createElement('div');backdrop.id='streetResultModal';backdrop.className='modal-backdrop';
+    backdrop.innerHTML='<div class="modal"><button class="close-x" id="streetResultClose">×</button><h2 id="streetResultTitle"></h2><p id="streetResultMessage"></p><p id="streetResultScore"></p><p id="streetResultRank" class="rank-line"></p><p>Grille : <b id="streetResultId"></b></p><div id="streetResultActions" class="controls victory-actions" data-orapa-myludo-result="false"><button class="primary" id="streetResultRanking">🏆 Classement</button><button class="ghost" id="streetResultCopy">📋 Copier résumé</button><button class="ghost" id="streetResultHome">← Accueil</button></div></div>';
+    document.body.appendChild(backdrop);
+    byId('streetResultClose').onclick=()=>backdrop.classList.remove('open');
+    byId('streetResultHome').onclick=()=>{backdrop.classList.remove('open');close(true);};
+    byId('streetResultCopy').onclick=()=>navigator.clipboard?.writeText(streetSummary()).then(()=>showToast('Résumé copié !'));
+    byId('streetResultRanking').onclick=()=>openStreetRanking(state.gridId);
+    return backdrop;
+  }
+  async function openStreetRanking(gridId){
+    try{
+      const rows=await supabaseRpc('orapa_street_grid_ranking',{p_grid_id:gridId,p_session_token:currentPlayerAccount?.session_token||''});
+      let modal=byId('streetRankingModal');if(!modal){modal=document.createElement('div');modal.id='streetRankingModal';modal.className='modal-backdrop';document.body.appendChild(modal);}
+      modal.innerHTML=`<div class="modal"><button class="close-x" id="streetRankingClose">×</button><h2>🏆 Classement Orapa Street</h2><p>Grille <b>${gridId}</b></p><div class="ranking-list">${(rows||[]).map(row=>`<div class="ranking-row"><span><b>#${row.rank}</b> ${escapeHtml(row.player_name)}</span><span>${row.success?'✅':'❌'} ${row.cost} pts · ${formatDuration(row.time_ms)}</span></div>`).join('')||'<div class="history-empty">Aucune partie enregistrée.</div>'}</div><div class="controls" style="justify-content:space-between;margin-top:14px"><button class="ghost" id="streetRankingCopy">📋 Copier ID</button><button class="primary" id="streetRankingPlay">▶ Jouer cette grille</button></div></div>`;
+      byId('streetRankingClose').onclick=()=>modal.classList.remove('open');
+      byId('streetRankingCopy').onclick=()=>navigator.clipboard?.writeText(gridId).then(()=>showToast('Identifiant copié !'));
+      byId('streetRankingPlay').onclick=()=>{modal.classList.remove('open');ensureStreetModal().classList.remove('open');void openSolo(gridId);};
+      modal.classList.add('open');
+    }catch(error){showErrorToast(`Classement Street indisponible : ${error.message}`);}
+  }
+  function openStreetRowsModal(title,rows,empty='Aucune partie enregistrée.'){
+    let modal=byId('streetRowsModal');if(!modal){modal=document.createElement('div');modal.id='streetRowsModal';modal.className='modal-backdrop';document.body.appendChild(modal);}
+    modal.innerHTML=`<div class="modal"><button class="close-x" id="streetRowsClose">×</button><h2>${title}</h2><div class="ranking-list">${rows.length?rows.map((row,index)=>`<button class="ranking-row street-row-open" data-index="${index}" style="width:100%;text-align:left"><span>${row.player_name?escapeHtml(row.player_name):`<b>${escapeHtml(row.grid_id)}</b>`}</span><span>${row.success===undefined?`${row.participation_count||0} 👥`:`${row.success?'✅':'❌'} ${row.cost} pts · ${formatDuration(row.time_ms)}`}</span></button>`).join(''):`<div class="history-empty">${empty}</div>`}</div></div>`;
+    byId('streetRowsClose').onclick=()=>modal.classList.remove('open');
+    modal.querySelectorAll('.street-row-open').forEach(button=>button.onclick=()=>{const row=rows[Number(button.dataset.index)];if(row.grid_id)openStreetRanking(row.grid_id);});
+    modal.classList.add('open');
+  }
+  async function openStreetGlobalHistory(){try{const [rows,stats]=await Promise.all([supabaseRpc('orapa_street_global_history',{p_session_token:currentPlayerAccount?.session_token||'',p_limit:100,p_offset:0}),supabaseRpc('orapa_street_global_stats')]);openStreetRowsModal(`🔺 Orapa Street · ${stats?.played||0} parties · ${stats?.success_rate||0} %`,rows||[]);}catch(error){showErrorToast(error.message);}}
+  async function openStreetCatalog(){try{const rows=await supabaseRpc('orapa_street_grid_catalog',{p_sort:'popular',p_limit:100,p_offset:0,p_session_token:currentPlayerAccount?.session_token||''});openStreetRowsModal('🔺 Grilles Orapa Street',rows||[],'Aucune grille Street partagée.');}catch(error){showErrorToast(error.message);}}
+  async function openMyStreetHistory(){try{const rows=await supabaseRpc('orapa_my_street_grid_history',{p_session_token:currentPlayerAccount.session_token,p_limit:100,p_offset:0});openStreetRowsModal('🔺 Mes parties Orapa Street',(rows||[]).map(row=>({...row,player_name:currentPlayerAccount.display_name})));}catch(error){showErrorToast(error.message);}}
+  async function openMySharedStreet(){try{const rows=await supabaseRpc('orapa_my_shared_street_grids',{p_session_token:currentPlayerAccount.session_token,p_limit:100,p_offset:0});openStreetRowsModal('🔺 Mes grilles Street partagées',rows||[],'Aucune grille Street partagée.');}catch(error){showErrorToast(error.message);}}
+  async function finishStreetAttempt(success){
+    state.over=true;state.result=success?'win':'lose';
+    if(!success)state.pieces=state.secretPieces.map(piece=>({...piece,anchor:{...piece.anchor}}));
+    const cost=state.traces.length+state.coords.length*3,time=elapsedMs();
+    let submitted=null;
+    try{
+      submitted=await supabaseRpc('orapa_submit_street_grid_score',{p_grid_id:state.gridId,p_session_token:currentPlayerAccount.session_token,p_success:success,p_cost:cost,p_ray_count:state.traces.length,p_coord_count:state.coords.length,p_time_ms:time,p_first_try:success&&state.attempts===0});
+      if(streetAttempt?.attempt_id)await supabaseRpc('orapa_finish_active_attempt',{p_session_token:currentPlayerAccount.session_token,p_attempt_id:streetAttempt.attempt_id});
+      streetAttempt=null;state.rank=Number(submitted?.rank)||null;
+    }catch(error){showErrorToast(`Enregistrement Street impossible : ${error.message}`);}
+    render();
+    const modal=ensureStreetModal();
+    byId('streetResultTitle').textContent=success?'🏆 Victoire !':'💥 Défaite';
+    byId('streetResultMessage').textContent=success?'Tu as retrouvé la disposition exacte des sept pièces !':'La seconde proposition est incorrecte : la grille secrète est révélée.';
+    byId('streetResultScore').textContent=`${cost} pts (${state.traces.length}🔦 + ${state.coords.length}📍) · ${formatDuration(time)}`;
+    byId('streetResultRank').textContent=state.rank?`Classé #${state.rank} dans le classement de cette grille`:'';
+    byId('streetResultId').textContent=state.gridId;
+    byId('streetResultActions').dataset.orapaMyludoResult=submitted?.accepted===false?'false':'true';
+    modal.classList.add('open');
+  }
+  async function proposeStreetSolution(){
+    if(state.mode!=='solo'||state.over||state.pieces.some(piece=>!piece.anchor)||validatePieces(state.pieces,true).size)return;
+    try{
+      const current=await supabaseRpc('orapa_get_active_attempt',{p_session_token:currentPlayerAccount.session_token});
+      if(!current||current.game_kind!=='street'||current.reference!==state.gridId){showErrorToast('Cette tentative Street n’est plus active. Elle a peut-être été terminée sur un autre appareil.');return;}
+      streetAttempt=current;
+    }catch(error){showErrorToast('Impossible de vérifier la tentative avant la proposition.');return;}
+    if(guessIsCorrect()){await recordStreetAction('proposal');await finishStreetAttempt(true);return;}
+    state.attempts++;
+    await recordStreetAction('proposal');
+    if(state.attempts>=2){await finishStreetAttempt(false);return;}
+    render();showErrorToast('Solution incorrecte. Il te reste une proposition.');
+  }
+  async function loadStreetPreference(){
+    if(!currentPlayerAccount?.session_token)return;
+    try{const value=await supabaseRpc('orapa_get_street_preferences',{p_session_token:currentPlayerAccount.session_token});if(['auto','arrows','choices'].includes(value?.wave_controls))wavePreference=value.wave_controls;}catch(error){console.warn('Préférence Street indisponible',error);}
+  }
+  async function shareStreet(){
+    const id=encodeStreetGrid(state.pieces);if(!id)return;
+    try{await supabaseRpc('orapa_share_street_grid',{p_grid_id:id,p_session_token:currentPlayerAccount.session_token});state.gridId=id;await navigator.clipboard?.writeText(`Je te défie à Orapa Street !\nID: ${id}\nhttps://argone57.github.io/Orapa-Mine/`);showToast('Grille Street partagée et identifiant copié !');}
+    catch(error){showErrorToast(`Partage impossible : ${error.message}`);}
+  }
   function render(){
     renderPalette();renderBoard();renderHistory();
     const issues=validatePieces(state.pieces),placed=state.pieces.filter(p=>p.anchor).length;
@@ -718,9 +855,11 @@
     byId('streetRandom').hidden=!preStart;
     byId('streetShare').hidden=!preStart;
     byId('streetStart').hidden=!preStart;
-    byId('streetEnd').hidden=preStart;
+    byId('streetEnd').hidden=preStart||state.over||state.mode!=='solo';
+    byId('streetEnd').textContent=state.attempts?'Proposer une seconde solution':'Proposer une solution';
+    byId('streetEnd').disabled=state.mode==='solo'&&!complete;
     byId('streetStart').disabled=!complete;
-    byId('streetShare').disabled=true;
+    byId('streetShare').disabled=!complete;
     byId('streetPaletteTitle').style.display=preStart?'flex':'none';
     byId('streetPalette').style.display=preStart?'flex':'none';
     byId('streetSetupHint').style.display=preStart?'block':'none';
@@ -729,23 +868,29 @@
     byId('streetWavePreference').value=wavePreference;
     const pill=byId('streetPrototype').querySelector('.mode-pill');
     pill.classList.toggle('live',state.started);
-    pill.querySelector('span:last-child').textContent=state.started?'Partie en cours':'Placement des pièces';
+    pill.querySelector('span:last-child').textContent=state.over?(state.result==='win'?'Victoire':'Défaite'):(state.started?(state.mode==='solo'?'Partie en cours':'Test de la grille'):'Placement des pièces');
     if(preStart){clearDirectionChoicesTimer();selectedWaveEdge=null;}
     if(state.started)setMessage('',false);
     else if(issues.size)setMessage([...new Set(issues.values())][0],true);
     else if(placed<PIECES.length)setMessage('Place toutes les pièces avant de démarrer.',true);
     else setMessage('');
-    save();
+    if(state.mode==='gm')save();
   }
   function bind(){
     const create=byId('createStreetMode');
     if(!create)return;
-    create.addEventListener('click',open);
-    byId('streetClose').addEventListener('click',close);
+    create.addEventListener('click',()=>openCreation());
+    byId('streetClose').addEventListener('click',()=>close());
     byId('streetRandom').addEventListener('click',()=>{if(state.started)return;if(!randomizePieces())setMessage('Impossible de trouver un placement valide. Réessaie.',true);render();});
-    byId('streetStart').addEventListener('click',()=>{if(state.started||byId('streetStart').disabled)return;state.started=true;state.tool='pieces';state.traces=[];state.coords=[];clearDirectionChoicesTimer();selectedWaveEdge=null;render();});
-    byId('streetEnd').addEventListener('click',close);
-    byId('streetReset').addEventListener('click',()=>{if(!confirm('Effacer tous les placements et l’historique Street ?'))return;state={pieces:PIECES.map(def=>({id:def.id,anchor:null,rotation:0,flipped:false})),selected:'blueSmall',tool:'pieces',started:false,traces:[],coords:[]};clearDirectionChoicesTimer();selectedWaveEdge=null;localStorage.removeItem(SAVE_KEY);render();});
+    byId('streetStart').addEventListener('click',()=>{if(state.started||byId('streetStart').disabled)return;state.started=true;state.startedAt=Date.now();state.tool='pieces';state.traces=[];state.coords=[];clearDirectionChoicesTimer();selectedWaveEdge=null;render();});
+    byId('streetEnd').addEventListener('click',()=>void proposeStreetSolution());
+    byId('streetShare').addEventListener('click',()=>void shareStreet());
+    byId('streetReset').addEventListener('click',async()=>{
+      if(!confirm(state.mode==='solo'?'Abandonner cette partie et recommencer ?':'Effacer tous les placements et l’historique Street ?'))return;
+      if(state.mode==='solo'&&streetAttempt?.attempt_id)try{await supabaseRpc('orapa_abandon_street_attempt',{p_session_token:currentPlayerAccount.session_token,p_attempt_id:streetAttempt.attempt_id});streetAttempt=null;}catch(error){showErrorToast('Abandon impossible : '+error.message);return;}
+      if(state.mode==='solo'){await openSolo();return;}
+      state={mode:'gm',pieces:freshPieces(),secretPieces:[],selected:'blueSmall',tool:'pieces',started:false,traces:[],coords:[],gridId:null,attempts:0,over:false,result:null,startedAt:null,rank:null};clearDirectionChoicesTimer();selectedWaveEdge=null;localStorage.removeItem(SAVE_KEY);render();
+    });
     byId('streetClearTests').addEventListener('click',()=>{state.traces=[];state.coords=[];render();});
     byId('streetHistoryToggle').addEventListener('click',()=>toggleHistory());
     byId('streetDiagnostic').addEventListener('click',async()=>{
@@ -756,20 +901,54 @@
       catch(_error){setMessage('La copie automatique a échoué sur ce navigateur.',true);}
     });
     byId('streetWavePreference').addEventListener('change',event=>{
-      wavePreference=event.target.value;clearDirectionChoicesTimer();selectedWaveEdge=null;
-      try{localStorage.setItem(WAVE_PREFERENCE_KEY,wavePreference);}catch(_error){}
-      render();
+      wavePreference=event.target.value;clearDirectionChoicesTimer();selectedWaveEdge=null;render();
+      if(currentPlayerAccount?.session_token)void supabaseRpc('orapa_set_street_preferences',{p_session_token:currentPlayerAccount.session_token,p_wave_controls:wavePreference}).then(()=>showToast('Préférence Street enregistrée')).catch(error=>showErrorToast('Enregistrement impossible : '+error.message));
     });
     const narrowScreen=window.matchMedia('(max-width: 640px)');
     const refreshAutomaticControls=()=>{if(wavePreference==='auto'&&!byId('streetPrototype').hidden){clearDirectionChoicesTimer();selectedWaveEdge=null;render();}};
     if(narrowScreen.addEventListener)narrowScreen.addEventListener('change',refreshAutomaticControls);else narrowScreen.addListener(refreshAutomaticControls);
   }
-  function open(){
+  async function openCreation(){
+    if(!currentPlayerAccount){byId('createModeModal')?.classList.remove('open');openAccountModal();return;}
     byId('createModeModal')?.classList.remove('open');
-    byId('streetPrototype').hidden=false;document.body.classList.add('street-open');document.body.classList.remove('home-view');load();render();
+    await loadStreetPreference();
+    state={mode:'gm',pieces:freshPieces(),secretPieces:[],selected:'blueSmall',tool:'pieces',started:false,traces:[],coords:[],gridId:null,attempts:0,over:false,result:null,startedAt:null,rank:null};load();
+    byId('streetPrototype').querySelector('.subtitle').textContent='Console du maître du jeu';
+    byId('streetPrototype').hidden=false;document.body.classList.add('street-open');document.body.classList.remove('home-view');render();
   }
-  function close(){clearDirectionChoicesTimer();selectedWaveEdge=null;byId('streetPrototype').hidden=true;document.body.classList.remove('street-open');document.body.classList.add('home-view');}
+  async function openSolo(gridId=null,resumeAttempt=null){
+    if(!currentPlayerAccount?.session_token){closeSoloChoiceModal?.();openAccountModal();return false;}
+    await loadStreetPreference();
+    let decoded=gridId?decodeStreetGrid(gridId):null;
+    if(gridId&&!decoded){showErrorToast('Identifiant Street invalide.');return false;}
+    if(!decoded){const pieces=freshPieces();state.pieces=pieces;if(!randomizePieces()){showErrorToast('Impossible de générer une grille Street.');return false;}decoded={variant:'street',pieces:state.pieces.map(piece=>({...piece,anchor:{...piece.anchor}}))};decoded.id=encodeStreetGrid(decoded.pieces);}
+    if(gridId&&!resumeAttempt){
+      const status=await supabaseRpc('orapa_get_street_grid_status',{p_grid_id:decoded.id,p_session_token:currentPlayerAccount.session_token}).catch(()=>null);
+      if(status?.is_creator){showErrorToast('Cette grille Street est la tienne et ne peut pas être résolue avec ce compte.');return false;}
+      if(status?.already_played){showErrorToast('Cette grille Street a déjà été jouée avec ce compte.');return false;}
+    }
+    const target={kind:'street',reference:decoded.id,context:{},progress:{}};
+    const start=resumeAttempt?{ok:true,attempt:resumeAttempt,resumed:true}:await prepareNewActiveAttempt(target,true);
+    if(!start?.ok){if(start?.reason==='already_played')showErrorToast('Cette grille Street a déjà été jouée avec ce compte.');return false;}
+    streetAttempt=start.attempt;
+    state={mode:'solo',pieces:freshPieces(),secretPieces:decoded.pieces.map(piece=>({...piece,anchor:{...piece.anchor}})),selected:'blueSmall',tool:'pieces',started:true,traces:[],coords:[],gridId:decoded.id,attempts:0,over:false,result:null,startedAt:null,rank:null};
+    if(start.resumed)restoreStreetProgress(start.attempt?.progress);
+    byId('soloChoiceModal')?.classList.remove('open');document.body.classList.remove('solo-menu-open');
+    byId('streetPrototype').querySelector('.subtitle').textContent='Grille classique';
+    byId('streetPrototype').hidden=false;document.body.classList.add('street-open');document.body.classList.remove('home-view');render();return true;
+  }
+  function close(force=false){
+    if(state.mode==='solo'&&!state.over&&!force){showToast('La partie Street reste en cours sur ce compte.');}
+    clearDirectionChoicesTimer();selectedWaveEdge=null;byId('streetPrototype').hidden=true;document.body.classList.remove('street-open');document.body.classList.add('home-view');
+  }
 
-  window.OrapaStreetPrototype={open,close,debug:{BOARD,LANES,PIECES,axialTransform,pieceGeometry,visualWallsFor,visualWallPolygonsFor,snapPieceAnchor,coordinateForTriangle,traceRay,validatePieces}};
+  document.addEventListener('orapa:myludo-request',async()=>{
+    if(state.mode!=='solo'||!state.over)return;
+    let preferences={player_mode:'default',custom_player_name:'',fill_score:false,location_mode:'default',custom_location:'',exclude_from_statistics:false,auto_submit:false,duplicate_detection:true};
+    try{preferences=await loadMyludoPreferences();}catch(_error){}
+    const payload={schemaVersion:1,source:'orapa-mine',gameId:101482,gameVariant:'street',isDaily:false,dedupeReference:state.gridId,solo:true,online:true,win:state.result==='win',playerName:preferences.player_mode==='custom'?preferences.custom_player_name:'',resultPlayerName:currentPlayerAccount?.display_name||'',score:preferences.fill_score?(state.traces.length+state.coords.length*3):null,date:new Date().toISOString().slice(0,10),durationMinutes:Math.max(1,Math.round(elapsedMs()/60000)),location:preferences.location_mode==='custom'?preferences.custom_location:'Orapa-Mine',excludeFromStatistics:!!preferences.exclude_from_statistics,autoSubmit:!!preferences.auto_submit,duplicateDetection:preferences.duplicate_detection!==false,comment:streetSummary(),options:{}};
+    document.dispatchEvent(new CustomEvent('orapa:myludo-result',{detail:JSON.stringify(payload)}));
+  });
+  window.OrapaStreetPrototype={open:openCreation,openCreation,openSolo,resume:attempt=>openSolo(attempt.reference,attempt),close,decode:decodeStreetGrid,encode:encodeStreetGrid,openRanking:openStreetRanking,openGlobalHistory:openStreetGlobalHistory,openCatalog:openStreetCatalog,openMyHistory:openMyStreetHistory,openMyShared:openMySharedStreet,debug:{BOARD,LANES,PIECES,axialTransform,pieceGeometry,visualWallsFor,visualWallPolygonsFor,snapPieceAnchor,coordinateForTriangle,traceRay,validatePieces}};
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',bind);else bind();
 })();
