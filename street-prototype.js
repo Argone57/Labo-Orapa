@@ -389,7 +389,7 @@
   }
 
   const freshPieces=()=>PIECES.map(def=>({id:def.id,anchor:null,rotation:0,flipped:false}));
-  let state={mode:'gm',pieces:freshPieces(),secretPieces:[],selected:'blueSmall',tool:'pieces',waveModeActive:false,previewWave:null,started:false,traces:[],coords:[],draftCells:{},gridId:null,gridAlias:null,attempts:0,over:false,result:null,startedAt:null,rank:null};
+  let state={mode:'gm',pieces:freshPieces(),secretPieces:[],selected:'blueSmall',tool:'pieces',waveModeActive:false,previewWave:null,started:false,traces:[],coords:[],draftCells:{},gridId:null,gridAlias:null,attempts:0,over:false,result:null,showGuess:true,showSecret:true,startedAt:null,rank:null};
   let wavePreference='auto';
   let streetAttempt=null;
   let streetSync=Promise.resolve();
@@ -749,12 +749,24 @@
       svg.appendChild(svgEl('polyline',{points:pointsAttr(previewTrace.points),class:'street-trace street-preview-trace',stroke}));
     }
     const issues=validatePieces(state.pieces);
-    state.pieces.filter(piece=>piece.anchor).forEach(piece=>{
-      const geo=pieceGeometry(piece),group=svgEl('g',{class:`street-piece${state.selected===piece.id?' selected':''}${state.mode!=='solo'&&issues.has(piece.id)?' invalid':''}`,'data-piece':piece.id});
-      const poly=svgEl('polygon',{points:pointsAttr(geo.poly),fill:COLORS[geo.definition.color]});group.appendChild(poly);
-      visualWallPolygonsFor(geo).forEach(wall=>group.appendChild(svgEl('polygon',{points:pointsAttr(wall),fill:COLORS[geo.definition.color],class:'street-wall'})));
-      attachPieceGesture(group,piece);svg.appendChild(group);
-    });
+    const appendPiece=(piece,display='normal')=>{
+      const geo=pieceGeometry(piece),color=COLORS[geo.definition.color],resultClass=display==='guess'?' street-result-guess':(display==='secret'?' street-result-secret':'');
+      const group=svgEl('g',{class:`street-piece${resultClass}${display==='normal'&&state.selected===piece.id?' selected':''}${display==='normal'&&state.mode!=='solo'&&issues.has(piece.id)?' invalid':''}`,'data-piece':piece.id,style:display==='guess'?`--street-piece-color:${color}`:''});
+      const attrs={points:pointsAttr(geo.poly),fill:display==='guess'?'none':color};
+      if(display==='guess')Object.assign(attrs,{stroke:color,'stroke-width':2.2,'vector-effect':'non-scaling-stroke'});
+      group.appendChild(svgEl('polygon',attrs));
+      visualWallPolygonsFor(geo).forEach(wall=>{
+        const wallAttrs={points:pointsAttr(wall),fill:display==='guess'?'none':color,class:'street-wall'};
+        if(display==='guess')Object.assign(wallAttrs,{stroke:color,'stroke-width':2.2,'vector-effect':'non-scaling-stroke'});
+        group.appendChild(svgEl('polygon',wallAttrs));
+      });
+      if(display==='normal')attachPieceGesture(group,piece);
+      svg.appendChild(group);
+    };
+    if(state.mode==='solo'&&state.over){
+      if(state.showSecret!==false)state.secretPieces.filter(piece=>piece.anchor).forEach(piece=>appendPiece(piece,'secret'));
+      if(state.showGuess!==false)state.pieces.filter(piece=>piece.anchor).forEach(piece=>appendPiece(piece,'guess'));
+    }else state.pieces.filter(piece=>piece.anchor).forEach(piece=>appendPiece(piece));
     state.coords.forEach(item=>{
       const tri=BOARD.triangles.find(t=>t.id===item.triangle);if(!tri)return;
       const center=triangleCenter(tri);
@@ -775,7 +787,7 @@
     const fromEntry=trace.entry.index===edgeIndex&&trace.entryDirectionIndex===directionIndex;
     const partner=fromEntry?trace.exit:trace.entry;
     const partnerDirection=fromEntry?trace.exitDirectionIndex:trace.entryDirectionIndex;
-    return partner?`${partner.label}${historyDirectionArrow(partner,partnerDirection)}`:'';
+    return partner?`${partner.label}${directionArrowText(partner,partnerDirection)}`:'';
   }
   function traceControl(edgeIndex,directionIndex){
     const board=byId('streetBoard');
@@ -803,7 +815,7 @@
     let text;
     if(!trace.exit)text=trace.loop?'Onde prisonnière':'Aucune sortie';
     else if(trace.exit.index===trace.entry.index)text=`${trace.entry.label} ↔\n${trace.color.name}`;
-    else text=`Sort en ${partner.label} ${historyDirectionArrow(partner,partnerDirection)}\n${trace.color.name}`;
+    else text=`Sort en ${partner.label} ${directionArrowText(partner,partnerDirection)}\n${trace.color.name}`;
     const control=traceControl(edgeIndex,directionIndex);showStreetBubble(control,text);pulseStreetControl(edgeIndex,directionIndex);
     if(partner)pulseStreetControl(partner.index,partnerDirection);
   }
@@ -823,6 +835,16 @@
     state.traces.push(trace);
     if(state.mode==='solo'&&state.waveModeActive)state.previewWave={edgeIndex,directionIndex};
     render();void recordStreetAction('ray');setTimeout(()=>showStreetTraceFeedback(trace,edgeIndex,directionIndex),0);
+  }
+  function directionArrowText(edge,directionIndex){
+    const direction=edge?.directions?.[directionIndex];if(!direction)return '';
+    const angle=Math.atan2(direction.y,direction.x)*180/Math.PI;
+    if(angle>=-30&&angle<30)return '→';
+    if(angle>=30&&angle<90)return '↘';
+    if(angle>=90&&angle<150)return '↙';
+    if(angle>=150||angle<-150)return '←';
+    if(angle>=-150&&angle<-90)return '↖';
+    return '↗';
   }
   function historyDirectionArrow(edge,directionIndex){
     const direction=edge?.directions?.[directionIndex];if(!direction)return '';
@@ -889,7 +911,6 @@
   async function openMySharedStreet(){try{const rows=await supabaseRpc('orapa_my_shared_street_grids',{p_session_token:currentPlayerAccount.session_token,p_limit:100,p_offset:0});openStreetRowsModal('🏠 Mes grilles Street partagées',rows||[],'Aucune grille Street partagée.');}catch(error){showErrorToast(error.message);}}
   async function finishStreetAttempt(success){
     state.over=true;state.result=success?'win':'lose';
-    if(!success)state.pieces=state.secretPieces.map(piece=>({...piece,anchor:{...piece.anchor}}));
     const cost=state.traces.length+state.coords.length*3,time=elapsedMs();
     let submitted=null;
     const closingAttempt=streetAttempt;
@@ -958,6 +979,10 @@
     byId('streetDraft').textContent=state.tool==='draft'?'◻️ Masquage activé':'◻️ Masquer les cases';
     byId('streetShowWave').classList.toggle('active',showCellTools&&state.waveModeActive);
     byId('streetShowWave').textContent=state.waveModeActive?'〽️ Mode onde activé':'〽️ Afficher une onde';
+    const showResultTools=state.mode==='solo'&&state.over;
+    byId('streetResultTools').hidden=!showResultTools;
+    byId('streetToggleGuess').textContent=`${state.showGuess===false?'🚫':'👁'} Mes pièces`;
+    byId('streetToggleSecret').textContent=`${state.showSecret===false?'🚫':'👁'} Pièces à trouver`;
     const pill=byId('streetPrototype').querySelector('.mode-pill');
     pill.classList.toggle('live',state.started);
     pill.querySelector('span:last-child').textContent=state.over?(state.result==='win'?'Victoire':'Défaite'):(state.started?(state.mode==='solo'?'Partie en cours':'Test de la grille'):'Placement des pièces');
@@ -981,12 +1006,14 @@
       if(!confirm(state.mode==='solo'?'Abandonner cette partie et recommencer ?':'Effacer tous les placements et l’historique Street ?'))return;
       if(state.mode==='solo'&&streetAttempt?.attempt_id)try{const abandonedAttempt=streetAttempt;await supabaseRpc('orapa_abandon_street_attempt',{p_session_token:currentPlayerAccount.session_token,p_attempt_id:abandonedAttempt.attempt_id});if(activeAttempt?.attempt_id===abandonedAttempt.attempt_id)activeAttempt=null;streetAttempt=null;}catch(error){showErrorToast('Abandon impossible : '+error.message);return;}
       if(state.mode==='solo'){await openSolo();return;}
-      state={mode:'gm',pieces:freshPieces(),secretPieces:[],selected:'blueSmall',tool:'pieces',waveModeActive:false,previewWave:null,started:false,traces:[],coords:[],draftCells:{},gridId:null,gridAlias:null,attempts:0,over:false,result:null,startedAt:null,rank:null};clearDirectionChoicesTimer();selectedWaveEdge=null;localStorage.removeItem(SAVE_KEY);render();
+      state={mode:'gm',pieces:freshPieces(),secretPieces:[],selected:'blueSmall',tool:'pieces',waveModeActive:false,previewWave:null,started:false,traces:[],coords:[],draftCells:{},gridId:null,gridAlias:null,attempts:0,over:false,result:null,showGuess:true,showSecret:true,startedAt:null,rank:null};clearDirectionChoicesTimer();selectedWaveEdge=null;localStorage.removeItem(SAVE_KEY);render();
     });
     byId('streetHistoryToggle').addEventListener('click',()=>toggleHistory());
     byId('streetHint').addEventListener('click',()=>{state.tool=state.tool==='hint'?'pieces':'hint';clearDirectionChoicesTimer();selectedWaveEdge=null;render();});
     byId('streetDraft').addEventListener('click',()=>{state.tool=state.tool==='draft'?'pieces':'draft';clearDirectionChoicesTimer();selectedWaveEdge=null;render();});
     byId('streetShowWave').addEventListener('click',()=>{state.waveModeActive=!state.waveModeActive;if(!state.waveModeActive)state.previewWave=null;clearDirectionChoicesTimer();selectedWaveEdge=null;render();});
+    byId('streetToggleGuess').addEventListener('click',()=>{state.showGuess=state.showGuess===false;render();});
+    byId('streetToggleSecret').addEventListener('click',()=>{state.showSecret=state.showSecret===false;render();});
     byId('streetWavePreference').addEventListener('change',event=>{
       wavePreference=event.target.value;clearDirectionChoicesTimer();selectedWaveEdge=null;render();
       if(currentPlayerAccount?.session_token)void supabaseRpc('orapa_set_street_preferences',{p_session_token:currentPlayerAccount.session_token,p_wave_controls:wavePreference}).then(()=>showToast('Préférence Street enregistrée')).catch(error=>showErrorToast('Enregistrement impossible : '+error.message));
@@ -999,7 +1026,7 @@
     if(!currentPlayerAccount){byId('createModeModal')?.classList.remove('open');openAccountModal();return;}
     byId('createModeModal')?.classList.remove('open');
     await loadStreetPreference();
-    state={mode:'gm',pieces:freshPieces(),secretPieces:[],selected:'blueSmall',tool:'pieces',waveModeActive:false,previewWave:null,started:false,traces:[],coords:[],draftCells:{},gridId:null,gridAlias:null,attempts:0,over:false,result:null,startedAt:null,rank:null};load();
+    state={mode:'gm',pieces:freshPieces(),secretPieces:[],selected:'blueSmall',tool:'pieces',waveModeActive:false,previewWave:null,started:false,traces:[],coords:[],draftCells:{},gridId:null,gridAlias:null,attempts:0,over:false,result:null,showGuess:true,showSecret:true,startedAt:null,rank:null};load();
     byId('streetPrototype').querySelector('.subtitle').textContent='Console du maître du jeu';
     byId('streetPrototype').hidden=false;document.body.classList.add('street-open');document.body.classList.remove('home-view');toggleHistory(false);render();
   }
@@ -1019,7 +1046,7 @@
     const start=resumeAttempt?{ok:true,attempt:resumeAttempt,resumed:true}:await prepareNewActiveAttempt(target,true);
     if(!start?.ok){if(start?.reason==='already_played')showErrorToast('Cette grille Street a déjà été jouée avec ce compte.');else if(start?.resume&&start.attempt)await resumeServerAttempt(start.attempt);return false;}
     streetAttempt=start.attempt;
-    state={mode:'solo',pieces:freshPieces(),secretPieces:decoded.pieces.map(piece=>({...piece,anchor:{...piece.anchor}})),selected:'blueSmall',tool:'pieces',waveModeActive:false,previewWave:null,started:true,traces:[],coords:[],draftCells:{},gridId:decoded.id,gridAlias,attempts:0,over:false,result:null,startedAt:null,rank:null};
+    state={mode:'solo',pieces:freshPieces(),secretPieces:decoded.pieces.map(piece=>({...piece,anchor:{...piece.anchor}})),selected:'blueSmall',tool:'pieces',waveModeActive:false,previewWave:null,started:true,traces:[],coords:[],draftCells:{},gridId:decoded.id,gridAlias,attempts:0,over:false,result:null,showGuess:true,showSecret:true,startedAt:null,rank:null};
     if(start.resumed)restoreStreetProgress(start.attempt?.progress);
     byId('soloChoiceModal')?.classList.remove('open');document.body.classList.remove('solo-menu-open');
     byId('streetPrototype').querySelector('.subtitle').textContent='Grille classique';
