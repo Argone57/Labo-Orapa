@@ -161,8 +161,9 @@
       return [add(wall[0],mul(direction,-EDGE*.24)),wall[1]];
     });
   }
-  function visualWallPolygonsFor(geometry){
-    return visualWallsFor(geometry).map((wall,index)=>{
+  function visualWallPolygonsFor(geometry,extendIntoPiece=true){
+    const walls=extendIntoPiece?visualWallsFor(geometry):geometry.walls;
+    return walls.map((wall,index)=>{
       const direction=norm(sub(wall[1],wall[0]));
       let normal={x:-direction.y,y:direction.x};
       const half=STREET_WALL_WIDTH/2;
@@ -744,12 +745,14 @@
       const group=svgEl('g',{class:`street-piece${resultClass}${display==='normal'&&state.selected===piece.id?' selected':''}${display==='normal'&&state.mode!=='solo'&&issues.has(piece.id)?' invalid':''}`,'data-piece':piece.id,style:display==='guess'?`--street-piece-color:${color}`:''});
       const attrs={points:pointsAttr(geo.poly),fill:display==='guess'?'none':color};
       if(display==='guess')Object.assign(attrs,{stroke:color,'stroke-width':2.2,'vector-effect':'non-scaling-stroke'});
-      group.appendChild(svgEl('polygon',attrs));
-      visualWallPolygonsFor(geo).forEach(wall=>{
+      const body=svgEl('polygon',attrs);
+      if(display!=='guess')group.appendChild(body);
+      visualWallPolygonsFor(geo,display!=='guess').forEach(wall=>{
         const wallAttrs={points:pointsAttr(wall),fill:display==='guess'?'none':color,class:'street-wall'};
         if(display==='guess')Object.assign(wallAttrs,{stroke:color,'stroke-width':2.2,'vector-effect':'non-scaling-stroke'});
         group.appendChild(svgEl('polygon',wallAttrs));
       });
+      if(display==='guess')group.appendChild(body);
       if(display==='normal')attachPieceGesture(group,piece);
       svg.appendChild(group);
     };
@@ -1075,7 +1078,7 @@
     byId('soloChoiceModal')?.classList.remove('open');document.body.classList.remove('solo-menu-open');
     byId('streetPrototype').querySelector('.subtitle').textContent='Aperçu local du résultat';
     byId('streetPrototype').hidden=false;document.body.classList.add('street-open');document.body.classList.remove('home-view');toggleHistory(false);render();
-    ensureStreetModal();byId('streetResultActions').dataset.orapaMyludoResult='false';openStreetResultModal();
+    ensureStreetModal();byId('streetResultActions').dataset.orapaMyludoResult='false';byId('streetResultModal').classList.remove('open');
   }
 
   document.addEventListener('orapa:myludo-request',async()=>{
