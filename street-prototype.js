@@ -895,14 +895,19 @@
     byId('streetResultRanking').onclick=()=>openStreetRanking(state.gridId);
     return backdrop;
   }
-  async function openStreetRanking(gridId){
-    return openGridRanking(gridId,false,false);
+  async function openStreetRanking(gridId,returnToAccount=false){
+    return openGridRanking(gridId,returnToAccount,false);
   }
   function openStreetRowsModal(title,rows,empty='Aucune partie enregistrée.'){
     let modal=byId('streetRowsModal');if(!modal){modal=document.createElement('div');modal.id='streetRowsModal';modal.className='modal-backdrop';document.body.appendChild(modal);}
     modal.innerHTML=`<div class="modal"><button class="close-x" id="streetRowsClose">×</button><h2>${title}</h2><div class="ranking-list">${rows.length?rows.map((row,index)=>`<button class="ranking-row street-row-open" data-index="${index}" style="width:100%;text-align:left"><span>${row.player_name?escapeHtml(row.player_name):`<b>${escapeHtml(publicGridId(row.grid_id))}</b>`}</span><span>${row.success===undefined?`${row.participation_count||0} 👥`:`${row.success?'✅':'❌'} ${row.cost} pts · ${formatDuration(row.time_ms)}`}</span></button>`).join(''):`<div class="history-empty">${empty}</div>`}</div></div>`;
     byId('streetRowsClose').onclick=()=>modal.classList.remove('open');
-    modal.querySelectorAll('.street-row-open').forEach(button=>button.onclick=()=>{const row=rows[Number(button.dataset.index)];if(row.grid_id)openStreetRanking(row.grid_id);});
+    modal.querySelectorAll('.street-row-open').forEach(button=>button.onclick=()=>{
+      const row=rows[Number(button.dataset.index)];if(!row.grid_id)return;
+      const fromAccountList=byId('gridDataModal')?.classList.contains('open');
+      modal.classList.remove('open');
+      openStreetRanking(row.grid_id,fromAccountList);
+    });
     modal.classList.add('open');
   }
   async function openStreetGlobalHistory(){selectGridHistoryMode('street');byId('rankingsModal')?.classList.add('open');}
