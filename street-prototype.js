@@ -945,7 +945,7 @@
     state.attempts++;
     await recordStreetAction('proposal');
     if(state.attempts>=2){await finishStreetAttempt(false);return;}
-    render();showErrorToast('Solution incorrecte. Il te reste une proposition.');
+    render();setTimeout(openIncorrectSolutionModal,60);
   }
   async function loadStreetPreference(){
     if(!currentPlayerAccount?.session_token)return;
@@ -965,9 +965,15 @@
     byId('streetRandom').hidden=!preStart;
     byId('streetShare').hidden=!preStart;
     byId('streetStart').hidden=!preStart;
-    byId('streetEnd').hidden=preStart||state.over||state.mode!=='solo';
-    byId('streetEnd').textContent=state.attempts?'Proposer une seconde solution':'Proposer une solution';
-    byId('streetEnd').disabled=state.mode==='solo'&&!complete;
+    const streetEnd=byId('streetEnd');
+    const showAttemptCounter=state.mode==='solo'&&state.started&&!state.over;
+    streetEnd.hidden=preStart||state.over||state.mode!=='solo';
+    streetEnd.classList.toggle('has-attempt-counter',showAttemptCounter);
+    if(showAttemptCounter){
+      const remaining=Math.max(1,2-(Number(state.attempts)||0));
+      streetEnd.innerHTML=`<span>✅ Proposer une solution</span><span class="attempt-counter${remaining===1?' last':''}" aria-label="${remaining} proposition${remaining>1?'s':''} restante${remaining>1?'s':''}" title="Propositions restantes">${remaining} essai${remaining>1?'s':''}</span>`;
+    }else streetEnd.textContent='Proposer une solution';
+    streetEnd.disabled=state.mode==='solo'&&!complete;
     byId('streetStart').disabled=!complete;
     byId('streetShare').disabled=!complete;
     byId('streetPaletteTitle').style.display=showPalette?'flex':'none';
