@@ -827,12 +827,7 @@
   function historyDirectionArrow(edge,directionIndex){
     const direction=edge?.directions?.[directionIndex];if(!direction)return '';
     const angle=Math.atan2(direction.y,direction.x)*180/Math.PI;
-    if(angle>=-30&&angle<30)return '🡺';
-    if(angle>=30&&angle<90)return '🡾';
-    if(angle>=90&&angle<150)return '🡿';
-    if(angle>=150||angle<-150)return '🡸';
-    if(angle>=-150&&angle<-90)return '🡼';
-    return '🡽';
+    return `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4" transform="rotate(${angle} 8 8)"/></svg>`;
   }
   function historyEndpoint(edge,directionIndex){
     return `<b>${edge.label} <span class="street-history-arrow">${historyDirectionArrow(edge,directionIndex)}</span></b>`;
@@ -897,9 +892,10 @@
     if(!success)state.pieces=state.secretPieces.map(piece=>({...piece,anchor:{...piece.anchor}}));
     const cost=state.traces.length+state.coords.length*3,time=elapsedMs();
     let submitted=null;
+    const closingAttempt=streetAttempt;
     try{
       submitted=await supabaseRpc('orapa_submit_street_grid_score',{p_grid_id:state.gridId,p_session_token:currentPlayerAccount.session_token,p_success:success,p_cost:cost,p_ray_count:state.traces.length,p_coord_count:state.coords.length,p_time_ms:time,p_first_try:success&&state.attempts===0});
-      if(streetAttempt?.attempt_id)await supabaseRpc('orapa_finish_active_attempt',{p_session_token:currentPlayerAccount.session_token,p_attempt_id:streetAttempt.attempt_id});
+      if(activeAttempt?.attempt_id===closingAttempt?.attempt_id)activeAttempt=null;
       streetAttempt=null;state.rank=Number(submitted?.rank)||null;
     }catch(error){showErrorToast(`Enregistrement Street impossible : ${error.message}`);}
     render();
@@ -983,7 +979,7 @@
     byId('streetShare').addEventListener('click',()=>void shareStreet());
     byId('streetReset').addEventListener('click',async()=>{
       if(!confirm(state.mode==='solo'?'Abandonner cette partie et recommencer ?':'Effacer tous les placements et l’historique Street ?'))return;
-      if(state.mode==='solo'&&streetAttempt?.attempt_id)try{await supabaseRpc('orapa_abandon_street_attempt',{p_session_token:currentPlayerAccount.session_token,p_attempt_id:streetAttempt.attempt_id});streetAttempt=null;}catch(error){showErrorToast('Abandon impossible : '+error.message);return;}
+      if(state.mode==='solo'&&streetAttempt?.attempt_id)try{const abandonedAttempt=streetAttempt;await supabaseRpc('orapa_abandon_street_attempt',{p_session_token:currentPlayerAccount.session_token,p_attempt_id:abandonedAttempt.attempt_id});if(activeAttempt?.attempt_id===abandonedAttempt.attempt_id)activeAttempt=null;streetAttempt=null;}catch(error){showErrorToast('Abandon impossible : '+error.message);return;}
       if(state.mode==='solo'){await openSolo();return;}
       state={mode:'gm',pieces:freshPieces(),secretPieces:[],selected:'blueSmall',tool:'pieces',waveModeActive:false,previewWave:null,started:false,traces:[],coords:[],draftCells:{},gridId:null,gridAlias:null,attempts:0,over:false,result:null,startedAt:null,rank:null};clearDirectionChoicesTimer();selectedWaveEdge=null;localStorage.removeItem(SAVE_KEY);render();
     });
@@ -1021,7 +1017,7 @@
     const gridAlias=await ensureGridAlias(decoded.id,'street');
     const target={kind:'street',reference:decoded.id,context:{},progress:{}};
     const start=resumeAttempt?{ok:true,attempt:resumeAttempt,resumed:true}:await prepareNewActiveAttempt(target,true);
-    if(!start?.ok){if(start?.reason==='already_played')showErrorToast('Cette grille Street a déjà été jouée avec ce compte.');return false;}
+    if(!start?.ok){if(start?.reason==='already_played')showErrorToast('Cette grille Street a déjà été jouée avec ce compte.');else if(start?.resume&&start.attempt)await resumeServerAttempt(start.attempt);return false;}
     streetAttempt=start.attempt;
     state={mode:'solo',pieces:freshPieces(),secretPieces:decoded.pieces.map(piece=>({...piece,anchor:{...piece.anchor}})),selected:'blueSmall',tool:'pieces',waveModeActive:false,previewWave:null,started:true,traces:[],coords:[],draftCells:{},gridId:decoded.id,gridAlias,attempts:0,over:false,result:null,startedAt:null,rank:null};
     if(start.resumed)restoreStreetProgress(start.attempt?.progress);

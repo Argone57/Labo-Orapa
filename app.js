@@ -395,12 +395,12 @@ function markLocalAttemptAbandoned(){
 }
 async function prepareNewActiveAttempt(target,ranked=true){
   if(!currentPlayerAccount?.session_token)return {ok:false};
-  let current=activeAttempt;
-  if(!current)try{current=await fetchActiveAttempt();}catch(error){showErrorToast('Impossible de vérifier la partie en cours. Vérifie ta connexion puis réessaie.');return {ok:false};}
+  let current=null;
+  try{current=await fetchActiveAttempt();}catch(error){showErrorToast('Impossible de vérifier la partie en cours. Vérifie ta connexion puis réessaie.');return {ok:false};}
   if(current&&!attemptMatches(target,current)){
     const currentIsDisplayed=attemptMatches({kind:attemptKindForState(),reference:attemptReferenceForState()},current);
     const choice=await activeAttemptChoice(`Une partie ${activeAttemptSentenceLabel(current)} est en cours. Celle-ci sera perdue si vous démarrez une nouvelle grille.`);
-    if(choice!=='abandon')return {ok:false,resume:true};
+    if(choice!=='abandon')return {ok:false,resume:choice==='continue',attempt:current};
     try{if(!await abandonServerAttempt(current))return {ok:false};}
     catch(error){showErrorToast('Impossible d’abandonner la partie en cours. Vérifie ta connexion puis réessaie.');return {ok:false};}
     if(currentIsDisplayed)markLocalAttemptAbandoned();
@@ -3071,7 +3071,7 @@ async function startSoloGame(explicitId,creatorRetry=0){
   const gridAlias=await ensureGridAlias(gridId,'classic');
   const unrankedReason=gridStatus?.creator_protected?'creator_protected':(gridStatus?.already_played?'already_played':null);
   const attemptStart=await prepareNewActiveAttempt({kind:'classic',reference:gridId,context:{}},!unrankedReason);
-  if(!attemptStart.ok){if(explicitId)Object.assign(state,previousOptions);return;}
+  if(!attemptStart.ok){if(explicitId)Object.assign(state,previousOptions);if(attemptStart.resume&&attemptStart.attempt)await resumeServerAttempt(attemptStart.attempt);return;}
   setHintMode(false);
   state.mode = 'solo';
   state.gameVariant='classic';state.missingType=null;state.selectedMissingType=null;state.placementBonus=false;
@@ -3141,7 +3141,7 @@ async function startSpaceSoloGame(explicitId,creatorRetry=0){
   }
   const gridAlias=await ensureGridAlias(gridId,'space');
   const attemptStart=await prepareNewActiveAttempt({kind:'space',reference:gridId,context:{has_black_hole:!!state.includeBlackHole,has_wormhole:!!state.includeWormhole}},!status?.already_played);
-  if(!attemptStart.ok){state.gameVariant=previousVariant;state.includeBlackHole=previousBlackHole;state.includeWormhole=previousWormhole;return;}
+  if(!attemptStart.ok){state.gameVariant=previousVariant;state.includeBlackHole=previousBlackHole;state.includeWormhole=previousWormhole;if(attemptStart.resume&&attemptStart.attempt)await resumeServerAttempt(attemptStart.attempt);return;}
   setHintMode(false);
   Object.assign(state,{mode:'solo',gameVariant:'space',started:false,secretPieces:secret,pieces:spaceTypes().map(type=>newPiece(type)),gridId,gridAlias,gridRanked:!status?.already_played,gridUnrankedReason:status?.already_played?'already_played':null,soloAttempts:0,soloOver:false,soloResult:null,soloShowGuess:true,soloShowSecret:true,moveCost:0,firstActionTime:null,finalTimeMs:null,rayCount:0,coordCount:0,isDaily:false,dailyDate:null,history:[],labelColor:{top:{},bottom:{},left:{},right:{}},labelBounce:{top:{},bottom:{},left:{},right:{}},labelPair:{top:{},bottom:{},left:{},right:{}},labelPartner:{top:{},bottom:{},left:{},right:{}},labelExitMarker:{top:{},bottom:{},left:{},right:{}},cellUsed:{},traces:[],emptyMarks:[],occupiedMarks:[],coordDots:[],draftEmptyCells:{}});
   resetHistoryDisclosure();
@@ -3175,7 +3175,7 @@ async function startEarthSkySoloGame(explicitId=null,creatorRetry=0){
   }
   const gridAlias=await ensureGridAlias(gridId,'earthSky');
   const attemptStart=await prepareNewActiveAttempt({kind:'earthSky',reference:gridId,context:{mine_on_top:state.earthSkyMineOnTop!==false,option_flags:earthSkyOptionFlags()}},!status?.already_played);
-  if(!attemptStart.ok){Object.assign(state,{gameVariant:previous.variant,earthSkyMineOnTop:previous.mineOnTop});return;}
+  if(!attemptStart.ok){Object.assign(state,{gameVariant:previous.variant,earthSkyMineOnTop:previous.mineOnTop});if(attemptStart.resume&&attemptStart.attempt)await resumeServerAttempt(attemptStart.attempt);return;}
   setHintMode(false);
   Object.assign(state,{mode:'solo',gameVariant:'earthSky',started:false,secretPieces:secret,pieces:earthSkyTypes().map(type=>newPiece(type)),gridId,gridAlias,gridRanked:!status?.already_played,gridUnrankedReason:status?.already_played?'already_played':null,soloAttempts:0,soloOver:false,soloResult:null,soloShowGuess:true,soloShowSecret:true,moveCost:0,firstActionTime:null,finalTimeMs:null,rayCount:0,coordCount:0,isDaily:false,dailyDate:null,history:[],labelColor:{top:{},bottom:{},left:{},right:{}},labelBounce:{top:{},bottom:{},left:{},right:{}},labelPair:{top:{},bottom:{},left:{},right:{}},labelPartner:{top:{},bottom:{},left:{},right:{}},labelExitMarker:{top:{},bottom:{},left:{},right:{}},cellUsed:{},traces:[],emptyMarks:[],occupiedMarks:[],coordDots:[],draftEmptyCells:{}});
   resetHistoryDisclosure();
@@ -3213,7 +3213,7 @@ async function startLostGame(explicitId=null,creatorRetry=0){
   }
   const gridAlias=await ensureGridAlias(gridId,'lost');
   const attemptStart=await prepareNewActiveAttempt({kind:'lost',reference:gridId,context:{}},!gridStatus?.already_played);
-  if(!attemptStart.ok){restorePrevious();return;}
+  if(!attemptStart.ok){restorePrevious();if(attemptStart.resume&&attemptStart.attempt)await resumeServerAttempt(attemptStart.attempt);return;}
   setHintMode(false);
   state.mode='solo';state.gameVariant='lost';state.started=false;state.includeGray=true;state.includeOnyx=true;state.includeSapphire=true;
   state.secretPieces=secret;state.pieces=TYPE_ORDER.map(type=>newPiece(type));state.missingType=missingType;state.selectedMissingType=null;state.placementBonus=false;
@@ -3299,6 +3299,7 @@ async function startDailyChallenge(resumeAttempt=null){
       const status=await refreshDailyStatusFromSupabase(true);
       openCompletedDailyStatus(status);
     }else if(attemptStart.reason==='triforce_required')openTriforcePrerequisiteModal(false);
+    else if(attemptStart.resume&&attemptStart.attempt)await resumeServerAttempt(attemptStart.attempt);
     return;
   }
   setHintMode(false);
@@ -3355,6 +3356,7 @@ async function startDailyLabChallenge(resumeAttempt=null){
   if(!attemptStart.ok){
     if(attemptStart.reason==='already_played')openCompletedDailyStatus(await refreshDailyStatusFromSupabase(true,'remix'));
     else if(attemptStart.reason==='remix_prerequisites_required')openDailyRemixPrerequisiteModal(false);
+    else if(attemptStart.resume&&attemptStart.attempt)await resumeServerAttempt(attemptStart.attempt);
     return attemptStart;
   }
   setHintMode(false);
@@ -4718,6 +4720,13 @@ function shapeIconSVG(type, size){
   size = size||22;
   if(type==='spaceBlackHole')return `<svg class="mix-icon" width="${size}" height="${size}" viewBox="0 0 24 24" aria-label="Trou noir"><circle cx="12" cy="12" r="9" fill="#050407" stroke="#8d6ec4" stroke-width="2"/><circle cx="12" cy="12" r="4" fill="#000" stroke="#6caed6" stroke-width="1.5"/></svg>`;
   if(type==='spaceWormhole')return `<svg class="mix-icon" width="${size}" height="${size}" viewBox="0 0 24 24" aria-label="Trou de ver"><circle cx="12" cy="12" r="9" fill="#08060c" stroke="#8d6ec4" stroke-width="2"/><circle cx="12" cy="12" r="5.5" fill="none" stroke="#75b6db" stroke-width="1.5"/><circle cx="12" cy="12" r="2" fill="#111827"/></svg>`;
+  if(type==='spaceRing'){
+    const parts=spaceRingVisualParts();
+    const points=parts.flat();
+    const xs=points.map(point=>point[0]),ys=points.map(point=>point[1]),pad=.2;
+    const minX=Math.min(...xs),maxX=Math.max(...xs),minY=Math.min(...ys),maxY=Math.max(...ys);
+    return `<svg class="mix-icon" width="${size}" height="${size}" viewBox="${minX-pad} ${minY-pad} ${(maxX-minX)+2*pad} ${(maxY-minY)+2*pad}" aria-label="Planète annulaire blanche">${parts.map(part=>`<polygon points="${part.map(point=>point.join(',')).join(' ')}" fill="#f5f1e8"/>`).join('')}</svg>`;
+  }
   const shape = SHAPES[type];
   const pts = shape.pts.map(v=> transformVertex(v,false,0,{x:0,y:0}));
   const xs=pts.map(p=>p.x), ys=pts.map(p=>p.y);
