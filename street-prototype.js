@@ -19,7 +19,6 @@
   };
   const STREET_TRANSPARENT={name:'Transparent',hex:'#8a93a3'};
   const LABELS=['5','6','7','8','9','10','11','12','13','14','N','M','L','K','J','I','H','G','F','E','D','C','B','A','1','2','3','4'];
-  const SAVE_KEY='orapa_street_creation_v3';
   const EPS=1e-6;
 
   const PIECES=[
@@ -410,15 +409,6 @@
     },2000);
   }
 
-  function load(){
-    try{
-      const saved=JSON.parse(localStorage.getItem(SAVE_KEY)||'null');
-      if(saved?.pieces?.length===PIECES.length)state={...state,...saved,traces:[],coords:[]};
-    }catch(_error){}
-  }
-  function save(){
-    try{localStorage.setItem(SAVE_KEY,JSON.stringify({...state,traces:[],coords:[]}));}catch(_error){}
-  }
   function shuffled(items){
     const result=[...items];
     for(let i=result.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[result[i],result[j]]=[result[j],result[i]];}
@@ -1002,7 +992,6 @@
     else if(issues.size)setMessage([...new Set(issues.values())][0],true);
     else if(placed<PIECES.length)setMessage('Place toutes les pièces avant de démarrer.',true);
     else setMessage('');
-    if(state.mode==='gm')save();
   }
   function bind(){
     const create=byId('createStreetMode');
@@ -1017,7 +1006,7 @@
       if(!confirm(state.mode==='solo'?'Abandonner cette partie et recommencer ?':'Effacer tous les placements et l’historique Street ?'))return;
       if(state.mode==='solo'&&streetAttempt?.attempt_id)try{const abandonedAttempt=streetAttempt;await supabaseRpc('orapa_abandon_street_attempt',{p_session_token:currentPlayerAccount.session_token,p_attempt_id:abandonedAttempt.attempt_id});if(activeAttempt?.attempt_id===abandonedAttempt.attempt_id)activeAttempt=null;streetAttempt=null;}catch(error){showErrorToast('Abandon impossible : '+error.message);return;}
       if(state.mode==='solo'){await openSolo();return;}
-      state={mode:'gm',pieces:freshPieces(),secretPieces:[],selected:'blueSmall',tool:'pieces',waveModeActive:false,previewWave:null,started:false,traces:[],coords:[],draftCells:{},gridId:null,gridAlias:null,attempts:0,over:false,result:null,showGuess:true,showSecret:true,startedAt:null,rank:null};clearDirectionChoicesTimer();selectedWaveEdge=null;localStorage.removeItem(SAVE_KEY);render();
+      state={mode:'gm',pieces:freshPieces(),secretPieces:[],selected:'blueSmall',tool:'pieces',waveModeActive:false,previewWave:null,started:false,traces:[],coords:[],draftCells:{},gridId:null,gridAlias:null,attempts:0,over:false,result:null,showGuess:true,showSecret:true,startedAt:null,rank:null};clearDirectionChoicesTimer();selectedWaveEdge=null;render();
     });
     byId('streetHistoryToggle').addEventListener('click',()=>toggleHistory());
     byId('streetHint').addEventListener('click',()=>{state.tool=state.tool==='hint'?'pieces':'hint';clearDirectionChoicesTimer();selectedWaveEdge=null;render();});
@@ -1037,7 +1026,8 @@
     if(!currentPlayerAccount){byId('createModeModal')?.classList.remove('open');openAccountModal();return;}
     byId('createModeModal')?.classList.remove('open');
     await loadStreetPreference();
-    state={mode:'gm',pieces:freshPieces(),secretPieces:[],selected:'blueSmall',tool:'pieces',waveModeActive:false,previewWave:null,started:false,traces:[],coords:[],draftCells:{},gridId:null,gridAlias:null,attempts:0,over:false,result:null,showGuess:true,showSecret:true,startedAt:null,rank:null};load();
+    try{localStorage.removeItem('orapa_street_creation_v3');}catch(_error){}
+    state={mode:'gm',pieces:freshPieces(),secretPieces:[],selected:'blueSmall',tool:'pieces',waveModeActive:false,previewWave:null,started:false,traces:[],coords:[],draftCells:{},gridId:null,gridAlias:null,attempts:0,over:false,result:null,showGuess:true,showSecret:true,startedAt:null,rank:null};
     byId('streetPrototype').querySelector('.subtitle').textContent='Console du maître du jeu';
     byId('streetPrototype').hidden=false;document.body.classList.add('street-open');document.body.classList.remove('home-view');toggleHistory(false);render();
   }
