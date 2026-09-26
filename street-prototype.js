@@ -388,7 +388,7 @@
   }
 
   const freshPieces=()=>PIECES.map(def=>({id:def.id,anchor:null,rotation:0,flipped:false}));
-  let state={mode:'gm',pieces:freshPieces(),secretPieces:[],selected:'blueSmall',tool:'pieces',waveModeActive:false,previewWave:null,started:false,traces:[],coords:[],draftCells:{},gridId:null,gridAlias:null,attempts:0,over:false,result:null,showGuess:true,showSecret:true,startedAt:null,rank:null};
+  let state={mode:'gm',pieces:freshPieces(),secretPieces:[],selected:'blueSmall',tool:'pieces',waveModeActive:false,previewWave:null,started:false,traces:[],coords:[],draftCells:{},gridId:null,gridAlias:null,attempts:0,over:false,result:null,showGuess:true,showSecret:true,startedAt:null,finalTimeMs:null,rank:null};
   let wavePreference='auto';
   let streetAttempt=null;
   let streetSync=Promise.resolve();
@@ -885,6 +885,17 @@
     byId('streetResultRanking').onclick=()=>openStreetRanking(state.gridId);
     return backdrop;
   }
+  function openStreetResultModal(){
+    if(state.mode!=='solo'||!state.over)return;
+    const success=state.result==='win',time=Number.isFinite(state.finalTimeMs)?state.finalTimeMs:elapsedMs(),cost=state.traces.length+state.coords.length*3;
+    const modal=ensureStreetModal();
+    byId('streetResultTitle').textContent=success?'🏆 Victoire !':'💥 Défaite';
+    byId('streetResultMessage').textContent=success?'Tu as retrouvé la disposition exacte des sept pièces !':'La seconde proposition est incorrecte : la grille secrète est révélée.';
+    byId('streetResultScore').textContent=`${cost} pts (${state.traces.length}🔦 + ${state.coords.length}📍) · ${formatDuration(time)}`;
+    byId('streetResultRank').textContent=state.rank?`Classé #${state.rank} dans le classement de cette grille`:'';
+    byId('streetResultId').textContent=publicGridId(state.gridId);
+    modal.classList.add('open');
+  }
   async function openStreetRanking(gridId,returnToAccount=false){
     return openGridRanking(gridId,returnToAccount,false);
   }
@@ -906,7 +917,7 @@
   async function openMySharedStreet(){try{const rows=await supabaseRpc('orapa_my_shared_street_grids',{p_session_token:currentPlayerAccount.session_token,p_limit:100,p_offset:0});openStreetRowsModal('🏠 Mes grilles Street partagées',rows||[],'Aucune grille Street partagée.');}catch(error){showErrorToast(error.message);}}
   async function finishStreetAttempt(success){
     state.over=true;state.result=success?'win':'lose';
-    const cost=state.traces.length+state.coords.length*3,time=elapsedMs();
+    const cost=state.traces.length+state.coords.length*3,time=elapsedMs();state.finalTimeMs=time;
     let submitted=null;
     const closingAttempt=streetAttempt;
     try{
@@ -915,14 +926,9 @@
       streetAttempt=null;state.rank=Number(submitted?.rank)||null;
     }catch(error){showErrorToast(`Enregistrement Street impossible : ${error.message}`);}
     render();
-    const modal=ensureStreetModal();
-    byId('streetResultTitle').textContent=success?'🏆 Victoire !':'💥 Défaite';
-    byId('streetResultMessage').textContent=success?'Tu as retrouvé la disposition exacte des sept pièces !':'La seconde proposition est incorrecte : la grille secrète est révélée.';
-    byId('streetResultScore').textContent=`${cost} pts (${state.traces.length}🔦 + ${state.coords.length}📍) · ${formatDuration(time)}`;
-    byId('streetResultRank').textContent=state.rank?`Classé #${state.rank} dans le classement de cette grille`:'';
-    byId('streetResultId').textContent=publicGridId(state.gridId);
+    ensureStreetModal();
     byId('streetResultActions').dataset.orapaMyludoResult=submitted?.accepted===false?'false':'true';
-    modal.classList.add('open');
+    openStreetResultModal();
   }
   async function proposeStreetSolution(){
     if(state.mode!=='solo'||state.over||state.pieces.some(piece=>!piece.anchor)||validatePieces(state.pieces,true).size)return;
@@ -1006,7 +1012,7 @@
       if(!confirm(state.mode==='solo'?'Abandonner cette partie et recommencer ?':'Effacer tous les placements et l’historique Street ?'))return;
       if(state.mode==='solo'&&streetAttempt?.attempt_id)try{const abandonedAttempt=streetAttempt;await supabaseRpc('orapa_abandon_street_attempt',{p_session_token:currentPlayerAccount.session_token,p_attempt_id:abandonedAttempt.attempt_id});if(activeAttempt?.attempt_id===abandonedAttempt.attempt_id)activeAttempt=null;streetAttempt=null;}catch(error){showErrorToast('Abandon impossible : '+error.message);return;}
       if(state.mode==='solo'){await openSolo();return;}
-      state={mode:'gm',pieces:freshPieces(),secretPieces:[],selected:'blueSmall',tool:'pieces',waveModeActive:false,previewWave:null,started:false,traces:[],coords:[],draftCells:{},gridId:null,gridAlias:null,attempts:0,over:false,result:null,showGuess:true,showSecret:true,startedAt:null,rank:null};clearDirectionChoicesTimer();selectedWaveEdge=null;render();
+      state={mode:'gm',pieces:freshPieces(),secretPieces:[],selected:'blueSmall',tool:'pieces',waveModeActive:false,previewWave:null,started:false,traces:[],coords:[],draftCells:{},gridId:null,gridAlias:null,attempts:0,over:false,result:null,showGuess:true,showSecret:true,startedAt:null,finalTimeMs:null,rank:null};clearDirectionChoicesTimer();selectedWaveEdge=null;render();
     });
     byId('streetHistoryToggle').addEventListener('click',()=>toggleHistory());
     byId('streetHint').addEventListener('click',()=>{state.tool=state.tool==='hint'?'pieces':'hint';clearDirectionChoicesTimer();selectedWaveEdge=null;render();});
@@ -1014,6 +1020,7 @@
     byId('streetShowWave').addEventListener('click',()=>{state.waveModeActive=!state.waveModeActive;if(!state.waveModeActive)state.previewWave=null;clearDirectionChoicesTimer();selectedWaveEdge=null;render();});
     byId('streetToggleGuess').addEventListener('click',()=>{state.showGuess=state.showGuess===false;render();});
     byId('streetToggleSecret').addEventListener('click',()=>{state.showSecret=state.showSecret===false;render();});
+    byId('streetReplayResult').addEventListener('click',openStreetResultModal);
     byId('streetWavePreference').addEventListener('change',event=>{
       wavePreference=event.target.value;clearDirectionChoicesTimer();selectedWaveEdge=null;render();
       if(currentPlayerAccount?.session_token)void supabaseRpc('orapa_set_street_preferences',{p_session_token:currentPlayerAccount.session_token,p_wave_controls:wavePreference}).then(()=>showToast('Préférence Street enregistrée')).catch(error=>showErrorToast('Enregistrement impossible : '+error.message));
@@ -1027,7 +1034,7 @@
     byId('createModeModal')?.classList.remove('open');
     await loadStreetPreference();
     try{localStorage.removeItem('orapa_street_creation_v3');}catch(_error){}
-    state={mode:'gm',pieces:freshPieces(),secretPieces:[],selected:'blueSmall',tool:'pieces',waveModeActive:false,previewWave:null,started:false,traces:[],coords:[],draftCells:{},gridId:null,gridAlias:null,attempts:0,over:false,result:null,showGuess:true,showSecret:true,startedAt:null,rank:null};
+    state={mode:'gm',pieces:freshPieces(),secretPieces:[],selected:'blueSmall',tool:'pieces',waveModeActive:false,previewWave:null,started:false,traces:[],coords:[],draftCells:{},gridId:null,gridAlias:null,attempts:0,over:false,result:null,showGuess:true,showSecret:true,startedAt:null,finalTimeMs:null,rank:null};
     byId('streetPrototype').querySelector('.subtitle').textContent='Console du maître du jeu';
     byId('streetPrototype').hidden=false;document.body.classList.add('street-open');document.body.classList.remove('home-view');toggleHistory(false);render();
   }
@@ -1047,7 +1054,7 @@
     const start=resumeAttempt?{ok:true,attempt:resumeAttempt,resumed:true}:await prepareNewActiveAttempt(target,true);
     if(!start?.ok){if(start?.reason==='already_played')showErrorToast('Cette grille Street a déjà été jouée avec ce compte.');else if(start?.resume&&start.attempt)await resumeServerAttempt(start.attempt);return false;}
     streetAttempt=start.attempt;
-    state={mode:'solo',pieces:freshPieces(),secretPieces:decoded.pieces.map(piece=>({...piece,anchor:{...piece.anchor}})),selected:'blueSmall',tool:'pieces',waveModeActive:false,previewWave:null,started:true,traces:[],coords:[],draftCells:{},gridId:decoded.id,gridAlias,attempts:0,over:false,result:null,showGuess:true,showSecret:true,startedAt:null,rank:null};
+    state={mode:'solo',pieces:freshPieces(),secretPieces:decoded.pieces.map(piece=>({...piece,anchor:{...piece.anchor}})),selected:'blueSmall',tool:'pieces',waveModeActive:false,previewWave:null,started:true,traces:[],coords:[],draftCells:{},gridId:decoded.id,gridAlias,attempts:0,over:false,result:null,showGuess:true,showSecret:true,startedAt:null,finalTimeMs:null,rank:null};
     if(start.resumed)restoreStreetProgress(start.attempt?.progress);
     byId('soloChoiceModal')?.classList.remove('open');document.body.classList.remove('solo-menu-open');
     byId('streetPrototype').querySelector('.subtitle').textContent='Grille classique';
@@ -1058,6 +1065,19 @@
     clearDirectionChoicesTimer();selectedWaveEdge=null;byId('streetPrototype').hidden=true;document.body.classList.remove('street-open');document.body.classList.add('home-view');
   }
 
+  async function previewResult(reference){
+    let decoded=decodeStreetGrid(reference);
+    if(!decoded&&typeof resolveGridReference==='function')decoded=await resolveGridReference(reference);
+    if(decoded?.variant!=='street')throw new Error('Identifiant Street invalide.');
+    const clonePieces=()=>decoded.pieces.map(piece=>({...piece,anchor:piece.anchor?{...piece.anchor}:null}));
+    state={mode:'solo',pieces:clonePieces(),secretPieces:clonePieces(),selected:'blueSmall',tool:'pieces',waveModeActive:false,previewWave:null,started:true,traces:[],coords:[],draftCells:{},gridId:decoded.id,gridAlias:String(reference||''),attempts:0,over:true,result:'win',showGuess:true,showSecret:false,startedAt:Date.now(),finalTimeMs:0,rank:null};
+    streetAttempt=null;clearDirectionChoicesTimer();selectedWaveEdge=null;
+    byId('soloChoiceModal')?.classList.remove('open');document.body.classList.remove('solo-menu-open');
+    byId('streetPrototype').querySelector('.subtitle').textContent='Aperçu local du résultat';
+    byId('streetPrototype').hidden=false;document.body.classList.add('street-open');document.body.classList.remove('home-view');toggleHistory(false);render();
+    ensureStreetModal();byId('streetResultActions').dataset.orapaMyludoResult='false';openStreetResultModal();
+  }
+
   document.addEventListener('orapa:myludo-request',async()=>{
     if(state.mode!=='solo'||!state.over)return;
     let preferences={player_mode:'default',custom_player_name:'',fill_score:false,location_mode:'default',custom_location:'',exclude_from_statistics:false,auto_submit:false,duplicate_detection:true};
@@ -1065,6 +1085,6 @@
     const payload={schemaVersion:1,source:'orapa-mine',gameId:101482,gameVariant:'street',isDaily:false,dedupeReference:state.gridId,solo:true,online:true,win:state.result==='win',playerName:preferences.player_mode==='custom'?preferences.custom_player_name:'',resultPlayerName:currentPlayerAccount?.display_name||'',score:preferences.fill_score?(state.traces.length+state.coords.length*3):null,date:new Date().toISOString().slice(0,10),durationMinutes:Math.max(1,Math.round(elapsedMs()/60000)),location:preferences.location_mode==='custom'?preferences.custom_location:'Orapa-Mine',excludeFromStatistics:!!preferences.exclude_from_statistics,autoSubmit:!!preferences.auto_submit,duplicateDetection:preferences.duplicate_detection!==false,comment:streetSummary(),options:{}};
     document.dispatchEvent(new CustomEvent('orapa:myludo-result',{detail:JSON.stringify(payload)}));
   });
-  window.OrapaStreetPrototype={open:openCreation,openCreation,openSolo,resume:attempt=>openSolo(attempt.reference,attempt),close,decode:decodeStreetGrid,encode:encodeStreetGrid,openRanking:openStreetRanking,openGlobalHistory:openStreetGlobalHistory,openCatalog:openStreetCatalog,openMyHistory:openMyStreetHistory,openMyShared:openMySharedStreet,debug:{BOARD,LANES,PIECES,axialTransform,applyPieceMirror,pieceGeometry,visualWallsFor,visualWallPolygonsFor,snapPieceAnchor,coordinateForTriangle,traceRay,validatePieces}};
+  window.OrapaStreetPrototype={open:openCreation,openCreation,openSolo,resume:attempt=>openSolo(attempt.reference,attempt),close,decode:decodeStreetGrid,encode:encodeStreetGrid,openRanking:openStreetRanking,openGlobalHistory:openStreetGlobalHistory,openCatalog:openStreetCatalog,openMyHistory:openMyStreetHistory,openMyShared:openMySharedStreet,previewResult,debug:{BOARD,LANES,PIECES,axialTransform,applyPieceMirror,pieceGeometry,visualWallsFor,visualWallPolygonsFor,snapPieceAnchor,coordinateForTriangle,traceRay,validatePieces}};
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',bind);else bind();
 })();
