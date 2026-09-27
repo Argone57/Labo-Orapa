@@ -395,6 +395,8 @@
   let streetSync=Promise.resolve();
   let selectedWaveEdge=null;
   let directionChoicesHideTimer=null;
+  const DEFAULT_EXIT_TUNING={arrowSpacing:7,arrowTextSize:6,arrowDistance:5,arrowOutward:0,arrowAlong:0,caseTextSize:4.6,caseOutward:0,caseAlong:0};
+  let exitTuning={...DEFAULT_EXIT_TUNING};
   function resolvedWavePreference(){
     if(wavePreference!=='auto')return wavePreference;
     return window.matchMedia('(max-width: 640px)').matches?'choices':'arrows';
@@ -681,7 +683,10 @@
           const exitInfo=traceExitInfo(usedTrace,edgeIndex,directionIndex);
           if(exitInfo){
             const infoPos=caseExitInfoPosition(edge,box,direction,otherDirection);
-            const info=svgEl('text',{x:infoPos.x,y:infoPos.y,'text-anchor':infoPos.anchor,'dominant-baseline':'central',class:'street-label-exit-info'});info.textContent=exitInfo;labelGroup.appendChild(info);
+            const edgeTangent=norm(sub(edge.b,edge.a));
+            infoPos.x+=edge.outward.x*exitTuning.caseOutward+edgeTangent.x*exitTuning.caseAlong;
+            infoPos.y+=edge.outward.y*exitTuning.caseOutward+edgeTangent.y*exitTuning.caseAlong;
+            const info=svgEl('text',{x:infoPos.x,y:infoPos.y,'text-anchor':infoPos.anchor,'dominant-baseline':'central',class:'street-label-exit-info',style:`font-size:${exitTuning.caseTextSize}px`});info.textContent=exitInfo;labelGroup.appendChild(info);
           }
         });
         const hit=svgEl('rect',{x:box.left,y:box.top,width:32,height:26,rx:6,class:`street-label-hit${selectedWaveEdge===edgeIndex?' active':''}${state.started?'':' disabled'}`,'data-label-edge':edgeIndex});
@@ -705,7 +710,7 @@
       }
       if(!useDirectionChoices)edge.directions.forEach((direction,directionIndex)=>{
         const side=dot(direction,tangent)<0?-1:1;
-        const pos=add(add(edge.mid,mul(edge.outward,10)),mul(tangent,side*10));
+        const pos=add(add(edge.mid,mul(edge.outward,10)),mul(tangent,side*exitTuning.arrowSpacing));
         const perpendicular={x:-direction.y,y:direction.x};
         const rearA=add(add(pos,mul(direction,-5)),mul(perpendicular,4.5));
         const rearB=add(add(pos,mul(direction,-5)),mul(perpendicular,-4.5));
@@ -720,18 +725,19 @@
           let rearOuter,extension,infoPos,anchor;
           if(leftSide){
             rearOuter=dot(sub(rearA,edge.mid),edge.outward)>dot(sub(rearB,edge.mid),edge.outward)?rearA:rearB;
-            extension=norm(sub(rearOuter,pos));infoPos=add(rearOuter,mul(extension,5));
+            extension=norm(sub(rearOuter,pos));infoPos=add(rearOuter,mul(extension,exitTuning.arrowDistance));
             infoPos.x=rearOuter.x-2;anchor='end';
           }else if(rightSide){
             rearOuter=dot(sub(rearA,edge.mid),edge.outward)>dot(sub(rearB,edge.mid),edge.outward)?rearA:rearB;
-            extension=norm(sub(rearOuter,pos));infoPos=add(rearOuter,mul(extension,5));
+            extension=norm(sub(rearOuter,pos));infoPos=add(rearOuter,mul(extension,exitTuning.arrowDistance));
             infoPos.x=rearOuter.x+2;anchor='start';
           }else{
             rearOuter=dot(sub(rearA,edge.mid),tangent)*side>dot(sub(rearB,edge.mid),tangent)*side?rearA:rearB;
-            extension=norm(sub(rearOuter,pos));infoPos=add(rearOuter,mul(extension,5));
+            extension=norm(sub(rearOuter,pos));infoPos=add(rearOuter,mul(extension,exitTuning.arrowDistance));
             anchor=Math.abs(extension.x)<.28?'middle':extension.x>0?'end':'start';
           }
-          const info=svgEl('text',{x:infoPos.x,y:infoPos.y,'text-anchor':anchor,'dominant-baseline':'central',class:'street-ray-exit-info'});info.textContent=exitInfo;labelGroup.appendChild(info);
+          infoPos=add(add(infoPos,mul(edge.outward,exitTuning.arrowOutward)),mul(tangent,exitTuning.arrowAlong));
+          const info=svgEl('text',{x:infoPos.x,y:infoPos.y,'text-anchor':anchor,'dominant-baseline':'central',class:'street-ray-exit-info',style:`font-size:${exitTuning.arrowTextSize}px`});info.textContent=exitInfo;labelGroup.appendChild(info);
         }
       });
     });svg.appendChild(labelGroup);
@@ -880,6 +886,17 @@
     byId('streetHistoryToggleIndicator').textContent=open?'−':'+';
   }
   function setMessage(text,error=false){const el=byId('streetStartBlockMsg');el.textContent=text;el.style.color=error?'#f5b8ae':'var(--text-faint)';}
+  function updateExitTuner(){
+    const tuner=byId('streetExitTuner');if(!tuner)return;
+    tuner.hidden=state.mode!=='gm';
+    tuner.querySelectorAll('input[data-exit-tuning]').forEach(input=>{
+      const key=input.dataset.exitTuning;input.value=String(exitTuning[key]);
+      const output=tuner.querySelector(`[data-exit-value="${key}"]`);if(output)output.textContent=String(exitTuning[key]);
+    });
+  }
+  function exitTuningReport(){
+    return `ORAPA STREET — RÉGLAGES TEMPORAIRES DES SORTIES\n${JSON.stringify({version:1,...exitTuning},null,2)}`;
+  }
   function elapsedMs(){return Math.max(0,Date.now()-(state.startedAt||Date.now()));}
   function streetSummary(success=state.result==='win'){
     const name=currentPlayerAccount?.display_name||'Anonyme',cost=state.traces.length+state.coords.length*3,date=new Date().toLocaleDateString('fr-FR');
@@ -966,6 +983,7 @@
   }
   function render(){
     renderPalette();renderBoard();renderHistory();
+    updateExitTuner();
     const issues=validatePieces(state.pieces),placed=state.pieces.filter(p=>p.anchor).length;
     const complete=placed===PIECES.length&&!issues.size;
     const preStart=!state.started;
@@ -1041,6 +1059,13 @@
     byId('streetToggleGuess').addEventListener('click',()=>{state.showGuess=state.showGuess===false;render();});
     byId('streetToggleSecret').addEventListener('click',()=>{state.showSecret=state.showSecret===false;render();});
     byId('streetReplayResult').addEventListener('click',openStreetResultModal);
+    byId('streetExitTuner').querySelectorAll('input[data-exit-tuning]').forEach(input=>input.addEventListener('input',event=>{
+      const key=event.target.dataset.exitTuning;exitTuning[key]=Number(event.target.value);
+      const output=byId('streetExitTuner').querySelector(`[data-exit-value="${key}"]`);if(output)output.textContent=event.target.value;
+      renderBoard();
+    }));
+    byId('streetExitCopy').addEventListener('click',()=>navigator.clipboard?.writeText(exitTuningReport()).then(()=>showToast('Configuration des sorties copiée !')));
+    byId('streetExitReset').addEventListener('click',()=>{exitTuning={...DEFAULT_EXIT_TUNING};updateExitTuner();renderBoard();});
     byId('streetWavePreference').addEventListener('change',event=>{
       applyWavePreference(event.target.value);
       if(currentPlayerAccount?.session_token)void supabaseRpc('orapa_set_street_preferences',{p_session_token:currentPlayerAccount.session_token,p_wave_controls:wavePreference}).then(()=>showToast('Préférence Street enregistrée')).catch(error=>showErrorToast('Enregistrement impossible : '+error.message));
