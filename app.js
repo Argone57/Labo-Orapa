@@ -1213,17 +1213,19 @@ async function openAccountModal(){
 
 let gridDataReturnsToAccount=false;
 let gridDataReturnsToVictory=false;
+let gridDataReturnsToStreetResult=false;
 let accountFilteredHistoryPagers={};
 let accountHistoryViewRevision=0;
 function accountFilteredHistoryPager(variant,fetchPage){
   if(!accountFilteredHistoryPagers[variant])accountFilteredHistoryPagers[variant]=createFilteredHistoryPager(fetchPage);
   return accountFilteredHistoryPagers[variant];
 }
-function openGridDataShell(title,intro='',returnToAccount=false,returnToVictory=false){
+function openGridDataShell(title,intro='',returnToAccount=false,returnToVictory=false,returnToStreetResult=false){
   achievementExpanded.clear();
   expandedScores.clear();
   gridDataReturnsToAccount=returnToAccount;
   gridDataReturnsToVictory=returnToVictory;
+  gridDataReturnsToStreetResult=returnToStreetResult;
   if(!returnToAccount) $('#accountModal').classList.remove('open');
   $('#victoryModal').classList.remove('open');
   $('#gridDataTitle').textContent=title;
@@ -1264,7 +1266,7 @@ async function playGridFromRanking(gridId,button){
   }catch(error){showErrorToast(`Impossible de lancer cette grille : ${error.message}`);}
   finally{button.disabled=false;button.textContent=originalText;}
 }
-async function openGridRanking(gridId,returnToAccount=false,returnToVictory=false){
+async function openGridRanking(gridId,returnToAccount=false,returnToVictory=false,returnToStreetResult=false){
   if(!gridId) return;
   const variant=decodeGridId(gridId)?.variant;
   await ensureGridAlias(gridId,variant||'classic');
@@ -1287,10 +1289,11 @@ async function openGridRanking(gridId,returnToAccount=false,returnToVictory=fals
     }
     return;
   }
-  openGridDataShell('🏆 Classement de la grille',gridRankingIntro(gridId,'copyRankedGridId','playRankedGrid',returnToVictory),returnToAccount,returnToVictory);
+  const returnsToResult=returnToVictory||returnToStreetResult;
+  openGridDataShell('🏆 Classement de la grille',gridRankingIntro(gridId,'copyRankedGridId','playRankedGrid',returnsToResult),returnToAccount,returnToVictory,returnToStreetResult);
   $('#copyRankedGridId').onclick=()=>{const id=publicGridId(gridId);navigator.clipboard?.writeText(id).then(()=>showToast('Identifiant copié : '+id));};
   $('#playRankedGrid').onclick=event=>playGridFromRanking(gridId,event.currentTarget);
-  if(returnToVictory) $('#gridResultBack').onclick=()=>closeGridDataModal(true);
+  if(returnsToResult) $('#gridResultBack').onclick=()=>closeGridDataModal(true);
   try{
     const rows=await supabaseRpc(rankingRpc,rankingArgs);
     const wins=(rows||[]).filter(row=>row.success).length;
@@ -6226,10 +6229,12 @@ function closeGridDataModal(returnToOrigin=true){
   expandedScores.clear();
   if(returnToOrigin){
     if(gridDataReturnsToVictory) openVictoryModal();
+    else if(gridDataReturnsToStreetResult) window.OrapaStreetPrototype?.openResult();
     else if(gridDataReturnsToAccount) $('#accountModal').classList.add('open');
   }
   gridDataReturnsToAccount=false;
   gridDataReturnsToVictory=false;
+  gridDataReturnsToStreetResult=false;
 }
 $('#closeGridData').addEventListener('click',()=>closeGridDataModal(false));
 $('#gridDataBack').addEventListener('click',()=>closeGridDataModal(true));

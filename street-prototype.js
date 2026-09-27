@@ -880,12 +880,13 @@
   function ensureStreetModal(){
     let backdrop=byId('streetResultModal');if(backdrop)return backdrop;
     backdrop=document.createElement('div');backdrop.id='streetResultModal';backdrop.className='modal-backdrop';
-    backdrop.innerHTML='<div class="modal"><button class="close-x" id="streetResultClose">×</button><h2 id="streetResultTitle"></h2><p id="streetResultMessage"></p><p id="streetResultScore"></p><p id="streetResultRank" class="rank-line"></p><p>Grille : <b id="streetResultId"></b></p><div id="streetResultActions" class="controls victory-actions" data-orapa-myludo-result="false"><button class="primary" id="streetResultRanking">🏆 Classement</button><button class="ghost" id="streetResultCopy">📋 Copier résumé</button><button class="ghost" id="streetResultHome">← Accueil</button></div></div>';
+    backdrop.innerHTML='<div class="modal"><button class="close-x" id="streetResultClose">×</button><h2 id="streetResultTitle"></h2><p id="streetResultMessage"></p><div class="ranking-row-detail" id="streetResultScore" style="margin-left:0;font-size:.85rem;"></div><div id="streetResultRank" style="margin-top:4px;color:var(--gold-bright);font-size:.83rem;"></div><div class="ranking-row-id" style="margin-left:0;margin-top:12px;">Grille : <b id="streetResultId"></b></div><div id="streetResultActions" class="controls victory-actions" data-orapa-myludo-result="false" style="justify-content:flex-end;margin-top:16px;"><button class="primary" id="streetResultRanking">🏆 Classement</button><button class="ghost" id="streetResultCopyId">📋 Copier ID</button><button class="ghost" id="streetResultCopy">📋 Copier résumé</button></div></div>';
     document.body.appendChild(backdrop);
     byId('streetResultClose').onclick=()=>backdrop.classList.remove('open');
-    byId('streetResultHome').onclick=()=>{backdrop.classList.remove('open');close(true);};
+    backdrop.addEventListener('click',event=>{if(event.target===backdrop)backdrop.classList.remove('open');});
+    byId('streetResultCopyId').onclick=()=>{const id=publicGridId(state.gridId);navigator.clipboard?.writeText(id).then(()=>showToast('Identifiant copié : '+id));};
     byId('streetResultCopy').onclick=()=>navigator.clipboard?.writeText(streetSummary()).then(()=>showToast('Résumé copié !'));
-    byId('streetResultRanking').onclick=()=>openStreetRanking(state.gridId);
+    byId('streetResultRanking').onclick=()=>{backdrop.classList.remove('open');openStreetRanking(state.gridId,false,true);};
     return backdrop;
   }
   function openStreetResultModal(){
@@ -895,12 +896,12 @@
     byId('streetResultTitle').textContent=success?'🏆 Victoire !':'💥 Défaite';
     byId('streetResultMessage').textContent=success?'Tu as retrouvé la disposition exacte des sept pièces !':'La seconde proposition est incorrecte : la grille secrète est révélée.';
     byId('streetResultScore').textContent=`${cost} pts (${state.traces.length}🔦 + ${state.coords.length}📍) · ${formatDuration(time)}`;
-    byId('streetResultRank').textContent=state.rank?`Classé #${state.rank} dans le classement de cette grille`:'';
-    byId('streetResultId').textContent=publicGridId(state.gridId);
+    byId('streetResultRank').textContent=state.rank?`Classé #${state.rank} dans « classement global de la grille »`:'';
+    byId('streetResultId').textContent=`Orapa Street · ${publicGridId(state.gridId)}`;
     modal.classList.add('open');
   }
-  async function openStreetRanking(gridId,returnToAccount=false){
-    return openGridRanking(gridId,returnToAccount,false);
+  async function openStreetRanking(gridId,returnToAccount=false,returnToResult=false){
+    return openGridRanking(gridId,returnToAccount,false,returnToResult);
   }
   function openStreetRowsModal(title,rows,empty='Aucune partie enregistrée.'){
     let modal=byId('streetRowsModal');if(!modal){modal=document.createElement('div');modal.id='streetRowsModal';modal.className='modal-backdrop';document.body.appendChild(modal);}
@@ -1088,6 +1089,6 @@
     const payload={schemaVersion:1,source:'orapa-mine',gameId:101482,gameVariant:'street',isDaily:false,dedupeReference:state.gridId,solo:true,online:true,win:state.result==='win',playerName:preferences.player_mode==='custom'?preferences.custom_player_name:'',resultPlayerName:currentPlayerAccount?.display_name||'',score:preferences.fill_score?(state.traces.length+state.coords.length*3):null,date:new Date().toISOString().slice(0,10),durationMinutes:Math.max(1,Math.round(elapsedMs()/60000)),location:preferences.location_mode==='custom'?preferences.custom_location:'Orapa-Mine',excludeFromStatistics:!!preferences.exclude_from_statistics,autoSubmit:!!preferences.auto_submit,duplicateDetection:preferences.duplicate_detection!==false,comment:streetSummary(),options:{}};
     document.dispatchEvent(new CustomEvent('orapa:myludo-result',{detail:JSON.stringify(payload)}));
   });
-  window.OrapaStreetPrototype={open:openCreation,openCreation,openSolo,resume:attempt=>openSolo(attempt.reference,attempt),close,decode:decodeStreetGrid,encode:encodeStreetGrid,openRanking:openStreetRanking,openGlobalHistory:openStreetGlobalHistory,openCatalog:openStreetCatalog,openMyHistory:openMyStreetHistory,openMyShared:openMySharedStreet,previewResult,debug:{BOARD,LANES,PIECES,axialTransform,applyPieceMirror,pieceGeometry,visualWallsFor,visualWallPolygonsFor,snapPieceAnchor,coordinateForTriangle,traceRay,validatePieces}};
+  window.OrapaStreetPrototype={open:openCreation,openCreation,openSolo,resume:attempt=>openSolo(attempt.reference,attempt),close,decode:decodeStreetGrid,encode:encodeStreetGrid,openRanking:openStreetRanking,openResult:openStreetResultModal,openGlobalHistory:openStreetGlobalHistory,openCatalog:openStreetCatalog,openMyHistory:openMyStreetHistory,openMyShared:openMySharedStreet,previewResult,debug:{BOARD,LANES,PIECES,axialTransform,applyPieceMirror,pieceGeometry,visualWallsFor,visualWallPolygonsFor,snapPieceAnchor,coordinateForTriangle,traceRay,validatePieces}};
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',bind);else bind();
 })();
