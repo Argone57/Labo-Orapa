@@ -856,6 +856,19 @@
     if(state.mode==='solo'&&state.waveModeActive)state.previewWave={edgeIndex,directionIndex};
     render();void recordStreetAction('ray');setTimeout(()=>showStreetTraceFeedback(trace,edgeIndex,directionIndex),0);
   }
+  function launchAllStreetWaves(){
+    if(state.mode!=='gm')return;
+    if(!state.started){showToast('Démarre d’abord le test de la grille.');return;}
+    if(validatePieces(state.pieces).size){setMessage('Corrige les placements rouges avant de lancer les ondes.',true);return;}
+    const time=new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    let added=0;
+    BOARD.boundary.forEach((edge,edgeIndex)=>edge.directions.forEach((_direction,directionIndex)=>{
+      if(findTraceAt(edgeIndex,directionIndex))return;
+      const trace=traceRay(edgeIndex,directionIndex,queryPieces());trace.time=time;state.traces.push(trace);added++;
+    }));
+    clearDirectionChoicesTimer();selectedWaveEdge=null;render();
+    showToast(added?`${added} onde${added>1?'s':''} ajoutée${added>1?'s':''}.`:'Toutes les ondes sont déjà affichées.');
+  }
   function directionArrowText(edge,directionIndex){
     const direction=edge?.directions?.[directionIndex];if(!direction)return '';
     const angle=Math.atan2(direction.y,direction.x)*180/Math.PI;
@@ -1091,6 +1104,7 @@
     }));
     byId('streetExitCopy').addEventListener('click',()=>navigator.clipboard?.writeText(exitTuningReport()).then(()=>showToast('Configuration des sorties copiée !')));
     byId('streetExitReset').addEventListener('click',()=>{exitTuning={...DEFAULT_EXIT_TUNING,sides:freshExitSides()};updateExitTuner();renderBoard();});
+    byId('streetExitAllWaves').addEventListener('click',launchAllStreetWaves);
     byId('streetWavePreference').addEventListener('change',event=>{
       applyWavePreference(event.target.value);
       if(currentPlayerAccount?.session_token)void supabaseRpc('orapa_set_street_preferences',{p_session_token:currentPlayerAccount.session_token,p_wave_controls:wavePreference}).then(()=>showToast('Préférence Street enregistrée')).catch(error=>showErrorToast('Enregistrement impossible : '+error.message));
