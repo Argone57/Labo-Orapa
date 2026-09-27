@@ -395,8 +395,18 @@
   let streetSync=Promise.resolve();
   let selectedWaveEdge=null;
   let directionChoicesHideTimer=null;
-  const DEFAULT_EXIT_TUNING={arrowSpacing:7,arrowTextSize:6,arrowDistance:5,arrowOutward:0,arrowAlong:0,caseTextSize:4.6,caseOutward:0,caseAlong:0};
-  let exitTuning={...DEFAULT_EXIT_TUNING};
+  const EXIT_SIDE_KEYS=['top','upperRight','lowerRight','bottom','lowerLeft','upperLeft'];
+  const freshExitSides=()=>Object.fromEntries(EXIT_SIDE_KEYS.map(key=>[key,{arrowDistance:0,arrowOutward:0,arrowAlong:0,caseOutward:0,caseAlong:0}]));
+  const DEFAULT_EXIT_TUNING={arrowSpacing:8,arrowTextSize:8,arrowDistance:6.5,arrowOutward:-1,arrowAlong:2,caseTextSize:4.6,caseOutward:0,caseAlong:0,sides:freshExitSides()};
+  let exitTuning={...DEFAULT_EXIT_TUNING,sides:freshExitSides()};
+  function exitSideKey(label){
+    if(['5','6','7','8','9','10','11'].includes(label))return 'top';
+    if(['12','13','14'].includes(label))return 'upperRight';
+    if(['N','M','L','K'].includes(label))return 'lowerRight';
+    if(['D','E','F','G','H','I','J'].includes(label))return 'bottom';
+    if(['A','B','C'].includes(label))return 'lowerLeft';
+    return 'upperLeft';
+  }
   function resolvedWavePreference(){
     if(wavePreference!=='auto')return wavePreference;
     return window.matchMedia('(max-width: 640px)').matches?'choices':'arrows';
@@ -668,6 +678,7 @@
     svg.appendChild(boardGroup);
     const labelGroup=svgEl('g',{class:'street-labels'});
     BOARD.boundary.forEach((edge,edgeIndex)=>{
+      const sideTuning=exitTuning.sides[exitSideKey(edge.label)];
       const labelPos=add(edge.mid,mul(edge.outward,useDirectionChoices?19:31));
       if(useDirectionChoices){
         const box={left:labelPos.x-16,right:labelPos.x+16,top:labelPos.y-13,bottom:labelPos.y+13};
@@ -684,8 +695,9 @@
           if(exitInfo){
             const infoPos=caseExitInfoPosition(edge,box,direction,otherDirection);
             const edgeTangent=norm(sub(edge.b,edge.a));
-            infoPos.x+=edge.outward.x*exitTuning.caseOutward+edgeTangent.x*exitTuning.caseAlong;
-            infoPos.y+=edge.outward.y*exitTuning.caseOutward+edgeTangent.y*exitTuning.caseAlong;
+            const caseOutward=exitTuning.caseOutward+sideTuning.caseOutward,caseAlong=exitTuning.caseAlong+sideTuning.caseAlong;
+            infoPos.x+=edge.outward.x*caseOutward+edgeTangent.x*caseAlong;
+            infoPos.y+=edge.outward.y*caseOutward+edgeTangent.y*caseAlong;
             const info=svgEl('text',{x:infoPos.x,y:infoPos.y,'text-anchor':infoPos.anchor,'dominant-baseline':'central',class:'street-label-exit-info',style:`font-size:${exitTuning.caseTextSize}px`});info.textContent=exitInfo;labelGroup.appendChild(info);
           }
         });
@@ -723,20 +735,21 @@
           const leftSide=['1','2','3','4','A','B','C'].includes(edge.label);
           const rightSide=['12','13','14','N','M','L','K'].includes(edge.label);
           let rearOuter,extension,infoPos,anchor;
+          const arrowDistance=Math.max(0,exitTuning.arrowDistance+sideTuning.arrowDistance);
           if(leftSide){
             rearOuter=dot(sub(rearA,edge.mid),edge.outward)>dot(sub(rearB,edge.mid),edge.outward)?rearA:rearB;
-            extension=norm(sub(rearOuter,pos));infoPos=add(rearOuter,mul(extension,exitTuning.arrowDistance));
+            extension=norm(sub(rearOuter,pos));infoPos=add(rearOuter,mul(extension,arrowDistance));
             infoPos.x=rearOuter.x-2;anchor='end';
           }else if(rightSide){
             rearOuter=dot(sub(rearA,edge.mid),edge.outward)>dot(sub(rearB,edge.mid),edge.outward)?rearA:rearB;
-            extension=norm(sub(rearOuter,pos));infoPos=add(rearOuter,mul(extension,exitTuning.arrowDistance));
+            extension=norm(sub(rearOuter,pos));infoPos=add(rearOuter,mul(extension,arrowDistance));
             infoPos.x=rearOuter.x+2;anchor='start';
           }else{
             rearOuter=dot(sub(rearA,edge.mid),tangent)*side>dot(sub(rearB,edge.mid),tangent)*side?rearA:rearB;
-            extension=norm(sub(rearOuter,pos));infoPos=add(rearOuter,mul(extension,exitTuning.arrowDistance));
+            extension=norm(sub(rearOuter,pos));infoPos=add(rearOuter,mul(extension,arrowDistance));
             anchor=Math.abs(extension.x)<.28?'middle':extension.x>0?'end':'start';
           }
-          infoPos=add(add(infoPos,mul(edge.outward,exitTuning.arrowOutward)),mul(tangent,exitTuning.arrowAlong));
+          infoPos=add(add(infoPos,mul(edge.outward,exitTuning.arrowOutward+sideTuning.arrowOutward)),mul(tangent,exitTuning.arrowAlong+sideTuning.arrowAlong));
           const info=svgEl('text',{x:infoPos.x,y:infoPos.y,'text-anchor':anchor,'dominant-baseline':'central',class:'street-ray-exit-info',style:`font-size:${exitTuning.arrowTextSize}px`});info.textContent=exitInfo;labelGroup.appendChild(info);
         }
       });
@@ -893,9 +906,14 @@
       const key=input.dataset.exitTuning;input.value=String(exitTuning[key]);
       const output=tuner.querySelector(`[data-exit-value="${key}"]`);if(output)output.textContent=String(exitTuning[key]);
     });
+    const sideKey=byId('streetExitSide').value;
+    tuner.querySelectorAll('input[data-exit-side-tuning]').forEach(input=>{
+      const key=input.dataset.exitSideTuning;input.value=String(exitTuning.sides[sideKey][key]);
+      const output=tuner.querySelector(`[data-exit-side-value="${key}"]`);if(output)output.textContent=String(exitTuning.sides[sideKey][key]);
+    });
   }
   function exitTuningReport(){
-    return `ORAPA STREET — RÉGLAGES TEMPORAIRES DES SORTIES\n${JSON.stringify({version:1,...exitTuning},null,2)}`;
+    return `ORAPA STREET — RÉGLAGES TEMPORAIRES DES SORTIES\n${JSON.stringify({version:2,...exitTuning},null,2)}`;
   }
   function elapsedMs(){return Math.max(0,Date.now()-(state.startedAt||Date.now()));}
   function streetSummary(success=state.result==='win'){
@@ -1064,8 +1082,15 @@
       const output=byId('streetExitTuner').querySelector(`[data-exit-value="${key}"]`);if(output)output.textContent=event.target.value;
       renderBoard();
     }));
+    byId('streetExitSide').addEventListener('change',updateExitTuner);
+    byId('streetExitTuner').querySelectorAll('input[data-exit-side-tuning]').forEach(input=>input.addEventListener('input',event=>{
+      const sideKey=byId('streetExitSide').value,key=event.target.dataset.exitSideTuning;
+      exitTuning.sides[sideKey][key]=Number(event.target.value);
+      const output=byId('streetExitTuner').querySelector(`[data-exit-side-value="${key}"]`);if(output)output.textContent=event.target.value;
+      renderBoard();
+    }));
     byId('streetExitCopy').addEventListener('click',()=>navigator.clipboard?.writeText(exitTuningReport()).then(()=>showToast('Configuration des sorties copiée !')));
-    byId('streetExitReset').addEventListener('click',()=>{exitTuning={...DEFAULT_EXIT_TUNING};updateExitTuner();renderBoard();});
+    byId('streetExitReset').addEventListener('click',()=>{exitTuning={...DEFAULT_EXIT_TUNING,sides:freshExitSides()};updateExitTuner();renderBoard();});
     byId('streetWavePreference').addEventListener('change',event=>{
       applyWavePreference(event.target.value);
       if(currentPlayerAccount?.session_token)void supabaseRpc('orapa_set_street_preferences',{p_session_token:currentPlayerAccount.session_token,p_wave_controls:wavePreference}).then(()=>showToast('Préférence Street enregistrée')).catch(error=>showErrorToast('Enregistrement impossible : '+error.message));
