@@ -975,12 +975,14 @@
     byId('streetStart').hidden=!preStart;
     const streetEnd=byId('streetEnd');
     const showAttemptCounter=state.mode==='solo'&&state.started&&!state.over;
-    streetEnd.hidden=preStart||state.over||state.mode!=='solo';
+    streetEnd.hidden=preStart||state.over;
+    streetEnd.classList.toggle('primary',state.mode==='solo');
+    streetEnd.classList.toggle('danger',state.mode==='gm');
     streetEnd.classList.toggle('has-attempt-counter',showAttemptCounter);
     if(showAttemptCounter){
       const remaining=Math.max(1,2-(Number(state.attempts)||0));
       streetEnd.innerHTML=`<span>✅ Proposer une solution</span><span class="attempt-counter${remaining===1?' last':''}" aria-label="${remaining} proposition${remaining>1?'s':''} restante${remaining>1?'s':''}" title="Propositions restantes">${remaining} essai${remaining>1?'s':''}</span>`;
-    }else streetEnd.textContent='Proposer une solution';
+    }else streetEnd.textContent=state.mode==='gm'?'🏁 Fin de partie':'Proposer une solution';
     streetEnd.disabled=state.mode==='solo'&&!complete;
     byId('streetStart').disabled=!complete;
     byId('streetShare').disabled=!complete;
@@ -1018,7 +1020,13 @@
     byId('streetClose').addEventListener('click',()=>close());
     byId('streetRandom').addEventListener('click',()=>{if(state.started)return;if(!randomizePieces())setMessage('Impossible de trouver un placement valide. Réessaie.',true);render();});
     byId('streetStart').addEventListener('click',()=>{if(state.started||byId('streetStart').disabled)return;state.started=true;state.startedAt=Date.now();state.tool='pieces';state.traces=[];state.coords=[];clearDirectionChoicesTimer();selectedWaveEdge=null;toggleHistory(false);render();});
-    byId('streetEnd').addEventListener('click',()=>void proposeStreetSolution());
+    byId('streetEnd').addEventListener('click',async()=>{
+      if(state.mode==='gm'){
+        if(!state.started||!await gameConfirm('Terminer cette partie et revenir à l’accueil ?','Fin de partie','Terminer','Annuler'))return;
+        close(true);return;
+      }
+      await proposeStreetSolution();
+    });
     byId('streetShare').addEventListener('click',()=>void shareStreet());
     byId('streetReset').addEventListener('click',async()=>{
       if(!confirm(state.mode==='solo'?'Abandonner cette partie et recommencer ?':'Effacer tous les placements et l’historique Street ?'))return;

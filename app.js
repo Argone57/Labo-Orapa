@@ -4661,7 +4661,7 @@ function renderControls(){
     :(earthSky?(state.earthSkyMineOnTop==null?'Pose la première gemme ou le premier astre dans la moitié de ton choix pour déterminer la disposition.':'Chaque famille reste dans sa moitié · tape pour pivoter · reste appuyé pour retourner en miroir'):`Glisse une ${isSpace?'planète':'gemme'} sur la grille · tape dessus pour la faire pivoter de 90° · reste appuyé pour la retourner en miroir`);
   const gmPreStart = state.mode==='gm' && !state.started;
   $('#btnRandom').style.display = gmPreStart ? '' : 'none';
-  $('#btnStart').style.display = state.mode==='gm' ? '' : 'none';
+  $('#btnStart').style.display = gmPreStart ? '' : 'none';
   $('#btnEndGame').style.display = (state.mode==='gm' && state.started) ? '' : 'none';
   $('#btnShareGrid').style.display = gmPreStart ? '' : 'none';
   let startBlockReason = '';

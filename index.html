@@ -837,10 +837,11 @@ body.app-loading .app,body.app-loading .account-fab,body.app-loading .about-fab,
       <div class="controls street-creation-controls">
         <button class="ghost" id="streetRandom">🎲 Placer aléatoirement</button>
         <button class="primary" id="streetStart" disabled>Démarrer la partie</button>
-        <button class="primary" id="streetEnd" hidden>Proposer une solution</button>
+        <button class="primary" id="streetEnd" hidden>🏁 Fin de partie</button>
         <button class="ghost" id="streetShare" disabled>📤 Partager la grille</button>
+        <button class="ghost" id="streetClose">← Retour à l’accueil</button>
+        <button class="danger" id="streetReset">Recommencer</button>
       </div>
-      <div class="controls"><button class="ghost" id="streetClose">← Retour à l’accueil</button><button class="danger" id="streetReset">Recommencer</button></div>
       <div id="streetStartBlockMsg">Place toutes les pièces avant de démarrer.</div>
       <div class="controls" id="streetCellTools" hidden>
         <button class="ghost" id="streetHint">🔍 Demander un indice</button>
@@ -983,6 +984,6 @@ body.app-loading .app,body.app-loading .account-fab,body.app-loading .about-fab,
   </div>
 </div>
 
-<script src="boot.js?v=20260928-0001"></script>
+<script src="boot.js?v=20260928-0002"></script>
 </body>
 </html>
