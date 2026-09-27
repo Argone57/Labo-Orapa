@@ -1123,7 +1123,9 @@ async function renderAccountHome(){
     $('#accountStreetWaveControls').value=['auto','arrows','choices'].includes(streetPreferences.wave_controls)?streetPreferences.wave_controls:'auto';
     renderPalette();
     const saveAchievementPreferences=async()=>{paletteScale=normalizePaletteScale($('#accountPaletteScale').value);showFirstWaveHelp=$('#accountFirstWaveHelp').checked;renderPalette();try{await Promise.all([supabaseRpc('orapa_set_achievement_preferences',{p_session_token:currentPlayerAccount.session_token,p_hide_notifications:$('#accountHideAchievementNotifications').checked,p_hide_from_rankings:$('#accountHideAchievementRankings').checked,p_palette_scale:Math.round(paletteScale*100)}),supabaseRpc('orapa_set_first_wave_help_preference',{p_session_token:currentPlayerAccount.session_token,p_show_first_wave_help:showFirstWaveHelp}),supabaseRpc('orapa_set_street_preferences',{p_session_token:currentPlayerAccount.session_token,p_wave_controls:$('#accountStreetWaveControls').value})]);showToast('Préférences enregistrées');}catch(e){showErrorToast('Enregistrement impossible : '+e.message);}};
-    $('#accountPaletteScale').onchange=saveAchievementPreferences;$('#accountStreetWaveControls').onchange=saveAchievementPreferences;$('#accountFirstWaveHelp').onchange=saveAchievementPreferences;$('#accountHideAchievementNotifications').onchange=saveAchievementPreferences;$('#accountHideAchievementRankings').onchange=saveAchievementPreferences;
+    $('#accountPaletteScale').onchange=saveAchievementPreferences;
+    $('#accountStreetWaveControls').onchange=event=>{window.OrapaStreetPrototype?.setWavePreference(event.target.value);void saveAchievementPreferences();};
+    $('#accountFirstWaveHelp').onchange=saveAchievementPreferences;$('#accountHideAchievementNotifications').onchange=saveAchievementPreferences;$('#accountHideAchievementRankings').onchange=saveAchievementPreferences;
   }catch(e){showErrorToast(`Chargement des préférences impossible : ${e.message}`);}
 }
 function myludoMineGameOptions(selected){
