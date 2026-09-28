@@ -711,13 +711,17 @@
             const caseOutward=exitTuning.caseOutward+sideTuning.caseOutward,caseAlong=exitTuning.caseAlong+sideTuning.caseAlong;
             infoPos.x+=edge.outward.x*caseOutward+edgeTangent.x*caseAlong;
             infoPos.y+=edge.outward.y*caseOutward+edgeTangent.y*caseAlong;
-            const info=svgEl('text',{x:infoPos.x,y:infoPos.y,'text-anchor':infoPos.anchor,'dominant-baseline':'central',class:'street-label-exit-info',style:`font-size:${exitTuning.caseTextSize}px`});
             if(infoPos.vertical){
               const glyphs=[...exitInfo],lineHeight=exitTuning.caseTextSize*.78;
               const startY=infoPos.verticalAlign==='top'?infoPos.y:infoPos.y-(glyphs.length-1)*lineHeight;
-              glyphs.forEach((glyph,index)=>{const span=svgEl('tspan',{x:infoPos.x,y:startY+index*lineHeight});span.textContent=glyph;info.appendChild(span);});
-            }else info.textContent=exitInfo;
-            labelGroup.appendChild(info);
+              glyphs.forEach((glyph,index)=>{
+                const item=svgEl('text',{x:infoPos.x,y:startY+index*lineHeight,'text-anchor':'middle','dominant-baseline':'middle','alignment-baseline':'middle',class:'street-label-exit-info',style:`font-size:${exitTuning.caseTextSize}px`});
+                item.textContent=glyph;labelGroup.appendChild(item);
+              });
+            }else{
+              const info=svgEl('text',{x:infoPos.x,y:infoPos.y,'text-anchor':infoPos.anchor,'dominant-baseline':'middle','alignment-baseline':'middle',class:'street-label-exit-info',style:`font-size:${exitTuning.caseTextSize}px`});
+              info.textContent=exitInfo;labelGroup.appendChild(info);
+            }
           }
         });
         const hit=svgEl('rect',{x:box.left,y:box.top,width:32,height:26,rx:6,class:`street-label-hit${selectedWaveEdge===edgeIndex?' active':''}${state.started?'':' disabled'}`,'data-label-edge':edgeIndex});
