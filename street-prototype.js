@@ -396,8 +396,16 @@
   let selectedWaveEdge=null;
   let directionChoicesHideTimer=null;
   const EXIT_SIDE_KEYS=['top','upperRight','lowerRight','bottom','lowerLeft','upperLeft'];
-  const freshExitSides=()=>Object.fromEntries(EXIT_SIDE_KEYS.map(key=>[key,{arrowDistance:0,arrowOutward:0,arrowAlong:0,caseOutward:0,caseAlong:0}]));
-  const DEFAULT_EXIT_TUNING={arrowSpacing:8,arrowTextSize:8,arrowDistance:6.5,arrowOutward:-1,arrowAlong:2,caseTextSize:4.6,caseOutward:0,caseAlong:0,sides:freshExitSides()};
+  const DEFAULT_EXIT_SIDES={
+    top:{arrowDistance:0,arrowOutward:.5,arrowAlong:-2,caseOutward:.5,caseAlong:1},
+    upperRight:{arrowDistance:2.5,arrowOutward:1,arrowAlong:-.5,caseOutward:0,caseAlong:0},
+    lowerRight:{arrowDistance:.5,arrowOutward:2,arrowAlong:-1,caseOutward:3,caseAlong:-2.5},
+    bottom:{arrowDistance:0,arrowOutward:0,arrowAlong:0,caseOutward:0,caseAlong:.5},
+    lowerLeft:{arrowDistance:3.5,arrowOutward:-1,arrowAlong:-3.5,caseOutward:-.5,caseAlong:.5},
+    upperLeft:{arrowDistance:6,arrowOutward:1,arrowAlong:-2,caseOutward:0,caseAlong:0}
+  };
+  const freshExitSides=()=>Object.fromEntries(EXIT_SIDE_KEYS.map(key=>[key,{...DEFAULT_EXIT_SIDES[key]}]));
+  const DEFAULT_EXIT_TUNING={arrowSpacing:8,arrowTextSize:8,arrowDistance:6.5,arrowOutward:-1,arrowAlong:2,caseTextSize:9,caseOutward:0,caseAlong:0,sides:freshExitSides()};
   let exitTuning={...DEFAULT_EXIT_TUNING,sides:freshExitSides()};
   function exitSideKey(label){
     if(['5','6','7','8','9','10','11'].includes(label))return 'top';
@@ -536,20 +544,20 @@
   }
   function caseExitInfoPosition(edge,box,direction,otherDirection){
     const half=norm(sub(direction,otherDirection));
-    const top=new Set(['5','6','7','8','9','10','11']);
-    const bottom=new Set(['D','E','F','G','H','I','J']);
-    const left=new Set(['1','2','3','4','A','B','C']);
-    if(top.has(edge.label)){
+    const side=exitSideKey(edge.label);
+    if(side==='top'||side==='bottom'){
       const onLeft=half.x<0;
-      return {x:onLeft?box.left+3:box.right-3,y:box.bottom-4,anchor:onLeft?'start':'end'};
+      return {x:onLeft?box.left+9:box.right-9,y:box.bottom-3,anchor:'start',angle:-90};
     }
-    if(bottom.has(edge.label)){
-      const onLeft=half.x<0;
-      return {x:onLeft?box.left+3:box.right-3,y:box.top+4,anchor:onLeft?'start':'end'};
+    const onTop=half.y<0,descending=side==='upperRight'||side==='lowerLeft';
+    if(descending){
+      return onTop
+        ?{x:box.left+3,y:box.top+4,anchor:'start',angle:39}
+        :{x:box.right-3,y:box.bottom-4,anchor:'end',angle:39};
     }
-    const onTop=half.y<0;
-    if(left.has(edge.label))return {x:box.right-3,y:onTop?box.top+4:box.bottom-4,anchor:'end'};
-    return {x:box.left+3,y:onTop?box.top+4:box.bottom-4,anchor:'start'};
+    return onTop
+      ?{x:box.right-3,y:box.top+4,anchor:'end',angle:-39}
+      :{x:box.left+3,y:box.bottom-4,anchor:'start',angle:-39};
   }
   function svgClientPoint(clientX,clientY,svg){
     const point=svg.createSVGPoint();point.x=clientX;point.y=clientY;
@@ -698,7 +706,7 @@
             const caseOutward=exitTuning.caseOutward+sideTuning.caseOutward,caseAlong=exitTuning.caseAlong+sideTuning.caseAlong;
             infoPos.x+=edge.outward.x*caseOutward+edgeTangent.x*caseAlong;
             infoPos.y+=edge.outward.y*caseOutward+edgeTangent.y*caseAlong;
-            const info=svgEl('text',{x:infoPos.x,y:infoPos.y,'text-anchor':infoPos.anchor,'dominant-baseline':'central',class:'street-label-exit-info',style:`font-size:${exitTuning.caseTextSize}px`});info.textContent=exitInfo;labelGroup.appendChild(info);
+            const info=svgEl('text',{x:infoPos.x,y:infoPos.y,'text-anchor':infoPos.anchor,'dominant-baseline':'central',transform:`rotate(${infoPos.angle} ${infoPos.x} ${infoPos.y})`,class:'street-label-exit-info',style:`font-size:${exitTuning.caseTextSize}px`});info.textContent=exitInfo;labelGroup.appendChild(info);
           }
         });
         const hit=svgEl('rect',{x:box.left,y:box.top,width:32,height:26,rx:6,class:`street-label-hit${selectedWaveEdge===edgeIndex?' active':''}${state.started?'':' disabled'}`,'data-label-edge':edgeIndex});
