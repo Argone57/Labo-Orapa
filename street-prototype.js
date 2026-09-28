@@ -547,17 +547,17 @@
     const side=exitSideKey(edge.label);
     if(side==='top'||side==='bottom'){
       const onLeft=half.x<0;
-      return {x:onLeft?box.left+9:box.right-9,y:box.bottom-3,anchor:'start',angle:-90};
+      return {x:onLeft?box.left+9:box.right-9,y:box.bottom-3,anchor:'middle',vertical:true};
     }
     const onTop=half.y<0,descending=side==='upperRight'||side==='lowerLeft';
     if(descending){
       return onTop
-        ?{x:box.left+3,y:box.top+4,anchor:'start',angle:39}
-        :{x:box.right-3,y:box.bottom-4,anchor:'end',angle:39};
+        ?{x:box.left+3,y:box.top+4,anchor:'start'}
+        :{x:box.right-3,y:box.bottom-4,anchor:'end'};
     }
     return onTop
-      ?{x:box.right-3,y:box.top+4,anchor:'end',angle:-39}
-      :{x:box.left+3,y:box.bottom-4,anchor:'start',angle:-39};
+      ?{x:box.right-3,y:box.top+4,anchor:'end'}
+      :{x:box.left+3,y:box.bottom-4,anchor:'start'};
   }
   function svgClientPoint(clientX,clientY,svg){
     const point=svg.createSVGPoint();point.x=clientX;point.y=clientY;
@@ -706,7 +706,12 @@
             const caseOutward=exitTuning.caseOutward+sideTuning.caseOutward,caseAlong=exitTuning.caseAlong+sideTuning.caseAlong;
             infoPos.x+=edge.outward.x*caseOutward+edgeTangent.x*caseAlong;
             infoPos.y+=edge.outward.y*caseOutward+edgeTangent.y*caseAlong;
-            const info=svgEl('text',{x:infoPos.x,y:infoPos.y,'text-anchor':infoPos.anchor,'dominant-baseline':'central',transform:`rotate(${infoPos.angle} ${infoPos.x} ${infoPos.y})`,class:'street-label-exit-info',style:`font-size:${exitTuning.caseTextSize}px`});info.textContent=exitInfo;labelGroup.appendChild(info);
+            const info=svgEl('text',{x:infoPos.x,y:infoPos.y,'text-anchor':infoPos.anchor,'dominant-baseline':'central',class:'street-label-exit-info',style:`font-size:${exitTuning.caseTextSize}px`});
+            if(infoPos.vertical){
+              const glyphs=[...exitInfo],lineHeight=exitTuning.caseTextSize*.78,startY=infoPos.y-(glyphs.length-1)*lineHeight;
+              glyphs.forEach((glyph,index)=>{const span=svgEl('tspan',{x:infoPos.x,y:startY+index*lineHeight});span.textContent=glyph;info.appendChild(span);});
+            }else info.textContent=exitInfo;
+            labelGroup.appendChild(info);
           }
         });
         const hit=svgEl('rect',{x:box.left,y:box.top,width:32,height:26,rx:6,class:`street-label-hit${selectedWaveEdge===edgeIndex?' active':''}${state.started?'':' disabled'}`,'data-label-edge':edgeIndex});
