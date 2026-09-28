@@ -397,12 +397,12 @@
   let directionChoicesHideTimer=null;
   const EXIT_SIDE_KEYS=['top','upperRight','lowerRight','bottom','lowerLeft','upperLeft'];
   const DEFAULT_EXIT_SIDES={
-    top:{arrowDistance:0,arrowOutward:.5,arrowAlong:-2,caseOutward:3,caseAlong:0},
-    upperRight:{arrowDistance:2.5,arrowOutward:1,arrowAlong:-.5,caseOutward:0,caseAlong:0},
-    lowerRight:{arrowDistance:.5,arrowOutward:2,arrowAlong:-1,caseOutward:0,caseAlong:-1},
-    bottom:{arrowDistance:0,arrowOutward:0,arrowAlong:0,caseOutward:2,caseAlong:-.5},
-    lowerLeft:{arrowDistance:3.5,arrowOutward:-1,arrowAlong:-3.5,caseOutward:-.5,caseAlong:.5},
-    upperLeft:{arrowDistance:6,arrowOutward:1,arrowAlong:-2,caseOutward:0,caseAlong:-.5}
+    top:{arrowDistance:0,arrowOutward:.5,arrowAlong:-2,caseOutward:.5,caseAlong:0},
+    upperRight:{arrowDistance:2.5,arrowOutward:1,arrowAlong:-.5,caseOutward:0,caseAlong:-.5},
+    lowerRight:{arrowDistance:.5,arrowOutward:2,arrowAlong:-1,caseOutward:-.5,caseAlong:1},
+    bottom:{arrowDistance:0,arrowOutward:0,arrowAlong:0,caseOutward:3,caseAlong:0},
+    lowerLeft:{arrowDistance:3.5,arrowOutward:-1,arrowAlong:-3.5,caseOutward:-1,caseAlong:-1.5},
+    upperLeft:{arrowDistance:6,arrowOutward:1,arrowAlong:-2,caseOutward:-1.5,caseAlong:0}
   };
   const freshExitSides=()=>Object.fromEntries(EXIT_SIDE_KEYS.map(key=>[key,{...DEFAULT_EXIT_SIDES[key]}]));
   const DEFAULT_EXIT_TUNING={arrowSpacing:8,arrowTextSize:8,arrowDistance:6.5,arrowOutward:-1,arrowAlong:2,caseTextSize:9,caseOutward:0,caseAlong:0,sides:freshExitSides()};
