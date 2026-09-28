@@ -329,6 +329,7 @@ function historyFilterRpcArgs(filters){
   }));
 }
 function formatDuration(ms){
+  if(Number(ms)>=86400000) return '> 24 h';
   const s = Math.max(0, Math.round(ms/1000));
   const m = Math.floor(s/60), sec = s%60;
   return m>0 ? `${m} min ${sec}s` : `${sec}s`;
