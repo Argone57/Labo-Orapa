@@ -6948,7 +6948,9 @@ window.addEventListener('resize', ()=>{
     computeCellSize();renderBgGrid();renderPieces();renderTraces();
   });
 });
-document.addEventListener('dblclick',event=>event.preventDefault(),{passive:false});
+document.addEventListener('dblclick',event=>{
+  if(event.target.closest('#board,.street-board,.palette,.street-palette'))event.preventDefault();
+},{passive:false});
 $('#historyToggle').addEventListener('click',toggleHistoryDisclosure);
 
 // ---------------------------------------------------------------------
