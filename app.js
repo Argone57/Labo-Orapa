@@ -5608,6 +5608,10 @@ $('#homeLearn').addEventListener('click',()=>{
 $('#tutorialChoiceClose').addEventListener('click',()=>$('#tutorialChoiceModal').classList.remove('open'));
 $('#tutorialMine').addEventListener('click',()=>{$('#tutorialChoiceModal').classList.remove('open');startInteractiveTutorial();});
 $('#tutorialSpace').addEventListener('click',()=>{if(!canPreviewSpaceTutorial())return;$('#tutorialChoiceModal').classList.remove('open');startSpaceInteractiveTutorial();});
+$('#tutorialStreet').addEventListener('click',()=>{
+  $('#tutorialChoiceModal').classList.remove('open');
+  void window.OrapaStreetPrototype?.startTutorial?.();
+});
 $('#spaceTutorialClose').addEventListener('click',()=>$('#spaceTutorialModal').classList.remove('open'));
 $('#spaceTutorialPrevious').addEventListener('click',()=>{spaceTutorialStep=Math.max(0,spaceTutorialStep-1);renderSpaceTutorial();});
 $('#spaceTutorialNext').addEventListener('click',async()=>{if(spaceTutorialStep<SPACE_TUTORIAL_STEPS.length-1){spaceTutorialStep++;renderSpaceTutorial();return;}$('#spaceTutorialModal').classList.remove('open');if(currentPlayerAccount?.session_token)await awardSpaceEvent('tutorial');showToast('Tutoriel Orapa Space terminé !');});

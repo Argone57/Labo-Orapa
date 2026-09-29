@@ -395,6 +395,10 @@
   let streetSync=Promise.resolve();
   let selectedWaveEdge=null;
   let directionChoicesHideTimer=null;
+  const STREET_TUTORIAL_REFERENCE='EMG5264J-W-R';
+  let streetTutorial={active:false,stage:0,puzzle:false,secretPieces:[],draftIndex:0,preference:null};
+  const streetPlayerMode=()=>state.mode==='solo'||state.mode==='tutorial';
+  const streetTutorialPlacementOrder=['yellowLarge','blueLarge','redWall','blueSmall'];
   const EXIT_SIDE_KEYS=['top','upperRight','lowerRight','bottom','lowerLeft','upperLeft'];
   const DEFAULT_EXIT_SIDES={
     top:{arrowDistance:0,arrowOutward:.5,arrowAlong:-2,caseOutward:.5,caseAlong:0},
@@ -436,6 +440,68 @@
       directionChoicesHideTimer=null;
       if(selectedWaveEdge===edgeIndex){selectedWaveEdge=null;render();}
     },2000);
+  }
+  function streetTutorialExpectedWave(){
+    if(!streetTutorial.active)return null;
+    if(streetTutorial.stage===3)return {entry:'J',exit:'13'};
+    if(streetTutorial.stage===5)return {entry:'11',exit:'G'};
+    if(streetTutorial.stage===6||streetTutorial.stage===9)return {entry:'8',exit:'D'};
+    return null;
+  }
+  function streetTutorialExpectedEntry(){return streetTutorialExpectedWave()?.entry||null;}
+  function streetTutorialWaveMatches(edge,directionIndex){
+    const expected=streetTutorialExpectedWave();
+    if(!expected||edge.label!==expected.entry)return false;
+    const lane=emptyLane(edge,directionIndex);
+    return lane?.labels?.find(label=>label!==edge.label)===expected.exit;
+  }
+  function streetTutorialAllowLabel(edge){
+    if(!streetTutorial.active)return true;
+    if(streetTutorial.stage===4){
+      if(edge.label==='J')return true;
+      showErrorToast('Reclique d’abord sur J pour revoir la sortie.');return false;
+    }
+    if(streetTutorialExpectedEntry()===edge.label)return true;
+    showErrorToast('Touche l’entrée mise en évidence par le tutoriel.');return false;
+  }
+  function streetTutorialAllowWave(edge,directionIndex){
+    if(!streetTutorial.active)return true;
+    if(streetTutorialWaveMatches(edge,directionIndex))return true;
+    showErrorToast('Choisis la direction mise en évidence.');return false;
+  }
+  function streetTutorialDraftTargetIds(){
+    if(!streetTutorial.active||!streetTutorial.puzzle||streetTutorial.stage!==16)return [];
+    const edge=BOARD.boundary.find(item=>item.label==='4');
+    const directionIndex=edge?.directions.findIndex((_direction,index)=>emptyLane(edge,index)?.labels?.includes('G'));
+    const lane=directionIndex>=0?emptyLane(edge,directionIndex):null;
+    if(!lane)return [];
+    const vector=sub(lane.b,lane.a),length2=dot(vector,vector);
+    return BOARD.triangles.map(triangle=>{
+      const center=triangleCenter(triangle),progress=Math.max(0,Math.min(1,dot(sub(center,lane.a),vector)/length2));
+      const nearest=add(lane.a,mul(vector,progress));
+      return {id:triangle.id,progress,distance:Math.hypot(center.x-nearest.x,center.y-nearest.y)};
+    }).filter(item=>item.distance<TRI_H*.58).sort((a,b)=>a.progress-b.progress||a.distance-b.distance).slice(0,3).map(item=>item.id);
+  }
+  function streetTutorialDraftTargetId(){return streetTutorialDraftTargetIds()[streetTutorial.draftIndex]??null;}
+  function streetTutorialCheckPlacement(piece){
+    if(!streetTutorial.active||!streetTutorial.puzzle)return;
+    const expected=streetTutorialPlacementOrder[streetTutorial.stage-10];
+    if(!expected||piece.id!==expected)return;
+    const secret=streetTutorial.secretPieces.find(item=>item.id===piece.id);
+    if(!piece.anchor||!secret||geometrySignature(piece)!==geometrySignature(secret)){
+      piece.anchor=null;showErrorToast('Cette pièce doit être placée à l’emplacement indiqué par le tutoriel.');return;
+    }
+    streetTutorial.stage++;streetTutorialShow();
+  }
+  function streetTutorialAfterWave(edgeIndex,directionIndex){
+    if(!streetTutorial.active)return;
+    const edge=BOARD.boundary[edgeIndex];
+    if(!streetTutorialWaveMatches(edge,directionIndex))return;
+    if(streetTutorial.stage===3)streetTutorial.stage=4;
+    else if(streetTutorial.stage===5)streetTutorial.stage=6;
+    else if(streetTutorial.stage===6)streetTutorial.stage=7;
+    else if(streetTutorial.stage===9)streetTutorial.stage=10;
+    streetTutorialShow();render();
   }
 
   function shuffled(items){
@@ -595,8 +661,15 @@
     element.addEventListener('touchstart',event=>event.preventDefault(),{passive:false});
     element.addEventListener('touchmove',event=>event.preventDefault(),{passive:false});
     element.addEventListener('pointerdown',event=>{
-      if((state.started&&state.mode!=='solo')||state.over)return;
-      if(state.mode==='solo'&&(state.tool==='hint'||state.tool==='draft'))return;
+      if((state.started&&!streetPlayerMode())||state.over)return;
+      if(streetPlayerMode()&&(state.tool==='hint'||state.tool==='draft'))return;
+      if(streetTutorial.active&&streetTutorial.puzzle){
+        const expected=streetTutorialPlacementOrder[streetTutorial.stage-10];
+        if(!expected){showErrorToast('Suis d’abord les étapes du tutoriel.');return;}
+        if(piece.id!==expected){showErrorToast('Utilise uniquement la pièce mise en évidence.');return;}
+      }else if(streetTutorial.active){
+        showErrorToast('Les pièces seront utilisées dans la seconde partie du tutoriel.');return;
+      }
       event.preventDefault();event.stopPropagation();state.selected=piece.id;
       const startX=event.clientX,startY=event.clientY,pointerId=event.pointerId;
       try{element.setPointerCapture?.(pointerId);}catch(_error){}
@@ -630,6 +703,7 @@
           if(pointInPolygon(local,BOARD.polygon,true))piece.anchor=snapPieceAnchor(piece,local);
           else piece.anchor=null;
           ghost?.remove();
+          streetTutorialCheckPlacement(piece);
         }else if(!longPressed){piece.rotation=(piece.rotation+1)%6;if(piece.anchor&&piece.anchor.q===undefined)piece.anchor=snapPieceAnchor(piece,piece.anchor);}
         render();
       };
@@ -642,7 +716,8 @@
     const pieces=state.pieces.filter(piece=>!piece.anchor);
     pieces.forEach(piece=>{
       const def=PIECES.find(d=>d.id===piece.id),tile=document.createElement('div');
-      tile.className=`street-piece-card${state.selected===piece.id?' selected':''}`;
+      const tutorialTarget=streetTutorial.active&&streetTutorial.puzzle&&streetTutorialPlacementOrder[streetTutorial.stage-10]===piece.id;
+      tile.className=`street-piece-card${state.selected===piece.id?' selected':''}${tutorialTarget?' street-tutorial-target':''}`;
       tile.dataset.piece=piece.id;tile.setAttribute('role','button');tile.setAttribute('tabindex','0');tile.setAttribute('aria-label',def.name);tile.title=def.name;
       tile.innerHTML=piecePreview(piece);
       attachPieceGesture(tile,piece);host.appendChild(tile);
@@ -652,39 +727,48 @@
   function renderBoard(){
     const svg=byId('streetBoard');svg.innerHTML='';
     const useDirectionChoices=resolvedWavePreference()==='choices';
-    const previewTrace=state.mode==='solo'&&state.waveModeActive&&state.previewWave
+    const previewTrace=streetPlayerMode()&&state.waveModeActive&&state.previewWave
       ?traceRay(state.previewWave.edgeIndex,state.previewWave.directionIndex,state.pieces)
       :null;
     const displayTraceAt=(edgeIndex,directionIndex)=>findTraceAt(edgeIndex,directionIndex);
     svg.classList.toggle('coordinate-mode',state.started);
-    svg.classList.toggle('solo',state.mode==='solo');
+    svg.classList.toggle('solo',streetPlayerMode());
     svg.classList.toggle('wave-choice-mode',useDirectionChoices);
     svg.classList.toggle('started',!!state.started);
-    svg.classList.toggle('cell-tool-active',state.mode==='solo'&&(state.tool==='hint'||state.tool==='draft'));
-    svg.classList.toggle('hint-mode',state.mode==='solo'&&state.tool==='hint');
-    svg.classList.toggle('draft-mode',state.mode==='solo'&&state.tool==='draft');
+    svg.classList.toggle('cell-tool-active',streetPlayerMode()&&(state.tool==='hint'||state.tool==='draft'));
+    svg.classList.toggle('hint-mode',streetPlayerMode()&&state.tool==='hint');
+    svg.classList.toggle('draft-mode',streetPlayerMode()&&state.tool==='draft');
     const margin=useDirectionChoices?31:43;
     svg.setAttribute('viewBox',`${-margin} ${-margin} ${BOARD.width+margin*2} ${BOARD.height+margin*2}`);
     const boardGroup=svgEl('g',{class:'street-grid'});
     BOARD.triangles.forEach(triangle=>{
       const key=String(triangle.id),draftEmpty=!!state.draftCells?.[key];
-      const poly=svgEl('polygon',{points:pointsAttr(triangle.points),class:`street-cell${draftEmpty?' draft-empty':''}`,'data-cell':triangle.id});
+      const draftTarget=streetTutorialDraftTargetId()===triangle.id;
+      const poly=svgEl('polygon',{points:pointsAttr(triangle.points),class:`street-cell${draftEmpty?' draft-empty':''}${draftTarget?' street-tutorial-target':''}`,'data-cell':triangle.id});
       poly.addEventListener('click',async event=>{
         if(!state.started)return;
         if(useDirectionChoices&&selectedWaveEdge!==null)return;
         event.stopPropagation();
-        if(state.mode==='solo'&&state.tool==='draft'){
+        if(streetTutorial.active){
+          if(!streetTutorial.puzzle||streetTutorial.stage!==16||state.tool!=='draft'){showErrorToast('Suis l’étape indiquée par le tutoriel.');return;}
+          if(!draftTarget){showErrorToast('Masque la prochaine case mise en évidence.');return;}
+          state.draftCells=state.draftCells&&typeof state.draftCells==='object'?state.draftCells:{};
+          state.draftCells[key]=true;streetTutorial.draftIndex++;
+          if(streetTutorial.draftIndex>=3){streetTutorial.stage=17;streetTutorialShow();}
+          render();return;
+        }
+        if(streetPlayerMode()&&state.tool==='draft'){
           state.draftCells=state.draftCells&&typeof state.draftCells==='object'?state.draftCells:{};
           if(state.draftCells[key])delete state.draftCells[key];else state.draftCells[key]=true;
           render();return;
         }
-        if(state.mode==='solo'&&state.tool!=='hint')return;
+        if(streetPlayerMode()&&state.tool!=='hint')return;
         if(state.coords.some(item=>item.triangle===triangle.id))return;
         const coord=coordinateForTriangle(triangle);
-        if(state.mode==='solo'&&!await gameConfirm(`Révéler le contenu de la case ${coord} ?`,'Demander un indice','Révéler','Annuler'))return;
+        if(streetPlayerMode()&&!await gameConfirm(`Révéler le contenu de la case ${coord} ?`,'Demander un indice','Révéler','Annuler'))return;
         const result=coordinateResultForTriangle(triangle);
         state.coords.push({triangle:triangle.id,text:coord,...result,time:new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit',second:'2-digit'})});
-        if(state.mode==='solo')state.tool='pieces';
+        if(streetPlayerMode())state.tool='pieces';
         render();void recordStreetAction('coord');
       });boardGroup.appendChild(poly);
     });
@@ -724,8 +808,15 @@
             }
           }
         });
-        const hit=svgEl('rect',{x:box.left,y:box.top,width:32,height:26,rx:6,class:`street-label-hit${selectedWaveEdge===edgeIndex?' active':''}${state.started?'':' disabled'}`,'data-label-edge':edgeIndex});
-        hit.addEventListener('click',event=>{event.stopPropagation();if(!state.started)return;clearDirectionChoicesTimer();selectedWaveEdge=selectedWaveEdge===edgeIndex?null:edgeIndex;render();});
+        const tutorialEdge=streetTutorialExpectedEntry()===edge.label||streetTutorial.stage===4&&edge.label==='J';
+        const hit=svgEl('rect',{x:box.left,y:box.top,width:32,height:26,rx:6,class:`street-label-hit${selectedWaveEdge===edgeIndex?' active':''}${state.started?'':' disabled'}${tutorialEdge?' street-tutorial-target':''}`,'data-label-edge':edgeIndex});
+        hit.addEventListener('click',event=>{
+          event.stopPropagation();if(!state.started)return;
+          if(!streetTutorialAllowLabel(edge)){return;}
+          clearDirectionChoicesTimer();selectedWaveEdge=selectedWaveEdge===edgeIndex?null:edgeIndex;
+          if(streetTutorial.active&&streetTutorial.stage===4){streetTutorial.stage=5;streetTutorialShow();}
+          render();
+        });
         labelGroup.appendChild(hit);
       }
       const label=svgEl('text',{x:labelPos.x,y:labelPos.y,'text-anchor':'middle','dominant-baseline':'central',class:`street-label${useDirectionChoices?' clickable':''}${selectedWaveEdge===edgeIndex?' active':''}`});label.textContent=edge.label;labelGroup.appendChild(label);
@@ -735,12 +826,13 @@
           const lane=emptyLane(edge,directionIndex),destination=lane?.labels?.find(value=>value!==edge.label)||'?';
           const center=add(edge.mid,mul(direction,48));
           const usedTrace=displayTraceAt(edgeIndex,directionIndex);
-          const choice=svgEl('g',{class:`street-direction-choice-svg${usedTrace?' used':''}${usedTrace?.color?.name==='Transparent'?' transparent':''}`,'data-edge':edgeIndex,'data-direction':directionIndex});
+          const tutorialChoice=streetTutorialExpectedWave(edge,directionIndex);
+          const choice=svgEl('g',{class:`street-direction-choice-svg${usedTrace?' used':''}${usedTrace?.color?.name==='Transparent'?' transparent':''}${tutorialChoice?' street-tutorial-target':''}`,'data-edge':edgeIndex,'data-direction':directionIndex});
           const box=svgEl('rect',{x:center.x-15,y:center.y-11,width:30,height:22,rx:5,style:usedTrace?`--street-result:${usedTrace.color.hex}`:''});
           const text=svgEl('text',{x:center.x,y:center.y,'text-anchor':'middle','dominant-baseline':'central'});
           text.textContent=usedTrace?(traceExitInfo(usedTrace,edgeIndex,directionIndex)||'∅'):`→ ${destination}`;
           choice.appendChild(box);choice.appendChild(text);
-          choice.addEventListener('click',event=>{event.stopPropagation();if(state.mode==='solo'&&state.waveModeActive&&usedTrace)showPreviewWave(edgeIndex,directionIndex,usedTrace);else if(usedTrace)showStreetTraceFeedback(usedTrace,edgeIndex,directionIndex);else launchWave(edgeIndex,directionIndex);scheduleDirectionChoicesHide(edgeIndex);});
+          choice.addEventListener('click',event=>{event.stopPropagation();if(!streetTutorialAllowWave(edge,directionIndex))return;if(streetPlayerMode()&&state.waveModeActive&&usedTrace)showPreviewWave(edgeIndex,directionIndex,usedTrace);else if(usedTrace)showStreetTraceFeedback(usedTrace,edgeIndex,directionIndex);else launchWave(edgeIndex,directionIndex);scheduleDirectionChoicesHide(edgeIndex);});
           labelGroup.appendChild(choice);
         });
       }
@@ -753,7 +845,7 @@
         const arrow=[add(pos,mul(direction,7)),rearA,rearB];
         const usedTrace=displayTraceAt(edgeIndex,directionIndex);
         const button=svgEl('polygon',{points:pointsAttr(arrow),class:`street-ray-button${usedTrace?' used':''}${state.started?'':' disabled'}`,'data-edge':edgeIndex,'data-direction':directionIndex,style:usedTrace?`--street-result:${usedTrace.color.hex}`:''});
-        button.addEventListener('click',event=>{event.stopPropagation();if(state.mode==='solo'&&state.waveModeActive&&usedTrace)showPreviewWave(edgeIndex,directionIndex,usedTrace);else if(usedTrace)showStreetTraceFeedback(usedTrace,edgeIndex,directionIndex);else launchWave(edgeIndex,directionIndex);});labelGroup.appendChild(button);
+        button.addEventListener('click',event=>{event.stopPropagation();if(!streetTutorialAllowWave(edge,directionIndex))return;if(streetPlayerMode()&&state.waveModeActive&&usedTrace)showPreviewWave(edgeIndex,directionIndex,usedTrace);else if(usedTrace)showStreetTraceFeedback(usedTrace,edgeIndex,directionIndex);else launchWave(edgeIndex,directionIndex);});labelGroup.appendChild(button);
         const exitInfo=usedTrace&&traceExitInfo(usedTrace,edgeIndex,directionIndex);
         if(exitInfo){
           const leftSide=['1','2','3','4','A','B','C'].includes(edge.label);
@@ -778,7 +870,7 @@
         }
       });
     });svg.appendChild(labelGroup);
-    if(state.mode!=='solo')state.traces.forEach(trace=>{
+    if(!streetPlayerMode()||streetTutorial.active&&!streetTutorial.puzzle)state.traces.forEach(trace=>{
       if(trace.points.length>1){
         const stroke=trace.color?.hex||STREET_TRANSPARENT.hex;
         svg.appendChild(svgEl('polyline',{points:pointsAttr(trace.points),class:'street-trace-halo',stroke}));
@@ -793,7 +885,7 @@
     const issues=validatePieces(state.pieces);
     const appendPiece=(piece,display='normal')=>{
       const geo=pieceGeometry(piece),color=COLORS[geo.definition.color],resultClass=display==='guess'?' street-result-guess':(display==='secret'?' street-result-secret':'');
-      const group=svgEl('g',{class:`street-piece${resultClass}${display==='normal'&&state.selected===piece.id?' selected':''}${display==='normal'&&state.mode!=='solo'&&issues.has(piece.id)?' invalid':''}`,'data-piece':piece.id,style:display==='guess'?`--street-piece-color:${color}`:''});
+      const group=svgEl('g',{class:`street-piece${resultClass}${display==='normal'&&state.selected===piece.id?' selected':''}${display==='normal'&&!streetPlayerMode()&&issues.has(piece.id)?' invalid':''}`,'data-piece':piece.id,style:display==='guess'?`--street-piece-color:${color}`:''});
       const attrs={points:pointsAttr(geo.poly),fill:display==='guess'?'none':color};
       if(display==='guess')Object.assign(attrs,{stroke:color,'stroke-width':2.2,'vector-effect':'non-scaling-stroke'});
       const body=svgEl('polygon',attrs);
@@ -807,7 +899,7 @@
       if(display==='normal')attachPieceGesture(group,piece);
       svg.appendChild(group);
     };
-    if(state.mode==='solo'&&state.over){
+    if(streetPlayerMode()&&state.over){
       if(state.showSecret!==false)state.secretPieces.filter(piece=>piece.anchor).forEach(piece=>appendPiece(piece,'secret'));
       if(state.showGuess!==false)state.pieces.filter(piece=>piece.anchor).forEach(piece=>appendPiece(piece,'guess'));
     }else state.pieces.filter(piece=>piece.anchor).forEach(piece=>appendPiece(piece));
@@ -864,7 +956,7 @@
     if(partner)pulseStreetControl(partner.index,partnerDirection);
   }
   function showPreviewWave(edgeIndex,directionIndex,realTrace=null){
-    if(!state.started||state.mode!=='solo'||!state.waveModeActive)return;
+    if(!state.started||!streetPlayerMode()||!state.waveModeActive)return;
     state.previewWave={edgeIndex,directionIndex};
     render();
     if(realTrace)setTimeout(()=>showStreetTraceFeedback(realTrace,edgeIndex,directionIndex),0);
@@ -873,12 +965,12 @@
     if(!state.started)return;
     const usedTrace=findTraceAt(edgeIndex,directionIndex);
     if(usedTrace)return showStreetTraceFeedback(usedTrace,edgeIndex,directionIndex);
-    if(state.mode!=='solo'&&validatePieces(state.pieces).size)return setMessage('Corrige les placements rouges avant de lancer une onde.',true);
+    if(!streetPlayerMode()&&validatePieces(state.pieces).size)return setMessage('Corrige les placements rouges avant de lancer une onde.',true);
     const trace=traceRay(edgeIndex,directionIndex,queryPieces());
     trace.time=new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
     state.traces.push(trace);
-    if(state.mode==='solo'&&state.waveModeActive)state.previewWave={edgeIndex,directionIndex};
-    render();void recordStreetAction('ray');setTimeout(()=>showStreetTraceFeedback(trace,edgeIndex,directionIndex),0);
+    if(streetPlayerMode()&&state.waveModeActive)state.previewWave={edgeIndex,directionIndex};
+    render();void recordStreetAction('ray');streetTutorialAfterWave(edgeIndex,directionIndex);setTimeout(()=>showStreetTraceFeedback(trace,edgeIndex,directionIndex),0);
   }
   function launchAllStreetWaves(){
     if(state.mode!=='gm')return;
@@ -936,22 +1028,6 @@
     byId('streetHistoryToggleIndicator').textContent=open?'−':'+';
   }
   function setMessage(text,error=false){const el=byId('streetStartBlockMsg');el.textContent=text;el.style.color=error?'#f5b8ae':'var(--text-faint)';}
-  function updateExitTuner(){
-    const tuner=byId('streetExitTuner');if(!tuner)return;
-    tuner.hidden=state.mode!=='gm';
-    tuner.querySelectorAll('input[data-exit-tuning]').forEach(input=>{
-      const key=input.dataset.exitTuning;input.value=String(exitTuning[key]);
-      const output=tuner.querySelector(`[data-exit-value="${key}"]`);if(output)output.textContent=String(exitTuning[key]);
-    });
-    const sideKey=byId('streetExitSide').value;
-    tuner.querySelectorAll('input[data-exit-side-tuning]').forEach(input=>{
-      const key=input.dataset.exitSideTuning;input.value=String(exitTuning.sides[sideKey][key]);
-      const output=tuner.querySelector(`[data-exit-side-value="${key}"]`);if(output)output.textContent=String(exitTuning.sides[sideKey][key]);
-    });
-  }
-  function exitTuningReport(){
-    return `ORAPA STREET — RÉGLAGES TEMPORAIRES DES SORTIES\n${JSON.stringify({version:2,...exitTuning},null,2)}`;
-  }
   function elapsedMs(){return Math.max(0,Date.now()-(state.startedAt||Date.now()));}
   function streetSummary(success=state.result==='win'){
     const name=currentPlayerAccount?.display_name||'Anonyme',cost=state.traces.length+state.coords.length*3,date=new Date().toLocaleDateString('fr-FR');
@@ -1038,17 +1114,16 @@
   }
   function render(){
     renderPalette();renderBoard();renderHistory();
-    updateExitTuner();
     const issues=validatePieces(state.pieces),placed=state.pieces.filter(p=>p.anchor).length;
     const complete=placed===PIECES.length&&!issues.size;
     const preStart=!state.started;
-    const showPalette=preStart||(state.mode==='solo'&&!state.over);
+    const showPalette=preStart||(streetPlayerMode()&&!state.over&&(!streetTutorial.active||streetTutorial.puzzle));
     byId('streetRandom').hidden=!preStart;
     byId('streetShare').hidden=!preStart;
     byId('streetStart').hidden=!preStart;
     const streetEnd=byId('streetEnd');
     const showAttemptCounter=state.mode==='solo'&&state.started&&!state.over;
-    streetEnd.hidden=preStart||state.over;
+    streetEnd.hidden=preStart||state.over||streetTutorial.active;
     streetEnd.classList.toggle('primary',state.mode==='solo');
     streetEnd.classList.toggle('danger',state.mode==='gm');
     streetEnd.classList.toggle('has-attempt-counter',showAttemptCounter);
@@ -1065,7 +1140,7 @@
     byId('streetStartBlockMsg').style.display=preStart?'block':'none';
     byId('streetWaveSetting').hidden=true;
     byId('streetWavePreference').value=wavePreference;
-    const showCellTools=state.mode==='solo'&&state.started&&!state.over;
+    const showCellTools=streetPlayerMode()&&state.started&&!state.over&&(!streetTutorial.active||streetTutorial.puzzle);
     byId('streetCellTools').hidden=!showCellTools;
     byId('streetHint').classList.toggle('active',showCellTools&&state.tool==='hint');
     byId('streetHint').textContent=state.tool==='hint'?'🔍 Mode indice activé':'🔍 Demander un indice';
@@ -1079,18 +1154,97 @@
     byId('streetToggleSecret').textContent=`${state.showSecret===false?'🚫':'👁'} Pièces à trouver`;
     const pill=byId('streetPrototype').querySelector('.mode-pill');
     pill.classList.toggle('live',state.started);
-    pill.querySelector('span:last-child').textContent=state.over?(state.result==='win'?'Victoire':'Défaite'):(state.started?(state.mode==='solo'?'Partie en cours':'Test de la grille'):'Placement des pièces');
+    pill.querySelector('span:last-child').textContent=streetTutorial.active?'Tutoriel interactif':(state.over?(state.result==='win'?'Victoire':'Défaite'):(state.started?(state.mode==='solo'?'Partie en cours':'Test de la grille'):'Placement des pièces'));
     if(preStart){clearDirectionChoicesTimer();selectedWaveEdge=null;}
     if(state.started)setMessage('',false);
     else if(issues.size)setMessage([...new Set(issues.values())][0],true);
     else if(placed<PIECES.length)setMessage('Place toutes les pièces avant de démarrer.',true);
     else setMessage('');
   }
+  function ensureStreetTutorialCoach(){
+    let coach=byId('streetTutorialCoach');
+    if(coach)return coach;
+    coach=document.createElement('aside');coach.id='streetTutorialCoach';coach.className='street-tutorial-coach';
+    coach.innerHTML='<button class="street-tutorial-close" type="button" aria-label="Quitter le tutoriel">×</button><div class="street-tutorial-step"></div><h3></h3><div class="street-tutorial-copy"></div><div class="street-tutorial-actions"><button class="primary" type="button"></button></div>';
+    coach.querySelector('.street-tutorial-close').addEventListener('click',()=>endStreetTutorial());
+    coach.querySelector('.street-tutorial-actions button').addEventListener('click',()=>advanceStreetTutorial());
+    document.body.appendChild(coach);return coach;
+  }
+  function streetTutorialContent(stage){
+    const content={
+      1:{title:'Bienvenue dans Orapa Street',text:'<p>Veuillez noter que ce mode a été développé à partir de la seule image connue du jeu à ce jour. Il est donc possible qu’il y ait des différences avec le jeu réel à venir.</p><p>Le principe reste le même : reconstituer la grille avec les différentes pièces. Les deux actions habituelles constituent toujours le cœur du jeu ; toutefois, compte tenu de la forme de la grille, la gestion des ondes est un peu différente.</p><p>Les règles de placement sont également identiques.</p>',action:'Voir la grille'},
+      2:{title:'Voilà à quoi ressemble une grille',text:'<p>Voici la grille <strong>EMG5264J-W-R</strong>, présentée comme une création de grille déjà démarrée, en mode <strong>Cases</strong>.</p>',action:'Découvrir les ondes'},
+      3:{title:'Deux directions possibles',text:'<p>Depuis un même point de départ, deux ondes peuvent partir dans deux directions.</p><p>Trois affichages existent : <strong>Auto</strong> (par défaut), <strong>Cases</strong> et <strong>Flèches</strong>. Tu peux les modifier à tout moment dans les options du compte. En Auto, l’affichage s’adapte à l’écran : les cases sont utilisées sur les petits écrans.</p><p>Ici, tu es en mode Cases. Touche <strong>J</strong>, puis choisis la direction vers <strong>13</strong>.</p>'},
+      4:{title:'Les informations de sortie',text:'<p>Les informations de sortie s’affichent directement dans les cases, qui se colorent à moitié. Si tu recliques sur une case où une onde a déjà été lancée, sa direction est remplacée par sa sortie.</p><p>Reclique sur <strong>J</strong>.</p>'},
+      5:{title:'Des rebonds en chaîne',text:'<p>Comme tu peux le constater, il y a beaucoup plus de rebonds que dans les autres modes.</p><p>Touche <strong>11</strong>, puis choisis <strong>G</strong>.</p>'},
+      6:{title:'Encore une onde',text:'<p>Touche maintenant <strong>8</strong>, puis choisis <strong>D</strong>.</p>'},
+      7:{title:'Observer les rebonds',text:'<p>Tu peux prendre un instant pour observer les trajets. Les ondes restent visibles pour mieux comprendre leurs rebonds.</p>',action:'Suivant'},
+      8:{title:'Une grille à résoudre',text:'<p>Nous passons à l’équivalent du mode aléatoire, avec la même grille et toujours en mode Cases.</p><p>Les boutons <strong>Afficher une onde</strong> et <strong>Masquer les cases</strong> sont maintenant disponibles. Afin de t’aider, active <strong>Afficher une onde</strong>.</p>'},
+      9:{title:'Une onde d’aide',text:'<p>Lance maintenant l’onde de <strong>8</strong> vers <strong>D</strong>.</p>'},
+      10:{title:'Une onde dynamique',text:'<p>Cette onde ne compte pas pour la résolution. Elle t’aide à placer les pièces : elle réagit en temps réel aux pièces que tu poses sur son trajet.</p><p>Place la petite pièce jaune sur la ligne B, de <strong>BD</strong> à <strong>BE</strong>.</p>'},
+      11:{title:'Placer une pièce',text:'<p>Place maintenant la grande pièce bleue à son emplacement réel : ligne 2, de <strong>2I</strong> à <strong>2J</strong>.</p>'},
+      12:{title:'Placer une pièce',text:'<p>Place la pièce rouge à son emplacement réel, sur la ligne 5.</p>'},
+      13:{title:'Placer une pièce',text:'<p>Place enfin la petite pièce bleue à son emplacement réel, sur la ligne 9.</p>'},
+      14:{title:'Onde et masquage',text:'<p>Les quatre pièces demandées sont en place. L’onde affichée reste active et continue de réagir à la grille.</p>',action:'Suivant'},
+      15:{title:'Combiner les aides',text:'<p>Tu peux combiner le masquage des cases avec l’affichage d’onde. Active <strong>Masquer les cases</strong>.</p>'},
+      16:{title:'Masquer des cases',text:'<p>Masque les trois premières cases de la ligne <strong>4</strong> vers <strong>G</strong>.</p>'},
+      17:{title:'Masquage effectué',text:'<p>Les trois premières cases demandées sont maintenant masquées.</p>',action:'Suivant'},
+      18:{title:'Aperçu terminé',text:'<p>Voilà, tu as un aperçu d’Orapa Street — enfin, en espérant que le jeu réel sera bien comme ça :D</p><p>N’hésite pas à utiliser le mode création de grille : après avoir placé toutes les pièces, utilise « Démarrer la partie » pour mieux voir les interactions.</p><p>Et bon courage !</p>',action:'Terminer'}
+    };
+    return content[stage]||content[1];
+  }
+  function streetTutorialShow(){
+    if(!streetTutorial.active)return;
+    const coach=ensureStreetTutorialCoach(),content=streetTutorialContent(streetTutorial.stage);
+    coach.querySelector('.street-tutorial-step').textContent=`Tutoriel Street — étape ${Math.min(Math.ceil(streetTutorial.stage/3),6)}/6`;
+    coach.querySelector('h3').textContent=content.title;
+    coach.querySelector('.street-tutorial-copy').innerHTML=content.text;
+    const action=coach.querySelector('.street-tutorial-actions button');
+    action.hidden=!content.action;action.textContent=content.action||'';
+  }
+  function streetTutorialDemoState(){
+    state={mode:'tutorial',pieces:streetTutorial.secretPieces.map(piece=>({...piece,anchor:piece.anchor?{...piece.anchor}:null})),secretPieces:streetTutorial.secretPieces.map(piece=>({...piece,anchor:piece.anchor?{...piece.anchor}:null})),selected:'blueSmall',tool:'pieces',waveModeActive:false,previewWave:null,started:true,traces:[],coords:[],draftCells:{},gridId:STREET_TUTORIAL_REFERENCE,gridAlias:STREET_TUTORIAL_REFERENCE,attempts:0,over:false,result:null,showGuess:true,showSecret:true,startedAt:null,finalTimeMs:null,rank:null};
+    streetTutorial.puzzle=false;clearDirectionChoicesTimer();selectedWaveEdge=null;toggleHistory(false);
+  }
+  function streetTutorialPuzzleState(){
+    state={mode:'tutorial',pieces:freshPieces(),secretPieces:streetTutorial.secretPieces.map(piece=>({...piece,anchor:piece.anchor?{...piece.anchor}:null})),selected:'yellowLarge',tool:'pieces',waveModeActive:false,previewWave:null,started:true,traces:[],coords:[],draftCells:{},gridId:STREET_TUTORIAL_REFERENCE,gridAlias:STREET_TUTORIAL_REFERENCE,attempts:0,over:false,result:null,showGuess:true,showSecret:true,startedAt:null,finalTimeMs:null,rank:null};
+    streetTutorial.puzzle=true;streetTutorial.draftIndex=0;clearDirectionChoicesTimer();selectedWaveEdge=null;toggleHistory(false);
+  }
+  function advanceStreetTutorial(){
+    if(!streetTutorial.active)return;
+    if(streetTutorial.stage===1){streetTutorialDemoState();streetTutorial.stage=2;}
+    else if(streetTutorial.stage===2)streetTutorial.stage=3;
+    else if(streetTutorial.stage===7){streetTutorialPuzzleState();streetTutorial.stage=8;}
+    else if(streetTutorial.stage===14)streetTutorial.stage=15;
+    else if(streetTutorial.stage===17)streetTutorial.stage=18;
+    else if(streetTutorial.stage===18){endStreetTutorial();return;}
+    streetTutorialShow();render();
+  }
+  async function startStreetTutorial(){
+    let decoded=decodeStreetGrid(STREET_TUTORIAL_REFERENCE);
+    try{if(!decoded&&typeof resolveGridReference==='function')decoded=await resolveGridReference(STREET_TUTORIAL_REFERENCE);}catch(_error){}
+    if(decoded?.variant!=='street'||!Array.isArray(decoded.pieces)){showErrorToast('La grille du tutoriel Street est indisponible pour le moment.');return false;}
+    const previousPreference=wavePreference;
+    applyWavePreference('choices',false);
+    streetTutorial={active:true,stage:1,puzzle:false,secretPieces:decoded.pieces.map(piece=>({...piece,anchor:piece.anchor?{...piece.anchor}:null})),draftIndex:0,preference:previousPreference};
+    streetTutorialDemoState();
+    byId('streetPrototype').querySelector('.subtitle').textContent='Parcours interactif';
+    byId('streetPrototype').hidden=false;document.body.classList.add('street-open');document.body.classList.remove('home-view');
+    streetTutorialShow();render();return true;
+  }
+  function endStreetTutorial(){
+    if(!streetTutorial.active)return;
+    const preference=streetTutorial.preference;
+    streetTutorial={active:false,stage:0,puzzle:false,secretPieces:[],draftIndex:0,preference:null};
+    if(preference)applyWavePreference(preference,false);
+    clearDirectionChoicesTimer();selectedWaveEdge=null;byId('streetTutorialCoach')?.remove();
+    byId('streetPrototype').hidden=true;document.body.classList.remove('street-open');document.body.classList.add('home-view');
+  }
   function bind(){
     const create=byId('createStreetMode');
     if(!create)return;
     create.addEventListener('click',()=>openCreation());
-    byId('streetClose').addEventListener('click',()=>close());
+    byId('streetClose').addEventListener('click',()=>streetTutorial.active?endStreetTutorial():close());
     byId('streetRandom').addEventListener('click',()=>{if(state.started)return;if(!randomizePieces())setMessage('Impossible de trouver un placement valide. Réessaie.',true);render();});
     byId('streetStart').addEventListener('click',()=>{if(state.started||byId('streetStart').disabled)return;state.started=true;state.startedAt=Date.now();state.tool='pieces';state.traces=[];state.coords=[];clearDirectionChoicesTimer();selectedWaveEdge=null;toggleHistory(false);render();});
     byId('streetEnd').addEventListener('click',async()=>{
@@ -1102,33 +1256,29 @@
     });
     byId('streetShare').addEventListener('click',()=>void shareStreet());
     byId('streetReset').addEventListener('click',async()=>{
+      if(streetTutorial.active){endStreetTutorial();return;}
       if(!confirm(state.mode==='solo'?'Abandonner cette partie et recommencer ?':'Effacer tous les placements et l’historique Street ?'))return;
       if(state.mode==='solo'&&streetAttempt?.attempt_id)try{const abandonedAttempt=streetAttempt;await supabaseRpc('orapa_abandon_street_attempt',{p_session_token:currentPlayerAccount.session_token,p_attempt_id:abandonedAttempt.attempt_id});if(activeAttempt?.attempt_id===abandonedAttempt.attempt_id)activeAttempt=null;streetAttempt=null;}catch(error){showErrorToast('Abandon impossible : '+error.message);return;}
       if(state.mode==='solo'){await openSolo();return;}
       state={mode:'gm',pieces:freshPieces(),secretPieces:[],selected:'blueSmall',tool:'pieces',waveModeActive:false,previewWave:null,started:false,traces:[],coords:[],draftCells:{},gridId:null,gridAlias:null,attempts:0,over:false,result:null,showGuess:true,showSecret:true,startedAt:null,finalTimeMs:null,rank:null};clearDirectionChoicesTimer();selectedWaveEdge=null;render();
     });
     byId('streetHistoryToggle').addEventListener('click',()=>toggleHistory());
-    byId('streetHint').addEventListener('click',()=>{state.tool=state.tool==='hint'?'pieces':'hint';clearDirectionChoicesTimer();selectedWaveEdge=null;render();});
-    byId('streetDraft').addEventListener('click',()=>{state.tool=state.tool==='draft'?'pieces':'draft';clearDirectionChoicesTimer();selectedWaveEdge=null;render();});
-    byId('streetShowWave').addEventListener('click',()=>{state.waveModeActive=!state.waveModeActive;if(!state.waveModeActive)state.previewWave=null;clearDirectionChoicesTimer();selectedWaveEdge=null;render();});
+    byId('streetHint').addEventListener('click',()=>{if(streetTutorial.active){showErrorToast('Cette action n’est pas utilisée dans le tutoriel.');return;}state.tool=state.tool==='hint'?'pieces':'hint';clearDirectionChoicesTimer();selectedWaveEdge=null;render();});
+    byId('streetDraft').addEventListener('click',()=>{
+      if(streetTutorial.active){
+        if(streetTutorial.stage!==15){showErrorToast('Active d’abord l’affichage d’onde et suis les étapes.');return;}
+        state.tool='draft';streetTutorial.stage=16;streetTutorial.draftIndex=0;clearDirectionChoicesTimer();selectedWaveEdge=null;streetTutorialShow();render();return;
+      }
+      state.tool=state.tool==='draft'?'pieces':'draft';clearDirectionChoicesTimer();selectedWaveEdge=null;render();
+    });
+    byId('streetShowWave').addEventListener('click',()=>{
+      if(streetTutorial.active&&streetTutorial.stage!==8){showErrorToast('Suis l’étape indiquée par le tutoriel.');return;}
+      state.waveModeActive=!state.waveModeActive;if(!state.waveModeActive)state.previewWave=null;clearDirectionChoicesTimer();selectedWaveEdge=null;
+      if(streetTutorial.active&&state.waveModeActive){streetTutorial.stage=9;streetTutorialShow();}render();
+    });
     byId('streetToggleGuess').addEventListener('click',()=>{state.showGuess=state.showGuess===false;render();});
     byId('streetToggleSecret').addEventListener('click',()=>{state.showSecret=state.showSecret===false;render();});
     byId('streetReplayResult').addEventListener('click',openStreetResultModal);
-    byId('streetExitTuner').querySelectorAll('input[data-exit-tuning]').forEach(input=>input.addEventListener('input',event=>{
-      const key=event.target.dataset.exitTuning;exitTuning[key]=Number(event.target.value);
-      const output=byId('streetExitTuner').querySelector(`[data-exit-value="${key}"]`);if(output)output.textContent=event.target.value;
-      renderBoard();
-    }));
-    byId('streetExitSide').addEventListener('change',updateExitTuner);
-    byId('streetExitTuner').querySelectorAll('input[data-exit-side-tuning]').forEach(input=>input.addEventListener('input',event=>{
-      const sideKey=byId('streetExitSide').value,key=event.target.dataset.exitSideTuning;
-      exitTuning.sides[sideKey][key]=Number(event.target.value);
-      const output=byId('streetExitTuner').querySelector(`[data-exit-side-value="${key}"]`);if(output)output.textContent=event.target.value;
-      renderBoard();
-    }));
-    byId('streetExitCopy').addEventListener('click',()=>navigator.clipboard?.writeText(exitTuningReport()).then(()=>showToast('Configuration des sorties copiée !')));
-    byId('streetExitReset').addEventListener('click',()=>{exitTuning={...DEFAULT_EXIT_TUNING,sides:freshExitSides()};updateExitTuner();renderBoard();});
-    byId('streetExitAllWaves').addEventListener('click',launchAllStreetWaves);
     byId('streetWavePreference').addEventListener('change',event=>{
       applyWavePreference(event.target.value);
       if(currentPlayerAccount?.session_token)void supabaseRpc('orapa_set_street_preferences',{p_session_token:currentPlayerAccount.session_token,p_wave_controls:wavePreference}).then(()=>showToast('Préférence Street enregistrée')).catch(error=>showErrorToast('Enregistrement impossible : '+error.message));
@@ -1142,12 +1292,14 @@
     byId('createModeModal')?.classList.remove('open');
     await loadStreetPreference();
     try{localStorage.removeItem('orapa_street_creation_v3');}catch(_error){}
+    streetTutorial={active:false,stage:0,puzzle:false,secretPieces:[],draftIndex:0};byId('streetTutorialCoach')?.remove();
     state={mode:'gm',pieces:freshPieces(),secretPieces:[],selected:'blueSmall',tool:'pieces',waveModeActive:false,previewWave:null,started:false,traces:[],coords:[],draftCells:{},gridId:null,gridAlias:null,attempts:0,over:false,result:null,showGuess:true,showSecret:true,startedAt:null,finalTimeMs:null,rank:null};
     byId('streetPrototype').querySelector('.subtitle').textContent='Console du maître du jeu';
     byId('streetPrototype').hidden=false;document.body.classList.add('street-open');document.body.classList.remove('home-view');toggleHistory(false);render();
   }
   async function openSolo(gridId=null,resumeAttempt=null){
     if(!currentPlayerAccount?.session_token){closeSoloChoiceModal?.();openAccountModal();return false;}
+    streetTutorial={active:false,stage:0,puzzle:false,secretPieces:[],draftIndex:0};byId('streetTutorialCoach')?.remove();
     await loadStreetPreference();
     let decoded=gridId?decodeStreetGrid(gridId):null;
     if(gridId&&!decoded){showErrorToast('Identifiant Street invalide.');return false;}
@@ -1169,6 +1321,7 @@
     byId('streetPrototype').hidden=false;document.body.classList.add('street-open');document.body.classList.remove('home-view');toggleHistory(false);render();return true;
   }
   function close(force=false){
+    if(streetTutorial.active){endStreetTutorial();return;}
     if(state.mode==='solo'&&!state.over&&!force){showToast('La partie Street reste en cours sur ce compte.');}
     clearDirectionChoicesTimer();selectedWaveEdge=null;byId('streetPrototype').hidden=true;document.body.classList.remove('street-open');document.body.classList.add('home-view');
   }
@@ -1193,6 +1346,6 @@
     const payload={schemaVersion:1,source:'orapa-mine',gameId:101482,gameVariant:'street',isDaily:false,dedupeReference:state.gridId,solo:true,online:true,win:state.result==='win',playerName:preferences.player_mode==='custom'?preferences.custom_player_name:'',resultPlayerName:currentPlayerAccount?.display_name||'',score:preferences.fill_score?(state.traces.length+state.coords.length*3):null,date:new Date().toISOString().slice(0,10),durationMinutes:Math.max(1,Math.round(elapsedMs()/60000)),location:preferences.location_mode==='custom'?preferences.custom_location:'Orapa-Mine',excludeFromStatistics:!!preferences.exclude_from_statistics,autoSubmit:!!preferences.auto_submit,duplicateDetection:preferences.duplicate_detection!==false,comment:streetSummary(),options:{}};
     document.dispatchEvent(new CustomEvent('orapa:myludo-result',{detail:JSON.stringify(payload)}));
   });
-  window.OrapaStreetPrototype={open:openCreation,openCreation,openSolo,resume:attempt=>openSolo(attempt.reference,attempt),close,decode:decodeStreetGrid,encode:encodeStreetGrid,setWavePreference:value=>applyWavePreference(value),openRanking:openStreetRanking,openResult:openStreetResultModal,openGlobalHistory:openStreetGlobalHistory,openCatalog:openStreetCatalog,openMyHistory:openMyStreetHistory,openMyShared:openMySharedStreet,previewResult,debug:{BOARD,LANES,PIECES,axialTransform,applyPieceMirror,pieceGeometry,visualWallsFor,visualWallPolygonsFor,snapPieceAnchor,coordinateForTriangle,traceRay,validatePieces}};
+  window.OrapaStreetPrototype={open:openCreation,openCreation,openSolo,resume:attempt=>openSolo(attempt.reference,attempt),close,startTutorial:startStreetTutorial,decode:decodeStreetGrid,encode:encodeStreetGrid,setWavePreference:value=>applyWavePreference(value),openRanking:openStreetRanking,openResult:openStreetResultModal,openGlobalHistory:openStreetGlobalHistory,openCatalog:openStreetCatalog,openMyHistory:openMyStreetHistory,openMyShared:openMySharedStreet,previewResult,debug:{BOARD,LANES,PIECES,axialTransform,applyPieceMirror,pieceGeometry,visualWallsFor,visualWallPolygonsFor,snapPieceAnchor,coordinateForTriangle,traceRay,validatePieces}};
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',bind);else bind();
 })();
