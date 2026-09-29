@@ -470,7 +470,7 @@
     showErrorToast('Choisis la direction mise en évidence.');return false;
   }
   function streetTutorialDraftTargetIds(){
-    if(!streetTutorial.active||!streetTutorial.puzzle||streetTutorial.stage!==6||streetTutorial.phase!==5)return [];
+    if(!streetTutorial.active||!streetTutorial.puzzle||streetTutorial.stage!==6||streetTutorial.phase!==4)return [];
     const edge=BOARD.boundary.find(item=>item.label==='4');
     const directionIndex=edge?.directions.findIndex((_direction,index)=>emptyLane(edge,index)?.labels?.includes('G'));
     const lane=directionIndex>=0?emptyLane(edge,directionIndex):null;
@@ -701,7 +701,11 @@
         const wasMoved=moved;cleanup();
         if(wasMoved){
           const svg=byId('streetBoard'),local=svgClientPoint(upEvent.clientX,upEvent.clientY,svg);
-          if(pointInPolygon(local,BOARD.polygon,true))piece.anchor=snapPieceAnchor(piece,local);
+          const tutorialTarget=streetTutorial.active&&streetTutorial.puzzle&&streetTutorial.stage===6&&streetTutorial.phase===2&&streetTutorialPlacementOrder[streetTutorial.draftIndex]===piece.id
+            ?streetTutorial.secretPieces.find(item=>item.id===piece.id)
+            :null;
+          if(tutorialTarget?.anchor&&pointInPolygon(local,pieceGeometry(tutorialTarget).poly,true))piece.anchor={...tutorialTarget.anchor};
+          else if(pointInPolygon(local,BOARD.polygon,true))piece.anchor=snapPieceAnchor(piece,local);
           else piece.anchor=null;
           ghost?.remove();
           streetTutorialCheckPlacement(piece);
@@ -751,11 +755,11 @@
         if(useDirectionChoices&&selectedWaveEdge!==null)return;
         event.stopPropagation();
         if(streetTutorial.active){
-          if(!streetTutorial.puzzle||streetTutorial.stage!==6||streetTutorial.phase!==5||state.tool!=='draft'){showErrorToast('Suis l’étape indiquée par le tutoriel.');return;}
+          if(!streetTutorial.puzzle||streetTutorial.stage!==6||streetTutorial.phase!==4||state.tool!=='draft'){showErrorToast('Suis l’étape indiquée par le tutoriel.');return;}
           if(!draftTarget){showErrorToast('Masque la prochaine case mise en évidence.');return;}
           state.draftCells=state.draftCells&&typeof state.draftCells==='object'?state.draftCells:{};
           state.draftCells[key]=true;streetTutorial.draftIndex++;
-          if(streetTutorial.draftIndex>=3){streetTutorial.phase=6;streetTutorialShow();}
+          if(streetTutorial.draftIndex>=3){streetTutorial.stage=7;streetTutorialShow();}
           render();return;
         }
         if(streetPlayerMode()&&state.tool==='draft'){
@@ -827,8 +831,8 @@
           const lane=emptyLane(edge,directionIndex),destination=lane?.labels?.find(value=>value!==edge.label)||'?';
           const center=add(edge.mid,mul(direction,48));
           const usedTrace=displayTraceAt(edgeIndex,directionIndex);
-          const tutorialChoice=streetTutorialExpectedWave(edge,directionIndex);
-          const choice=svgEl('g',{class:`street-direction-choice-svg${usedTrace?' used':''}${usedTrace?.color?.name==='Transparent'?' transparent':''}${tutorialChoice?' street-tutorial-target':''}`,'data-edge':edgeIndex,'data-direction':directionIndex});
+          const tutorialChoice=streetTutorialWaveMatches(edge,directionIndex);
+          const choice=svgEl('g',{class:`street-direction-choice-svg${usedTrace?' used':''}${usedTrace?.color?.name==='Transparent'?' transparent':''}${tutorialChoice?' street-tutorial-choice-target':''}`,'data-edge':edgeIndex,'data-direction':directionIndex});
           const box=svgEl('rect',{x:center.x-15,y:center.y-11,width:30,height:22,rx:5,style:usedTrace?`--street-result:${usedTrace.color.hex}`:''});
           const text=svgEl('text',{x:center.x,y:center.y,'text-anchor':'middle','dominant-baseline':'central'});
           text.textContent=usedTrace?(traceExitInfo(usedTrace,edgeIndex,directionIndex)||'∅'):`→ ${destination}`;
@@ -884,6 +888,18 @@
       svg.appendChild(svgEl('polyline',{points:pointsAttr(previewTrace.points),class:'street-trace street-preview-trace',stroke}));
     }
     const issues=validatePieces(state.pieces);
+    const tutorialPieceId=streetTutorial.active&&streetTutorial.puzzle&&streetTutorial.stage===6&&streetTutorial.phase===2
+      ?streetTutorialPlacementOrder[streetTutorial.draftIndex]
+      :null;
+    if(tutorialPieceId){
+      const target=streetTutorial.secretPieces.find(piece=>piece.id===tutorialPieceId);
+      if(target?.anchor){
+        const geo=pieceGeometry(target),targetGroup=svgEl('g',{class:'street-tutorial-placement-target','pointer-events':'none'});
+        targetGroup.appendChild(svgEl('polygon',{points:pointsAttr(geo.poly)}));
+        visualWallPolygonsFor(geo).forEach(wall=>targetGroup.appendChild(svgEl('polygon',{points:pointsAttr(wall)})));
+        svg.appendChild(targetGroup);
+      }
+    }
     const appendPiece=(piece,display='normal')=>{
       const geo=pieceGeometry(piece),color=COLORS[geo.definition.color],resultClass=display==='guess'?' street-result-guess':(display==='secret'?' street-result-secret':'');
       const group=svgEl('g',{class:`street-piece${resultClass}${display==='normal'&&state.selected===piece.id?' selected':''}${display==='normal'&&!streetPlayerMode()&&issues.has(piece.id)?' invalid':''}`,'data-piece':piece.id,style:display==='guess'?`--street-piece-color:${color}`:''});
@@ -1173,12 +1189,20 @@
   }
   function streetTutorialContent(stage){
     const content={
-      1:{title:'Bienvenue dans Orapa Street',text:'<p>Veuillez noter que ce mode a été développé à partir de la seule image connue du jeu à ce jour.<br>Il est donc possible qu’il y ait des différences avec le jeu réel à venir.</p><p>Le principe est toujours le même, reconstituer la grille avec les différentes pièces.<br>Les 2 actions habituelles constituent toujours le cœur du jeu ; toutefois, compte tenu de la forme de la grille, la gestion des ondes est un peu différente.</p><p>Les règles de placement sont également identiques.</p>',action:'Suivant'},
-      2:{title:'Voilà à quoi ressemble une grille',text:'<p>Voilà à quoi ressemble une grille :</p>',action:'Suivant'},
+      1:{title:'Bienvenue dans Orapa Street',text:'<p>Veuillez noter que ce mode a été développé à partir de la seule image connue du jeu à ce jour.<br>Il est donc possible qu’il y ait des différences avec le jeu réel à venir.</p><p>Le principe est toujours le même, reconstituer la grille avec les différentes pièces.</p><p>Les règles de placement sont également identiques.</p><p>Les 2 actions habituelles constituent toujours le cœur du jeu ; toutefois, compte tenu de la forme de la grille, la gestion des ondes est un peu différente.</p>',action:'Suivant'},
+      2:{title:'Voilà à quoi ressemble une grille',text:'',action:'Suivant'},
       3:{title:'Deux directions possibles',text:'<p>La particularité de cette grille est qu’il peut y avoir 2 ondes qui partent depuis un même point de départ.<br>Pour gérer les 2 directions, il y a 2 options d’affichage : <strong>Cases</strong> et <strong>Flèches</strong>.</p><p>Vous pouvez changer à tout moment depuis les options de votre compte.<br>En auto, le mode d’affichage s’adaptera à la taille de l’écran (cases pour les petits écrans).</p><p>Ici, c’est la présentation en mode case, essayez :<br>Cliquer en <strong>J</strong> et choisir la direction vers <strong>14</strong>.</p>'},
       4:{title:'Les informations de sortie',text:'<p>Plusieurs informations s’affichent.<br>Les informations de sortie sont affichées directement dans les cases et celles-ci se colorent à moitié.<br>Si vous recliquez sur une case où vous avez déjà lancé une onde, vous verrez que la direction a également été remplacée par sa sortie.</p><p>Recliquez sur <strong>J</strong>.</p>'},
       5:{title:'Les rebonds',text:'<p>Comme vous pouvez le constater, il y a beaucoup plus de rebonds que dans les autres modes.</p><p>Cliquez sur <strong>11</strong> vers <strong>G</strong>.<br>Puis cliquez en <strong>8</strong> vers <strong>D</strong>.</p>',action:streetTutorial.waveIndex>=2?'Suivant':''},
-      6:{title:'Afficher une onde',text:'<p>Afin de vous aider, le mode <strong>Afficher une onde</strong> a été ajouté dans ce mode.</p><p>Activez une onde, puis cliquez en <strong>8</strong> vers <strong>D</strong>.</p><p>Cette onde n’est pas prise en compte pour la résolution de la grille mais vous aide à placer les pièces.<br>Elle réagit en temps réel aux pièces que vous placez sur son chemin.</p><p>Placez la petite pièce jaune sur la ligne B de <strong>BD</strong> à <strong>BE</strong>.<br>Placez la grande bleue où elle se trouve réellement (ligne 2 de <strong>2I</strong> à <strong>2J</strong>).<br>Placez la rouge où elle se trouve réellement (ligne 5 de <strong>5C</strong> à <strong>5C</strong>).<br>Placez la petite bleue où elle se trouve réellement (ligne 9).</p><p>Vous pouvez également combiner le mode pour masquer les cases tout en laissant le mode onde activé.<br>Activez le mode masquer les cases et cliquez sur les 3 premières cases de la ligne <strong>4</strong> vers <strong>G</strong>.</p>',action:streetTutorial.phase===3||streetTutorial.phase===6?'Suivant':''},
+      6:{title:'Afficher une onde',text:streetTutorial.phase===0
+        ?'<p>Afin de vous aider, le mode <strong>Afficher une onde</strong> a été ajouté dans ce mode.</p><p>Activez le mode.</p>'
+        :streetTutorial.phase===1
+          ?'<p>Cliquez en <strong>8</strong> vers <strong>D</strong>.</p>'
+          :streetTutorial.phase===2
+            ?`<p>Cette onde n’est pas prise en compte pour la résolution de la grille mais vous aide à placer les pièces.<br>Elle réagit en temps réel aux pièces que vous placez sur son chemin.</p><p>Placez ${['la petite pièce jaune','la grande bleue','la rouge','la petite bleue'][streetTutorial.draftIndex]||'la pièce'} à l’emplacement indiqué.</p>`
+            :streetTutorial.phase===3
+              ?'<p>Vous pouvez également combiner le mode pour masquer les cases tout en laissant le mode onde activé.</p><p>Activez le mode <strong>Masquer les cases</strong>.</p>'
+              :'<p>Cliquez sur les 3 premières cases surlignées de la ligne <strong>4</strong> vers <strong>G</strong>.</p>',action:''},
       7:{title:'Aperçu terminé',text:'<p>Voilà, vous avez un aperçu d’Orapa Street, enfin en espérant que ça sera bien comme ça quand on en saura plus sur le jeu 🙂</p><p>N’hésitez pas à utiliser le mode création de grille en faisant « Démarrer la partie » après avoir placé toutes les pièces, cela vous permettra de mieux voir les interactions.</p><p>Et bon courage !</p>',action:'Terminer'}
     };
     return content[stage]||content[1];
@@ -1201,7 +1225,7 @@
     streetTutorial.puzzle=false;clearDirectionChoicesTimer();selectedWaveEdge=null;toggleHistory(false);
   }
   function streetTutorialPuzzleState(){
-    state={mode:'tutorial',pieces:freshPieces(),secretPieces:streetTutorial.secretPieces.map(piece=>({...piece,anchor:piece.anchor?{...piece.anchor}:null})),selected:'yellowLarge',tool:'pieces',waveModeActive:false,previewWave:null,started:true,traces:[],coords:[],draftCells:{},gridId:STREET_TUTORIAL_REFERENCE,gridAlias:STREET_TUTORIAL_REFERENCE,attempts:0,over:false,result:null,showGuess:true,showSecret:true,startedAt:null,finalTimeMs:null,rank:null};
+    state={mode:'tutorial',pieces:streetTutorial.secretPieces.map(piece=>({...piece,anchor:null})),secretPieces:streetTutorial.secretPieces.map(piece=>({...piece,anchor:piece.anchor?{...piece.anchor}:null})),selected:'yellowLarge',tool:'pieces',waveModeActive:false,previewWave:null,started:true,traces:[],coords:[],draftCells:{},gridId:STREET_TUTORIAL_REFERENCE,gridAlias:STREET_TUTORIAL_REFERENCE,attempts:0,over:false,result:null,showGuess:true,showSecret:true,startedAt:null,finalTimeMs:null,rank:null};
     streetTutorial.puzzle=true;streetTutorial.draftIndex=0;streetTutorial.phase=0;clearDirectionChoicesTimer();selectedWaveEdge=null;toggleHistory(false);
   }
   function advanceStreetTutorial(){
@@ -1209,8 +1233,6 @@
     if(streetTutorial.stage===1){streetTutorialDemoState();streetTutorial.stage=2;}
     else if(streetTutorial.stage===2)streetTutorial.stage=3;
     else if(streetTutorial.stage===5&&streetTutorial.waveIndex>=2){streetTutorialPuzzleState();streetTutorial.stage=6;}
-    else if(streetTutorial.stage===6&&streetTutorial.phase===3){streetTutorial.phase=4;}
-    else if(streetTutorial.stage===6&&streetTutorial.phase===6){streetTutorial.stage=7;}
     else if(streetTutorial.stage===7){endStreetTutorial();return;}
     streetTutorialShow();render();
   }
@@ -1260,8 +1282,8 @@
     byId('streetHint').addEventListener('click',()=>{if(streetTutorial.active){showErrorToast('Cette action n’est pas utilisée dans le tutoriel.');return;}state.tool=state.tool==='hint'?'pieces':'hint';clearDirectionChoicesTimer();selectedWaveEdge=null;render();});
     byId('streetDraft').addEventListener('click',()=>{
       if(streetTutorial.active){
-        if(streetTutorial.stage!==6||streetTutorial.phase!==4){showErrorToast('Suis les étapes du tutoriel avant d’activer le masquage.');return;}
-        state.tool='draft';streetTutorial.phase=5;streetTutorial.draftIndex=0;clearDirectionChoicesTimer();selectedWaveEdge=null;streetTutorialShow();render();return;
+        if(streetTutorial.stage!==6||streetTutorial.phase!==3){showErrorToast('Suis les étapes du tutoriel avant d’activer le masquage.');return;}
+        state.tool='draft';streetTutorial.phase=4;streetTutorial.draftIndex=0;clearDirectionChoicesTimer();selectedWaveEdge=null;streetTutorialShow();render();return;
       }
       state.tool=state.tool==='draft'?'pieces':'draft';clearDirectionChoicesTimer();selectedWaveEdge=null;render();
     });
