@@ -868,7 +868,7 @@ async function supabaseRpc(fn,params={}){
   return data;
 }
 let achievementCatalogCache=null,achievementExpanded=new Set(),achievementMode='list',achievementSort='order',achievementFilter='all',achievementReverse=false,achievementQueueBusy=false,achievementNotificationQueue=[],achievementNotificationQueued=new Set();
-const ACHIEVEMENT_NAMES={welcome:'Bienvenue',good_student:'Bon élève',first_step:'Premier pas',first_win:'Première victoire',founder:'Fondateur',ancestor:'Ancêtre',adventurous:'Aventureux',adventurous_victorious:'Aventureux et victorieux',meticulous:'Méticuleux',diamond:'Diamant',black_body:'Corps noir',sky_sapphire:'Saphir bleu ciel',curious:'Curieux',architect:'Architecte',challenger:'Défieur',mine_regular:'Habitué de la mine',confirmed_miner:'Mineur confirmé',first_try:'Du premier coup',economical:'Économe',mole_eye:'Œil de taupe',back_to_mine:'Retour au fond de la mine',regular:'Régulier',challenge_week:'Une semaine de défis',always_present:'Toujours présent',assiduous:'Assidu',winning_streak:'Série victorieuse',perfect_week:'Semaine parfaite',podium:'Sur le podium',number_one:'Numéro un',next_day_revenge:'La revanche du lendemain',photofinish:'Photofinish',copycat:'Copie conforme',first_visitor:'Premier visiteur',deja_vu:'Une impression de déjà-vu',two_waves_late:'Deux ondes de retard',triforce:'Triforce',where_is_charlie:'Où est Charlie ?',seven_at_home:'Sept à la maison',eight_out_of_eight:'Huit sur huit',perfect_reconstructions:'Reconstitutions parfaites',lost_quickly_found:'Perdue, mais vite retrouvée',fine_sleuth:'Fin limier',organized_search:'Battue organisée',missing_notice:'Avis de disparition',without_touching_evidence:'Sans toucher aux preuves',detective_flair:'Le flair du détective',dissectologist:'Dissectologue',cephaloclastophile:'Céphaloclastophile',indiana_and_short_round:'Indiana Jones et Demi-Lune',firebug:'Firebug',fifty_fifty:'50/50',lab_guinea_pig:'Cobaye',space_student:'Aspirant astronaute',space_first_launch:'Premier décollage',space_first_flight:'Premier vol',space_engineer:'Ingénieur',space_first_alien:'Premier alien',space_black_hole:'Trou noir',space_one_shot:'One-shot',space_regular:'Habitué du cosmos',lost_in_space:'Perdue dans l’espace'};
+const ACHIEVEMENT_NAMES={welcome:'Bienvenue',good_student:'Bon élève',first_step:'Premier pas',first_win:'Première victoire',founder:'Fondateur',ancestor:'Ancêtre',adventurous:'Aventureux',adventurous_victorious:'Aventureux et victorieux',meticulous:'Méticuleux',diamond:'Diamant',black_body:'Corps noir',sky_sapphire:'Saphir bleu ciel',curious:'Curieux',architect:'Architecte',challenger:'Défieur',mine_regular:'Habitué de la mine',confirmed_miner:'Mineur confirmé',first_try:'Du premier coup',economical:'Économe',mole_eye:'Œil de taupe',back_to_mine:'Retour au fond de la mine',regular:'Régulier',challenge_week:'Une semaine de défis',always_present:'Toujours présent',assiduous:'Assidu',winning_streak:'Série victorieuse',perfect_week:'Semaine parfaite',podium:'Sur le podium',number_one:'Numéro un',next_day_revenge:'La revanche du lendemain',photofinish:'Photofinish',copycat:'Copie conforme',first_visitor:'Premier visiteur',deja_vu:'Une impression de déjà-vu',two_waves_late:'Deux ondes de retard',triforce:'Triforce',where_is_charlie:'Où est Charlie ?',seven_at_home:'Sept à la maison',eight_out_of_eight:'Huit sur huit',perfect_reconstructions:'Reconstitutions parfaites',lost_quickly_found:'Perdue, mais vite retrouvée',fine_sleuth:'Fin limier',organized_search:'Battue organisée',missing_notice:'Avis de disparition',without_touching_evidence:'Sans toucher aux preuves',detective_flair:'Le flair du détective',dissectologist:'Dissectologue',cephaloclastophile:'Céphaloclastophile',indiana_and_short_round:'Indiana Jones et Demi-Lune',firebug:'Firebug',fifty_fifty:'50/50',lab_guinea_pig:'Cobaye',space_student:'Aspirant astronaute',space_first_launch:'Premier décollage',space_first_flight:'Premier vol',space_engineer:'Ingénieur',space_first_alien:'Premier alien',space_black_hole:'Trou noir',space_one_shot:'One-shot',space_regular:'Habitué du cosmos',lost_in_space:'Perdue dans l’espace',street_irregular:'Irrégulier de Baker Street'};
 async function refreshAchievements(eventKey=null){
   if(!currentPlayerAccount?.session_token)return null;
   let triforceResult=null,allModeResult=null;
@@ -5918,6 +5918,16 @@ function openSpaceStudentPrerequisiteModal(checkError=false){
   $('#triforcePrerequisiteRetry').style.display=checkError?'':'none';
   $('#triforcePrerequisiteModal').classList.add('open');
 }
+function openStreetTutorialPrerequisiteModal(checkError=false){
+  prerequisiteModalContext='street_irregular';
+  $('#triforcePrerequisiteTitle').textContent=checkError?'⚠️ Vérification impossible':'🔒 Orapa Street verrouillé';
+  $('#triforcePrerequisiteText').innerHTML=checkError
+    ? 'Impossible de vérifier le succès <b>Irrégulier de Baker Street</b>. Vérifie ta connexion puis réessaie.'
+    : 'Pour accéder aux grilles aléatoires <b>Orapa Street</b>, termine d’abord le tutoriel correspondant afin de débloquer le succès <b>Irrégulier de Baker Street</b>.';
+  $('#triforcePrerequisiteAchievement').style.display=checkError?'none':'';
+  $('#triforcePrerequisiteRetry').style.display=checkError?'':'none';
+  $('#triforcePrerequisiteModal').classList.add('open');
+}
 function openEarthSkyPrerequisiteModal(checkError=false){
   prerequisiteModalContext='earth_sky';
   $('#triforcePrerequisiteTitle').textContent=checkError?'⚠️ Vérification impossible':'🔒 Terre et Ciel verrouillé';
@@ -5980,6 +5990,21 @@ async function verifySpaceStudentPrerequisite(showModal=false){
     return unlocked;
   }catch(error){
     if(showModal)openSpaceStudentPrerequisiteModal(true);
+    return false;
+  }
+}
+async function verifyStreetTutorialPrerequisite(showModal=false){
+  if(!currentPlayerAccount?.session_token){
+    if(showModal)openStreetTutorialPrerequisiteModal(false);
+    return false;
+  }
+  try{
+    const catalog=await getAchievementCatalog(true);
+    const unlocked=catalog.some(row=>row.achievement_key==='street_irregular'&&row.unlocked);
+    if(showModal&&!unlocked)openStreetTutorialPrerequisiteModal(false);
+    return unlocked;
+  }catch(error){
+    if(showModal)openStreetTutorialPrerequisiteModal(true);
     return false;
   }
 }
@@ -6069,6 +6094,8 @@ $('#triforcePrerequisiteRetry').addEventListener('click',async()=>{
     if(await verifyEarthSkyPrerequisites(true))showToast('Prérequis Terre et Ciel vérifiés.');
   }else if(prerequisiteModalContext==='space_student'){
     if(await verifySpaceStudentPrerequisite(true))showToast('Succès Aspirant astronaute vérifié.');
+  }else if(prerequisiteModalContext==='street_irregular'){
+    if(await verifyStreetTutorialPrerequisite(true))showToast('Succès Irrégulier de Baker Street vérifié.');
   }else if(prerequisiteModalContext==='daily_remix'){
     if(await verifyDailyRemixPrerequisites(true))showToast('Prérequis du défi remix vérifiés.');
   }else if(await verifyTriforcePrerequisite(true))showToast('Succès Triforce vérifié.');
@@ -6104,7 +6131,7 @@ $('#appUpdateConfirm').addEventListener('click',async e=>{
 $('#appUpdateModal').addEventListener('click',e=>{if(e.target.id==='appUpdateModal')closeAppUpdateModal();});
 $('#soloChoiceRandom').addEventListener('click', ()=>{ closeSoloChoiceModal(); openSoloSetupModal(); });
 $('#soloChoiceSpace').addEventListener('click',async()=>{if(!await verifySpaceStudentPrerequisite(true))return;closeSoloChoiceModal();$('#spaceOptBlackHole').checked=!!state.includeBlackHole;$('#spaceOptWormhole').checked=!!state.includeWormhole;$('#spaceIntroModal').classList.add('open');});
-$('#soloChoiceStreet').addEventListener('click',()=>window.OrapaStreetPrototype?.openSolo());
+$('#soloChoiceStreet').addEventListener('click',async()=>{if(!await verifyStreetTutorialPrerequisite(true))return;window.OrapaStreetPrototype?.openSolo();});
 $('#soloChoiceEarthSky').addEventListener('click',async()=>{if(!canPreviewEarthSky()||!await verifyEarthSkyPrerequisites(true))return;closeSoloChoiceModal();$('#earthSkyOptGray').checked=!!state.includeGray;$('#earthSkyOptOnyx').checked=!!state.includeOnyx;$('#earthSkyOptSapphire').checked=!!state.includeSapphire;$('#earthSkyOptBlackHole').checked=!!state.includeBlackHole;$('#earthSkyOptWormhole').checked=!!state.includeWormhole;$('#earthSkyIntroModal').classList.add('open');});
 function closeEarthSkyIntro(){$('#earthSkyIntroModal').classList.remove('open');}
 $('#closeEarthSkyIntro').addEventListener('click',closeEarthSkyIntro);$('#cancelEarthSkyIntro').addEventListener('click',()=>{closeEarthSkyIntro();openSoloChoiceModal();});

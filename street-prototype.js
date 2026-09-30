@@ -396,9 +396,15 @@
   let selectedWaveEdge=null;
   let directionChoicesHideTimer=null;
   const STREET_TUTORIAL_REFERENCE='EMG5264J-W-R';
+  const STREET_TUTORIAL_YELLOW_TARGET={id:'yellowLarge',anchor:screenPoint({q:1,r:5}),rotation:0,flipped:false};
   let streetTutorial={active:false,stage:0,puzzle:false,secretPieces:[],draftIndex:0,preference:null,waveIndex:0,phase:0};
   const streetPlayerMode=()=>state.mode==='solo'||state.mode==='tutorial';
   const streetTutorialPlacementOrder=['yellowLarge','blueLarge','redWall','blueSmall'];
+  function streetTutorialTargetPiece(id){
+    if(id==='yellowLarge')return {...STREET_TUTORIAL_YELLOW_TARGET,anchor:{...STREET_TUTORIAL_YELLOW_TARGET.anchor}};
+    const piece=streetTutorial.secretPieces.find(item=>item.id===id);
+    return piece?{...piece,anchor:piece.anchor?{...piece.anchor}:null}:null;
+  }
   const EXIT_SIDE_KEYS=['top','upperRight','lowerRight','bottom','lowerLeft','upperLeft'];
   const DEFAULT_EXIT_SIDES={
     top:{arrowDistance:0,arrowOutward:.5,arrowAlong:-2,caseOutward:.5,caseAlong:0},
@@ -487,7 +493,7 @@
     if(!streetTutorial.active||!streetTutorial.puzzle)return;
     const expected=streetTutorial.stage===6&&streetTutorial.phase===2?streetTutorialPlacementOrder[streetTutorial.draftIndex]:null;
     if(!expected||piece.id!==expected)return;
-    const secret=streetTutorial.secretPieces.find(item=>item.id===piece.id);
+    const secret=streetTutorialTargetPiece(piece.id);
     if(!piece.anchor||!secret||geometrySignature(piece)!==geometrySignature(secret)){
       piece.anchor=null;showErrorToast('Cette pièce doit être placée à l’emplacement indiqué par le tutoriel.');return;
     }
@@ -702,7 +708,7 @@
         if(wasMoved){
           const svg=byId('streetBoard'),local=svgClientPoint(upEvent.clientX,upEvent.clientY,svg);
           const tutorialTarget=streetTutorial.active&&streetTutorial.puzzle&&streetTutorial.stage===6&&streetTutorial.phase===2&&streetTutorialPlacementOrder[streetTutorial.draftIndex]===piece.id
-            ?streetTutorial.secretPieces.find(item=>item.id===piece.id)
+            ?streetTutorialTargetPiece(piece.id)
             :null;
           if(tutorialTarget?.anchor&&pointInPolygon(local,pieceGeometry(tutorialTarget).poly,true))piece.anchor={...tutorialTarget.anchor};
           else if(pointInPolygon(local,BOARD.polygon,true))piece.anchor=snapPieceAnchor(piece,local);
@@ -892,7 +898,7 @@
       ?streetTutorialPlacementOrder[streetTutorial.draftIndex]
       :null;
     if(tutorialPieceId){
-      const target=streetTutorial.secretPieces.find(piece=>piece.id===tutorialPieceId);
+      const target=streetTutorialTargetPiece(tutorialPieceId);
       if(target?.anchor){
         const geo=pieceGeometry(target),targetGroup=svgEl('g',{class:'street-tutorial-placement-target','pointer-events':'none'});
         targetGroup.appendChild(svgEl('polygon',{points:pointsAttr(geo.poly)}));
@@ -1165,6 +1171,8 @@
     byId('streetDraft').textContent=state.tool==='draft'?'◻️ Masquage activé':'◻️ Masquer les cases';
     byId('streetShowWave').classList.toggle('active',showCellTools&&state.waveModeActive);
     byId('streetShowWave').textContent=state.waveModeActive?'〽️ Mode onde activé':'〽️ Afficher une onde';
+    byId('streetShowWave').classList.toggle('street-tutorial-target',streetTutorial.active&&streetTutorial.stage===6&&streetTutorial.phase===0);
+    byId('streetDraft').classList.toggle('street-tutorial-target',streetTutorial.active&&streetTutorial.stage===6&&streetTutorial.phase===3);
     const showResultTools=state.mode==='solo'&&state.over;
     byId('streetResultTools').hidden=!showResultTools;
     byId('streetToggleGuess').textContent=`${state.showGuess===false?'🚫':'👁'} Mes pièces`;
@@ -1225,7 +1233,7 @@
     streetTutorial.puzzle=false;clearDirectionChoicesTimer();selectedWaveEdge=null;toggleHistory(false);
   }
   function streetTutorialPuzzleState(){
-    state={mode:'tutorial',pieces:streetTutorial.secretPieces.map(piece=>({...piece,anchor:null})),secretPieces:streetTutorial.secretPieces.map(piece=>({...piece,anchor:piece.anchor?{...piece.anchor}:null})),selected:'yellowLarge',tool:'pieces',waveModeActive:false,previewWave:null,started:true,traces:[],coords:[],draftCells:{},gridId:STREET_TUTORIAL_REFERENCE,gridAlias:STREET_TUTORIAL_REFERENCE,attempts:0,over:false,result:null,showGuess:true,showSecret:true,startedAt:null,finalTimeMs:null,rank:null};
+    state={mode:'tutorial',pieces:PIECES.map(definition=>{const target=streetTutorialTargetPiece(definition.id);return {...target,anchor:null};}),secretPieces:streetTutorial.secretPieces.map(piece=>({...piece,anchor:piece.anchor?{...piece.anchor}:null})),selected:'yellowLarge',tool:'pieces',waveModeActive:false,previewWave:null,started:true,traces:[],coords:[],draftCells:{},gridId:STREET_TUTORIAL_REFERENCE,gridAlias:STREET_TUTORIAL_REFERENCE,attempts:0,over:false,result:null,showGuess:true,showSecret:true,startedAt:null,finalTimeMs:null,rank:null};
     streetTutorial.puzzle=true;streetTutorial.draftIndex=0;streetTutorial.phase=0;clearDirectionChoicesTimer();selectedWaveEdge=null;toggleHistory(false);
   }
   function advanceStreetTutorial(){
@@ -1233,7 +1241,7 @@
     if(streetTutorial.stage===1){streetTutorialDemoState();streetTutorial.stage=2;}
     else if(streetTutorial.stage===2)streetTutorial.stage=3;
     else if(streetTutorial.stage===5&&streetTutorial.waveIndex>=2){streetTutorialPuzzleState();streetTutorial.stage=6;}
-    else if(streetTutorial.stage===7){endStreetTutorial();return;}
+    else if(streetTutorial.stage===7){void completeStreetTutorial();return;}
     streetTutorialShow();render();
   }
   async function startStreetTutorial(){
@@ -1255,6 +1263,14 @@
     if(preference)applyWavePreference(preference,false);
     clearDirectionChoicesTimer();selectedWaveEdge=null;byId('streetTutorialCoach')?.remove();
     byId('streetPrototype').hidden=true;document.body.classList.remove('street-open');document.body.classList.add('home-view');
+  }
+  async function completeStreetTutorial(){
+    endStreetTutorial();
+    if(!currentPlayerAccount?.session_token)return;
+    try{
+      const result=await supabaseRpc('orapa_award_street_event',{p_session_token:currentPlayerAccount.session_token,p_event:'tutorial'});
+      if(result?.newly_unlocked){achievementCatalogCache=null;queueAchievementNotifications?.(['street_irregular']);}
+    }catch(error){console.warn('Attribution du succès Street impossible',error);}
   }
   function bind(){
     const create=byId('createStreetMode');
@@ -1315,6 +1331,7 @@
   }
   async function openSolo(gridId=null,resumeAttempt=null){
     if(!currentPlayerAccount?.session_token){closeSoloChoiceModal?.();openAccountModal();return false;}
+    if(!gridId&&!resumeAttempt&&typeof verifyStreetTutorialPrerequisite==='function'&&!await verifyStreetTutorialPrerequisite(true))return false;
     streetTutorial={active:false,stage:0,puzzle:false,secretPieces:[],draftIndex:0};byId('streetTutorialCoach')?.remove();
     await loadStreetPreference();
     let decoded=gridId?decodeStreetGrid(gridId):null;
