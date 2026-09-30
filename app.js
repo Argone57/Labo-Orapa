@@ -580,7 +580,7 @@ const DAILY_REMIX_FINAL_SNAPSHOTS_KEY = `${LOCAL_STORAGE_PREFIX}DailyRemixFinalS
 // indépendant du compte : chaque navigateur garde sa propre dernière visite.
 const UPDATES_READ_KEY = `${LOCAL_STORAGE_PREFIX}UpdatesReadV2`;
 const GAME_UPDATES = [
-  {id:'street-20260930',date:'30/09/2026',title:'Nouveau mode de jeu : Orapa Street. A noter que tout est basé sur la seule image existante à ce jour donc il est possible que toutes les règles ne soient pas respectées.'},
+  {id:'street-20261001',date:'01/10/2026',title:'Nouveau mode de jeu : Orapa Street. A noter que tout est basé sur la seule image existante à ce jour donc il est possible que toutes les règles ne soient pas respectées.'},
   {id:'aides-20260914',date:'14/09/2026',title:'Légère correction du mode indice et ajout d\'un mode pour marquer les cases vides'},
   {id:'daily-remix-20260913',date:'13/09/2026',title:'Nouveau mode de jeu : Défi du jour remix'},  
   {id:'myludo-20260907',date:'07/09/2026',title:'Export Myludo possible via l\'extension Chrome et Firefox Orapa2Myludo, direction vos options'},
