@@ -396,7 +396,8 @@
   let selectedWaveEdge=null;
   let directionChoicesHideTimer=null;
   const STREET_TUTORIAL_REFERENCE='EMG5264J-W-R';
-  const STREET_TUTORIAL_YELLOW_TARGET={id:'yellowLarge',anchor:screenPoint({q:1,r:5}),rotation:0,flipped:false};
+  // Pièce jaune horizontale, directement sur le rayon B → L (de BD à BF).
+  const STREET_TUTORIAL_YELLOW_TARGET={id:'yellowLarge',anchor:screenPoint({q:4,r:5}),rotation:2,flipped:false};
   let streetTutorial={active:false,stage:0,puzzle:false,secretPieces:[],draftIndex:0,preference:null,waveIndex:0,phase:0};
   const streetPlayerMode=()=>state.mode==='solo'||state.mode==='tutorial';
   const streetTutorialPlacementOrder=['yellowLarge','blueLarge','redWall','blueSmall'];
@@ -843,7 +844,7 @@
           const text=svgEl('text',{x:center.x,y:center.y,'text-anchor':'middle','dominant-baseline':'central'});
           text.textContent=usedTrace?(traceExitInfo(usedTrace,edgeIndex,directionIndex)||'∅'):`→ ${destination}`;
           choice.appendChild(box);choice.appendChild(text);
-          choice.addEventListener('click',event=>{event.stopPropagation();if(!streetTutorialAllowWave(edge,directionIndex))return;if(streetPlayerMode()&&state.waveModeActive&&usedTrace)showPreviewWave(edgeIndex,directionIndex,usedTrace);else if(usedTrace)showStreetTraceFeedback(usedTrace,edgeIndex,directionIndex);else launchWave(edgeIndex,directionIndex);scheduleDirectionChoicesHide(edgeIndex);});
+          choice.addEventListener('click',event=>{event.stopPropagation();if(!streetTutorialAllowWave(edge,directionIndex))return;activateStreetWaveControl(edgeIndex,directionIndex,usedTrace);scheduleDirectionChoicesHide(edgeIndex);});
           labelGroup.appendChild(choice);
         });
       }
@@ -856,7 +857,7 @@
         const arrow=[add(pos,mul(direction,7)),rearA,rearB];
         const usedTrace=displayTraceAt(edgeIndex,directionIndex);
         const button=svgEl('polygon',{points:pointsAttr(arrow),class:`street-ray-button${usedTrace?' used':''}${state.started?'':' disabled'}`,'data-edge':edgeIndex,'data-direction':directionIndex,style:usedTrace?`--street-result:${usedTrace.color.hex}`:''});
-        button.addEventListener('click',event=>{event.stopPropagation();if(!streetTutorialAllowWave(edge,directionIndex))return;if(streetPlayerMode()&&state.waveModeActive&&usedTrace)showPreviewWave(edgeIndex,directionIndex,usedTrace);else if(usedTrace)showStreetTraceFeedback(usedTrace,edgeIndex,directionIndex);else launchWave(edgeIndex,directionIndex);});labelGroup.appendChild(button);
+        button.addEventListener('click',event=>{event.stopPropagation();if(!streetTutorialAllowWave(edge,directionIndex))return;activateStreetWaveControl(edgeIndex,directionIndex,usedTrace);});labelGroup.appendChild(button);
         const exitInfo=usedTrace&&traceExitInfo(usedTrace,edgeIndex,directionIndex);
         if(exitInfo){
           const leftSide=['1','2','3','4','A','B','C'].includes(edge.label);
@@ -983,6 +984,19 @@
     state.previewWave={edgeIndex,directionIndex};
     render();
     if(realTrace)setTimeout(()=>showStreetTraceFeedback(realTrace,edgeIndex,directionIndex),0);
+  }
+  function activateStreetWaveControl(edgeIndex,directionIndex,knownTrace=null){
+    const usedTrace=knownTrace||findTraceAt(edgeIndex,directionIndex);
+    // En mode « Afficher une onde », une direction ne doit jamais créer
+    // d'entrée réelle dans l'historique : elle ne fait qu'afficher le trajet.
+    if(streetPlayerMode()&&state.waveModeActive){
+      showPreviewWave(edgeIndex,directionIndex,usedTrace);
+      const edge=BOARD.boundary[edgeIndex];
+      if(streetTutorial.active&&streetTutorialWaveMatches(edge,directionIndex))streetTutorialAfterWave(edgeIndex,directionIndex);
+      return;
+    }
+    if(usedTrace){showStreetTraceFeedback(usedTrace,edgeIndex,directionIndex);return;}
+    launchWave(edgeIndex,directionIndex);
   }
   function launchWave(edgeIndex,directionIndex){
     if(!state.started)return;
