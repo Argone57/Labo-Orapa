@@ -396,6 +396,7 @@
   let selectedWaveEdge=null;
   let directionChoicesHideTimer=null;
   const STREET_TUTORIAL_REFERENCE='EMG5264J-W-R';
+  const STREET_TUTORIAL_PROGRESS_KEY='orapa_street_tutorial_progress_v1';
   // Pièce jaune horizontale, directement sur le rayon B → L (de BD à BF).
   // Son état-cible est en miroir : la vignette commence donc volontairement dans
   // l'autre sens afin de faire pratiquer le retournement miroir.
@@ -1211,9 +1212,11 @@
     let coach=byId('streetTutorialCoach');
     if(coach)return coach;
     coach=document.createElement('aside');coach.id='streetTutorialCoach';coach.className='street-tutorial-coach';
-    coach.innerHTML='<button class="street-tutorial-close" type="button" aria-label="Quitter le tutoriel">×</button><h3></h3><div class="street-tutorial-copy"></div><div class="street-tutorial-step"></div><div class="street-tutorial-actions"><button class="primary" type="button"></button></div>';
-    coach.querySelector('.street-tutorial-close').addEventListener('click',()=>endStreetTutorial());
-    coach.querySelector('.street-tutorial-actions button').addEventListener('click',()=>advanceStreetTutorial());
+    coach.innerHTML='<button class="street-tutorial-close" type="button" aria-label="Quitter le tutoriel">×</button><h3></h3><div class="street-tutorial-copy"></div><div class="street-tutorial-step"></div><div class="street-tutorial-actions"><button class="ghost street-tutorial-minimize" type="button">Réduire</button><button class="primary" type="button"></button></div>';
+    coach.querySelector('.street-tutorial-close').addEventListener('click',()=>requestStreetTutorialExit());
+    coach.querySelector('.street-tutorial-minimize').addEventListener('click',event=>{event.stopPropagation();coach.classList.add('minimized');});
+    coach.addEventListener('click',event=>{if(coach.classList.contains('minimized')&&!event.target.closest('.street-tutorial-close'))coach.classList.remove('minimized');});
+    coach.querySelector('.street-tutorial-actions .primary').addEventListener('click',()=>advanceStreetTutorial());
     document.body.appendChild(coach);return coach;
   }
   function streetTutorialContent(stage){
@@ -1248,11 +1251,13 @@
   function streetTutorialShow(){
     if(!streetTutorial.active)return;
     const coach=ensureStreetTutorialCoach(),content=streetTutorialContent(streetTutorial.stage);
+    coach.classList.remove('minimized');
     coach.querySelector('.street-tutorial-step').textContent=`Étape ${Math.min(streetTutorial.stage,6)}`;
     coach.querySelector('h3').textContent=content.title;
     coach.querySelector('.street-tutorial-copy').innerHTML=content.text;
-    const action=coach.querySelector('.street-tutorial-actions button');
+    const action=coach.querySelector('.street-tutorial-actions .primary');
     action.hidden=!content.action;action.textContent=content.action||'';
+    streetTutorialSaveProgress();
   }
   function streetTutorialDemoState(){
     state={mode:'tutorial',pieces:streetTutorial.secretPieces.map(piece=>({...piece,anchor:piece.anchor?{...piece.anchor}:null})),secretPieces:streetTutorial.secretPieces.map(piece=>({...piece,anchor:piece.anchor?{...piece.anchor}:null})),selected:'blueSmall',tool:'pieces',waveModeActive:false,previewWave:null,started:true,traces:[],coords:[],draftCells:{},gridId:STREET_TUTORIAL_REFERENCE,gridAlias:STREET_TUTORIAL_REFERENCE,attempts:0,over:false,result:null,showGuess:true,showSecret:true,startedAt:null,finalTimeMs:null,rank:null};
@@ -1274,7 +1279,20 @@
     else if(streetTutorial.stage===7){void completeStreetTutorial();return;}
     streetTutorialShow();render();
   }
-  async function startStreetTutorial(){
+  function streetTutorialLoadProgress(){
+    try{const saved=JSON.parse(localStorage.getItem(STREET_TUTORIAL_PROGRESS_KEY)||'null');return saved?.version===1&&saved?.streetTutorial&&saved?.state?saved:null;}catch(_error){return null;}
+  }
+  function streetTutorialSaveProgress(){
+    if(!streetTutorial.active)return;
+    try{localStorage.setItem(STREET_TUTORIAL_PROGRESS_KEY,JSON.stringify({version:1,streetTutorial,state}));}catch(_error){}
+  }
+  function streetTutorialClearProgress(){try{localStorage.removeItem(STREET_TUTORIAL_PROGRESS_KEY);}catch(_error){}}
+  function closeStreetTutorialModal(id){byId(id)?.classList.remove('open');}
+  function requestStreetTutorialExit(){
+    if(!streetTutorial.active)return;
+    streetTutorialSaveProgress();byId('streetTutorialExitModal')?.classList.add('open');
+  }
+  async function beginStreetTutorial(){
     let decoded=decodeStreetGrid(STREET_TUTORIAL_REFERENCE);
     try{if(!decoded&&typeof resolveGridReference==='function')decoded=await resolveGridReference(STREET_TUTORIAL_REFERENCE);}catch(_error){}
     if(decoded?.variant!=='street'||!Array.isArray(decoded.pieces)){showErrorToast('La grille du tutoriel Street est indisponible pour le moment.');return false;}
@@ -1286,8 +1304,23 @@
     byId('streetPrototype').hidden=false;document.body.classList.add('street-open');document.body.classList.remove('home-view');
     streetTutorialShow();render();return true;
   }
-  function endStreetTutorial(){
+  async function startStreetTutorial(){
+    if(streetTutorialLoadProgress()){byId('streetTutorialResumeModal')?.classList.add('open');return true;}
+    return beginStreetTutorial();
+  }
+  function resumeStreetTutorial(){
+    const saved=streetTutorialLoadProgress();
+    if(!saved)return beginStreetTutorial();
+    streetTutorial={...saved.streetTutorial,active:true};
+    state=saved.state;state.mode='tutorial';state.started=true;
+    applyWavePreference('choices',false);clearDirectionChoicesTimer();selectedWaveEdge=null;
+    byId('streetPrototype').querySelector('.subtitle').textContent='Parcours interactif';
+    byId('streetPrototype').hidden=false;document.body.classList.add('street-open');document.body.classList.remove('home-view');
+    closeStreetTutorialModal('streetTutorialResumeModal');streetTutorialShow();render();return true;
+  }
+  function endStreetTutorial(completed=false){
     if(!streetTutorial.active)return;
+    if(completed)streetTutorialClearProgress();else streetTutorialSaveProgress();
     const preference=streetTutorial.preference;
     streetTutorial={active:false,stage:0,puzzle:false,secretPieces:[],draftIndex:0,preference:null,waveIndex:0,phase:0};
     if(preference)applyWavePreference(preference,false);
@@ -1295,7 +1328,7 @@
     byId('streetPrototype').hidden=true;document.body.classList.remove('street-open');document.body.classList.add('home-view');
   }
   async function completeStreetTutorial(){
-    endStreetTutorial();
+    endStreetTutorial(true);
     if(!currentPlayerAccount?.session_token)return;
     try{
       const result=await supabaseRpc('orapa_award_street_event',{p_session_token:currentPlayerAccount.session_token,p_event:'tutorial'});
@@ -1306,7 +1339,7 @@
     const create=byId('createStreetMode');
     if(!create)return;
     create.addEventListener('click',()=>openCreation());
-    byId('streetClose').addEventListener('click',()=>streetTutorial.active?endStreetTutorial():close());
+    byId('streetClose').addEventListener('click',()=>streetTutorial.active?requestStreetTutorialExit():close());
     byId('streetRandom').addEventListener('click',()=>{if(state.started)return;if(!randomizePieces())setMessage('Impossible de trouver un placement valide. Réessaie.',true);render();});
     byId('streetStart').addEventListener('click',()=>{if(state.started||byId('streetStart').disabled)return;state.started=true;state.startedAt=Date.now();state.tool='pieces';state.traces=[];state.coords=[];clearDirectionChoicesTimer();selectedWaveEdge=null;toggleHistory(false);render();});
     byId('streetEnd').addEventListener('click',async()=>{
@@ -1318,7 +1351,7 @@
     });
     byId('streetShare').addEventListener('click',()=>void shareStreet());
     byId('streetReset').addEventListener('click',async()=>{
-      if(streetTutorial.active){endStreetTutorial();return;}
+      if(streetTutorial.active){requestStreetTutorialExit();return;}
       if(!confirm(state.mode==='solo'?'Abandonner cette partie et recommencer ?':'Effacer tous les placements et l’historique Street ?'))return;
       if(state.mode==='solo'&&streetAttempt?.attempt_id)try{const abandonedAttempt=streetAttempt;await supabaseRpc('orapa_abandon_street_attempt',{p_session_token:currentPlayerAccount.session_token,p_attempt_id:abandonedAttempt.attempt_id});if(activeAttempt?.attempt_id===abandonedAttempt.attempt_id)activeAttempt=null;streetAttempt=null;}catch(error){showErrorToast('Abandon impossible : '+error.message);return;}
       if(state.mode==='solo'){await openSolo();return;}
@@ -1341,6 +1374,17 @@
     byId('streetToggleGuess').addEventListener('click',()=>{state.showGuess=state.showGuess===false;render();});
     byId('streetToggleSecret').addEventListener('click',()=>{state.showSecret=state.showSecret===false;render();});
     byId('streetReplayResult').addEventListener('click',openStreetResultModal);
+    const closeStreetExit=()=>closeStreetTutorialModal('streetTutorialExitModal');
+    byId('streetTutorialExitContinue').addEventListener('click',closeStreetExit);
+    byId('streetTutorialExitContinueX').addEventListener('click',closeStreetExit);
+    byId('streetTutorialExitModal').addEventListener('click',event=>{if(event.target.id==='streetTutorialExitModal')closeStreetExit();});
+    byId('streetTutorialExitConfirm').addEventListener('click',()=>{closeStreetExit();endStreetTutorial();});
+    const closeStreetResume=()=>closeStreetTutorialModal('streetTutorialResumeModal');
+    byId('streetTutorialResumeCancel').addEventListener('click',closeStreetResume);
+    byId('streetTutorialResumeCancelX').addEventListener('click',closeStreetResume);
+    byId('streetTutorialResumeModal').addEventListener('click',event=>{if(event.target.id==='streetTutorialResumeModal')closeStreetResume();});
+    byId('streetTutorialResumeContinue').addEventListener('click',()=>void resumeStreetTutorial());
+    byId('streetTutorialResumeRestart').addEventListener('click',()=>{streetTutorialClearProgress();closeStreetResume();void beginStreetTutorial();});
     byId('streetWavePreference').addEventListener('change',event=>{
       applyWavePreference(event.target.value);
       if(currentPlayerAccount?.session_token)void supabaseRpc('orapa_set_street_preferences',{p_session_token:currentPlayerAccount.session_token,p_wave_controls:wavePreference}).then(()=>showToast('Préférence Street enregistrée')).catch(error=>showErrorToast('Enregistrement impossible : '+error.message));
@@ -1384,7 +1428,7 @@
     byId('streetPrototype').hidden=false;document.body.classList.add('street-open');document.body.classList.remove('home-view');toggleHistory(false);render();return true;
   }
   function close(force=false){
-    if(streetTutorial.active){endStreetTutorial();return;}
+    if(streetTutorial.active){requestStreetTutorialExit();return;}
     if(state.mode==='solo'&&!state.over&&!force){showToast('La partie Street reste en cours sur ce compte.');}
     clearDirectionChoicesTimer();selectedWaveEdge=null;byId('streetPrototype').hidden=true;document.body.classList.remove('street-open');document.body.classList.add('home-view');
   }
