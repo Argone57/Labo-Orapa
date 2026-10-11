@@ -6700,7 +6700,7 @@ async function openEarthSkyGlobalStats(){
 async function openStreetGlobalStats(){
   setGridStatsNavigation('street');
   $('#globalStatsModal').classList.add('open');$('#globalStatsToolbar').style.display='none';$('#globalStatsContent').innerHTML='<div class="history-empty">Calcul des statistiques Orapa Street…</div>';
-  try{const stats=await supabaseRpc('orapa_street_global_stats');globalStatsRows=[];$('#globalStatsContent').innerHTML=renderGridModeGlobalStats('🏠 Orapa Street',stats,false);}catch(error){$('#globalStatsContent').innerHTML=`<div class="account-error" style="display:block">${escapeHtml(error.message)}</div>`;}
+  try{const [stats,rows]=await Promise.all([supabaseRpc('orapa_street_global_stats'),supabaseRpc('orapa_street_stats_rows')]);globalStatsRows=Array.isArray(rows)?rows:[];$('#globalStatsContent').innerHTML=renderGridModeGlobalStats('🏠 Orapa Street',stats,false)+statsPlayerButtons(globalStatsRows,false);bindStatsPlayerButtons();}catch(error){$('#globalStatsContent').innerHTML=`<div class="account-error" style="display:block">${escapeHtml(error.message)}</div>`;}
 }
 
 const GLOBAL_SOLO_PAGE_SIZE=10;
