@@ -392,54 +392,6 @@
     center.x/=3;center.y/=3;
     return center;
   }
-  function wavePassesThroughTriangle(trace,triangle){
-    const points=trace.points||[];
-    for(let i=0;i+1<points.length;i++){
-      const a=points[i],b=points[i+1];
-      if(pointInPolygon({x:(a.x+b.x)/2,y:(a.y+b.y)/2},triangle.points))return true;
-      for(let k=0;k<3;k++){
-        if(segmentIntersection(a,b,triangle.points[k],triangle.points[(k+1)%3],false))return true;
-      }
-    }
-    return false;
-  }
-  function wavesThroughTriangle(triangle){
-    if(!triangle)return [];
-    const waves=[];
-    BOARD.boundary.forEach((edge,edgeIndex)=>edge.directions.forEach((_direction,directionIndex)=>{
-      const trace=traceRay(edgeIndex,directionIndex,queryPieces());
-      if(wavePassesThroughTriangle(trace,triangle))waves.push({trace,edgeIndex,directionIndex});
-    }));
-    return waves;
-  }
-  function setCellWavePreview(triangleId){
-    state.previewCell=state.previewCell===triangleId?null:triangleId;
-    if(state.previewCell!=null)state.previewWave=null;
-    render();
-    if(state.previewCell==null)return;
-    const triangle=BOARD.triangles.find(item=>item.id===state.previewCell);
-    const waves=wavesThroughTriangle(triangle);
-    waves.forEach(({edgeIndex,directionIndex})=>pulseStreetControl(edgeIndex,directionIndex));
-    const control=byId('streetBoard')?.querySelector(`[data-cell="${state.previewCell}"]`);
-    const lines=waves.map(({trace,edgeIndex,directionIndex})=>{
-      if(!trace.exit)return trace.loop?'Onde prisonnière':'Aucune sortie';
-      return `${trace.entry.label} → ${traceExitInfo(trace,edgeIndex,directionIndex)} · ${trace.color.name}`;
-    });
-    const summary=waves.length
-      ?`${waves.length} onde${waves.length>1?'s':''} traverse${waves.length>1?'nt':''} la case ${coordinateForTriangle(triangle)}`
-      :`Aucune onde ne traverse la case ${coordinateForTriangle(triangle)}`;
-    showStreetBubble(control,lines.length?`${summary}\n${lines.join('\n')}`:summary);
-  }
-  function streetCellToolsAvailable(){
-    return streetPlayerMode()&&state.started&&!state.over&&(!streetTutorial.active||streetTutorial.puzzle);
-  }
-  function toggleStreetDraftMode(){
-    if(streetTutorial.active){
-      if(streetTutorial.stage!==6||streetTutorial.phase!==4){showErrorToast('Suis les étapes du tutoriel avant d’activer le masquage.');return;}
-      state.tool='draft';streetTutorial.phase=5;streetTutorial.draftIndex=0;clearDirectionChoicesTimer();selectedWaveEdge=null;streetTutorialShow();render();return;
-    }
-    state.tool=state.tool==='draft'?'pieces':'draft';clearDirectionChoicesTimer();selectedWaveEdge=null;render();
-  }
   function queryPieces(){return state.mode==='solo'?(state.secretPieces||[]):state.pieces;}
   function coordinateResultForTriangle(triangle){
     const center=triangleCenter(triangle);
@@ -454,7 +406,7 @@
   }
 
   const freshPieces=()=>PIECES.map(def=>({id:def.id,anchor:null,rotation:0,flipped:false}));
-  let state={mode:'gm',pieces:freshPieces(),secretPieces:[],selected:'blueSmall',tool:'pieces',waveModeActive:false,previewWave:null,previewCell:null,started:false,traces:[],coords:[],draftCells:{},gridId:null,gridAlias:null,attempts:0,over:false,result:null,showGuess:true,showSecret:true,startedAt:null,finalTimeMs:null,rank:null};
+  let state={mode:'gm',pieces:freshPieces(),secretPieces:[],selected:'blueSmall',tool:'pieces',waveModeActive:false,previewWave:null,started:false,traces:[],coords:[],draftCells:{},gridId:null,gridAlias:null,attempts:0,over:false,result:null,showGuess:true,showSecret:true,startedAt:null,finalTimeMs:null,rank:null};
   let wavePreference='auto';
   let streetAttempt=null;
   let streetSync=Promise.resolve();
@@ -824,11 +776,9 @@
   function renderBoard(){
     const svg=byId('streetBoard');svg.innerHTML='';
     const useDirectionChoices=resolvedWavePreference()==='choices';
-    const previewTrace=state.previewWave
+    const previewTrace=streetPlayerMode()&&state.waveModeActive&&state.previewWave
       ?traceRay(state.previewWave.edgeIndex,state.previewWave.directionIndex,state.pieces)
       :null;
-    const cellPreviewTriangle=state.previewCell!=null?BOARD.triangles.find(item=>item.id===state.previewCell):null;
-    const cellPreviewWaves=cellPreviewTriangle?wavesThroughTriangle(cellPreviewTriangle):[];
     const displayTraceAt=(edgeIndex,directionIndex)=>findTraceAt(edgeIndex,directionIndex);
     svg.classList.toggle('coordinate-mode',state.started);
     svg.classList.toggle('solo',streetPlayerMode());
@@ -843,12 +793,7 @@
     BOARD.triangles.forEach(triangle=>{
       const key=String(triangle.id),draftEmpty=!!state.draftCells?.[key];
       const draftTarget=streetTutorialDraftTargetId()===triangle.id;
-      const poly=svgEl('polygon',{points:pointsAttr(triangle.points),class:`street-cell${draftEmpty?' draft-empty':''}${draftTarget?' street-tutorial-target':''}${state.previewCell===triangle.id?' street-preview-cell':''}`,'data-cell':triangle.id});
-      poly.addEventListener('contextmenu',event=>{
-        event.preventDefault();event.stopPropagation();
-        if(!state.started)return;
-        setCellWavePreview(triangle.id);
-      });
+      const poly=svgEl('polygon',{points:pointsAttr(triangle.points),class:`street-cell${draftEmpty?' draft-empty':''}${draftTarget?' street-tutorial-target':''}`,'data-cell':triangle.id});
       poly.addEventListener('click',async event=>{
         if(!state.started)return;
         if(useDirectionChoices&&selectedWaveEdge!==null)return;
@@ -921,12 +866,6 @@
           if(streetTutorial.active&&streetTutorial.stage===4){streetTutorial.stage=5;streetTutorialShow();}
           render();
         });
-        hit.addEventListener('contextmenu',event=>{
-          event.preventDefault();event.stopPropagation();
-          if(!state.started)return;
-          clearDirectionChoicesTimer();
-          if(selectedWaveEdge!==edgeIndex){selectedWaveEdge=edgeIndex;render();}
-        });
         labelGroup.appendChild(hit);
       }
       const label=svgEl('text',{x:labelPos.x,y:labelPos.y,'text-anchor':'middle','dominant-baseline':'central',class:`street-label${useDirectionChoices?' clickable':''}${selectedWaveEdge===edgeIndex?' active':''}`});label.textContent=edge.label;labelGroup.appendChild(label);
@@ -943,11 +882,6 @@
           text.textContent=usedTrace?(traceExitInfo(usedTrace,edgeIndex,directionIndex)||'∅'):`→ ${destination}`;
           choice.appendChild(box);choice.appendChild(text);
           choice.addEventListener('click',event=>{event.stopPropagation();if(!streetTutorialAllowWave(edge,directionIndex))return;activateStreetWaveControl(edgeIndex,directionIndex,usedTrace);scheduleDirectionChoicesHide(edgeIndex);});
-          choice.addEventListener('contextmenu',event=>{
-            event.preventDefault();event.stopPropagation();
-            if(!state.started)return;
-            showControlWavePreview(edgeIndex,directionIndex);
-          });
           labelGroup.appendChild(choice);
         });
       }
@@ -960,12 +894,7 @@
         const arrow=[add(pos,mul(direction,7)),rearA,rearB];
         const usedTrace=displayTraceAt(edgeIndex,directionIndex);
         const button=svgEl('polygon',{points:pointsAttr(arrow),class:`street-ray-button${usedTrace?' used':''}${usedTrace?.color?.name==='Transparent'?' transparent':''}${state.started?'':' disabled'}`,'data-edge':edgeIndex,'data-direction':directionIndex,style:usedTrace?`--street-result:${usedTrace.color.hex}`:''});
-        button.addEventListener('click',event=>{event.stopPropagation();if(!streetTutorialAllowWave(edge,directionIndex))return;activateStreetWaveControl(edgeIndex,directionIndex,usedTrace);});
-        button.addEventListener('contextmenu',event=>{
-          event.preventDefault();event.stopPropagation();
-          if(!state.started)return;
-          showControlWavePreview(edgeIndex,directionIndex);
-        });labelGroup.appendChild(button);
+        button.addEventListener('click',event=>{event.stopPropagation();if(!streetTutorialAllowWave(edge,directionIndex))return;activateStreetWaveControl(edgeIndex,directionIndex,usedTrace);});labelGroup.appendChild(button);
         const exitInfo=usedTrace&&traceExitInfo(usedTrace,edgeIndex,directionIndex);
         if(exitInfo){
           const leftSide=['1','2','3','4','A','B','C'].includes(edge.label);
@@ -1002,13 +931,6 @@
       svg.appendChild(svgEl('polyline',{points:pointsAttr(previewTrace.points),class:'street-trace-halo street-preview-trace',stroke}));
       svg.appendChild(svgEl('polyline',{points:pointsAttr(previewTrace.points),class:'street-trace street-preview-trace',stroke}));
     }
-    cellPreviewWaves.forEach(({trace})=>{
-      if(trace.points.length>1){
-        const stroke=trace.color?.hex||STREET_TRANSPARENT.hex;
-        svg.appendChild(svgEl('polyline',{points:pointsAttr(trace.points),class:'street-trace-halo street-preview-trace',stroke}));
-        svg.appendChild(svgEl('polyline',{points:pointsAttr(trace.points),class:'street-trace street-preview-trace',stroke}));
-      }
-    });
     const issues=validatePieces(state.pieces);
     const tutorialPieceId=streetTutorial.active&&streetTutorial.puzzle&&streetTutorial.stage===6&&streetTutorial.phase===2
       ?streetTutorialPlacementOrder[streetTutorial.draftIndex]
@@ -1099,15 +1021,6 @@
     state.previewWave={edgeIndex,directionIndex};
     render();
     if(realTrace)setTimeout(()=>showStreetTraceFeedback(realTrace,edgeIndex,directionIndex),0);
-  }
-  function showControlWavePreview(edgeIndex,directionIndex){
-    if(!state.started)return;
-    if(state.previewWave&&state.previewWave.edgeIndex===edgeIndex&&state.previewWave.directionIndex===directionIndex){state.previewWave=null;render();return;}
-    state.previewWave={edgeIndex,directionIndex};
-    state.previewCell=null;
-    render();
-    const trace=findTraceAt(edgeIndex,directionIndex)||traceRay(edgeIndex,directionIndex,state.pieces);
-    setTimeout(()=>showStreetTraceFeedback(trace,edgeIndex,directionIndex),0);
   }
   function activateStreetWaveControl(edgeIndex,directionIndex,knownTrace=null){
     const usedTrace=knownTrace||findTraceAt(edgeIndex,directionIndex);
@@ -1304,7 +1217,7 @@
     byId('streetStartBlockMsg').style.display=preStart?'block':'none';
     byId('streetWaveSetting').hidden=true;
     byId('streetWavePreference').value=wavePreference;
-    const showCellTools=streetCellToolsAvailable();
+    const showCellTools=streetPlayerMode()&&state.started&&!state.over&&(!streetTutorial.active||streetTutorial.puzzle);
     byId('streetCellTools').hidden=!showCellTools;
     byId('streetHint').classList.toggle('active',showCellTools&&state.tool==='hint');
     byId('streetHint').textContent=state.tool==='hint'?'🔍 Mode indice activé':'🔍 Demander un indice';
@@ -1478,15 +1391,12 @@
     });
     byId('streetHistoryToggle').addEventListener('click',()=>toggleHistory());
     byId('streetHint').addEventListener('click',()=>{if(streetTutorial.active){showErrorToast('Cette action n’est pas utilisée dans le tutoriel.');return;}state.tool=state.tool==='hint'?'pieces':'hint';clearDirectionChoicesTimer();selectedWaveEdge=null;render();});
-    byId('streetDraft').addEventListener('click',toggleStreetDraftMode);
-    document.addEventListener('keydown',event=>{
-      if(event.key!=='Tab'||event.ctrlKey||event.metaKey||event.altKey)return;
-      if(byId('streetPrototype')?.hidden)return;
-      if(event.target?.closest?.('input,select,textarea,[contenteditable="true"]'))return;
-      if(document.querySelector('.modal-backdrop.open'))return;
-      if(!streetCellToolsAvailable())return;
-      event.preventDefault();
-      toggleStreetDraftMode();
+    byId('streetDraft').addEventListener('click',()=>{
+      if(streetTutorial.active){
+        if(streetTutorial.stage!==6||streetTutorial.phase!==4){showErrorToast('Suis les étapes du tutoriel avant d’activer le masquage.');return;}
+        state.tool='draft';streetTutorial.phase=5;streetTutorial.draftIndex=0;clearDirectionChoicesTimer();selectedWaveEdge=null;streetTutorialShow();render();return;
+      }
+      state.tool=state.tool==='draft'?'pieces':'draft';clearDirectionChoicesTimer();selectedWaveEdge=null;render();
     });
     byId('streetShowWave').addEventListener('click',()=>{
       if(streetTutorial.active&&(streetTutorial.stage!==6||streetTutorial.phase!==0)){showErrorToast('Suis l’étape indiquée par le tutoriel.');return;}
