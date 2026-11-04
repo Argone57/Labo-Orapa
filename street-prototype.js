@@ -414,6 +414,7 @@
   }
   function setCellWavePreview(triangleId){
     state.previewCell=state.previewCell===triangleId?null:triangleId;
+    if(state.previewCell!=null)state.previewWave=null;
     render();
     if(state.previewCell==null)return;
     const triangle=BOARD.triangles.find(item=>item.id===state.previewCell);
@@ -823,7 +824,7 @@
   function renderBoard(){
     const svg=byId('streetBoard');svg.innerHTML='';
     const useDirectionChoices=resolvedWavePreference()==='choices';
-    const previewTrace=streetPlayerMode()&&state.waveModeActive&&state.previewWave
+    const previewTrace=state.previewWave
       ?traceRay(state.previewWave.edgeIndex,state.previewWave.directionIndex,state.pieces)
       :null;
     const cellPreviewTriangle=state.previewCell!=null?BOARD.triangles.find(item=>item.id===state.previewCell):null;
@@ -920,6 +921,12 @@
           if(streetTutorial.active&&streetTutorial.stage===4){streetTutorial.stage=5;streetTutorialShow();}
           render();
         });
+        hit.addEventListener('contextmenu',event=>{
+          event.preventDefault();event.stopPropagation();
+          if(!state.started)return;
+          clearDirectionChoicesTimer();
+          if(selectedWaveEdge!==edgeIndex){selectedWaveEdge=edgeIndex;render();}
+        });
         labelGroup.appendChild(hit);
       }
       const label=svgEl('text',{x:labelPos.x,y:labelPos.y,'text-anchor':'middle','dominant-baseline':'central',class:`street-label${useDirectionChoices?' clickable':''}${selectedWaveEdge===edgeIndex?' active':''}`});label.textContent=edge.label;labelGroup.appendChild(label);
@@ -936,6 +943,11 @@
           text.textContent=usedTrace?(traceExitInfo(usedTrace,edgeIndex,directionIndex)||'∅'):`→ ${destination}`;
           choice.appendChild(box);choice.appendChild(text);
           choice.addEventListener('click',event=>{event.stopPropagation();if(!streetTutorialAllowWave(edge,directionIndex))return;activateStreetWaveControl(edgeIndex,directionIndex,usedTrace);scheduleDirectionChoicesHide(edgeIndex);});
+          choice.addEventListener('contextmenu',event=>{
+            event.preventDefault();event.stopPropagation();
+            if(!state.started)return;
+            showControlWavePreview(edgeIndex,directionIndex);
+          });
           labelGroup.appendChild(choice);
         });
       }
@@ -948,7 +960,12 @@
         const arrow=[add(pos,mul(direction,7)),rearA,rearB];
         const usedTrace=displayTraceAt(edgeIndex,directionIndex);
         const button=svgEl('polygon',{points:pointsAttr(arrow),class:`street-ray-button${usedTrace?' used':''}${usedTrace?.color?.name==='Transparent'?' transparent':''}${state.started?'':' disabled'}`,'data-edge':edgeIndex,'data-direction':directionIndex,style:usedTrace?`--street-result:${usedTrace.color.hex}`:''});
-        button.addEventListener('click',event=>{event.stopPropagation();if(!streetTutorialAllowWave(edge,directionIndex))return;activateStreetWaveControl(edgeIndex,directionIndex,usedTrace);});labelGroup.appendChild(button);
+        button.addEventListener('click',event=>{event.stopPropagation();if(!streetTutorialAllowWave(edge,directionIndex))return;activateStreetWaveControl(edgeIndex,directionIndex,usedTrace);});
+        button.addEventListener('contextmenu',event=>{
+          event.preventDefault();event.stopPropagation();
+          if(!state.started)return;
+          showControlWavePreview(edgeIndex,directionIndex);
+        });labelGroup.appendChild(button);
         const exitInfo=usedTrace&&traceExitInfo(usedTrace,edgeIndex,directionIndex);
         if(exitInfo){
           const leftSide=['1','2','3','4','A','B','C'].includes(edge.label);
@@ -1082,6 +1099,15 @@
     state.previewWave={edgeIndex,directionIndex};
     render();
     if(realTrace)setTimeout(()=>showStreetTraceFeedback(realTrace,edgeIndex,directionIndex),0);
+  }
+  function showControlWavePreview(edgeIndex,directionIndex){
+    if(!state.started)return;
+    if(state.previewWave&&state.previewWave.edgeIndex===edgeIndex&&state.previewWave.directionIndex===directionIndex){state.previewWave=null;render();return;}
+    state.previewWave={edgeIndex,directionIndex};
+    state.previewCell=null;
+    render();
+    const trace=findTraceAt(edgeIndex,directionIndex)||traceRay(edgeIndex,directionIndex,state.pieces);
+    setTimeout(()=>showStreetTraceFeedback(trace,edgeIndex,directionIndex),0);
   }
   function activateStreetWaveControl(edgeIndex,directionIndex,knownTrace=null){
     const usedTrace=knownTrace||findTraceAt(edgeIndex,directionIndex);
