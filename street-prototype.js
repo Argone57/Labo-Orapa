@@ -1037,6 +1037,10 @@
   function previewStreetWaveOnce(event,edgeIndex,directionIndex){
     event.preventDefault();event.stopPropagation();
     if(!state.started||!streetPlayerMode()||streetTutorial.active||state.over)return;
+    const current=state.previewWave;
+    if(current?.temporary&&current.edgeIndex===edgeIndex&&current.directionIndex===directionIndex){
+      state.previewWave=null;render();return;
+    }
     state.previewWave={edgeIndex,directionIndex,temporary:!state.waveModeActive};
     const usedTrace=findTraceAt(edgeIndex,directionIndex);
     render();
