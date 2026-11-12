@@ -875,6 +875,14 @@
           if(streetTutorial.active&&streetTutorial.stage===4){streetTutorial.stage=5;streetTutorialShow();}
           render();
         });
+        hit.addEventListener('contextmenu',event=>{
+          event.preventDefault();event.stopPropagation();
+          if(state.mode!=='solo'||!state.started||state.over)return;
+          const local=svgClientPoint(event.clientX,event.clientY,byId('streetBoard'));
+          const delta=sub(local,labelPos);
+          const directionIndex=dot(delta,sub(edge.directions[0],edge.directions[1]))>=0?0:1;
+          toggleStreetPreviewWave(edgeIndex,directionIndex);
+        });
         labelGroup.appendChild(hit);
       }
       const label=svgEl('text',{x:labelPos.x,y:labelPos.y,'text-anchor':'middle','dominant-baseline':'central',class:`street-label${useDirectionChoices?' clickable':''}${selectedWaveEdge===edgeIndex?' active':''}`});label.textContent=edge.label;labelGroup.appendChild(label);
@@ -905,6 +913,7 @@
         const usedTrace=displayTraceAt(edgeIndex,directionIndex);
         const button=svgEl('polygon',{points:pointsAttr(arrow),class:`street-ray-button${usedTrace?' used':''}${usedTrace?.color?.name==='Transparent'?' transparent':''}${state.started?'':' disabled'}`,'data-edge':edgeIndex,'data-direction':directionIndex,style:usedTrace?`--street-result:${usedTrace.color.hex}`:''});
         button.addEventListener('click',event=>{event.stopPropagation();if(!streetTutorialAllowWave(edge,directionIndex))return;activateStreetWaveControl(edgeIndex,directionIndex,usedTrace);});labelGroup.appendChild(button);
+        button.addEventListener('contextmenu',event=>{event.preventDefault();event.stopPropagation();if(state.mode!=='solo'||!state.started||state.over)return;toggleStreetPreviewWave(edgeIndex,directionIndex);});
         const exitInfo=usedTrace&&traceExitInfo(usedTrace,edgeIndex,directionIndex);
         if(exitInfo){
           const leftSide=['1','2','3','4','A','B','C'].includes(edge.label);
@@ -1514,4 +1523,3 @@
   window.OrapaStreetPrototype={open:openCreation,openCreation,openSolo,resume:attempt=>openSolo(attempt.reference,attempt),close,startTutorial:startStreetTutorial,decode:decodeStreetGrid,encode:encodeStreetGrid,setWavePreference:value=>applyWavePreference(value),openRanking:openStreetRanking,openResult:openStreetResultModal,openGlobalHistory:openStreetGlobalHistory,openCatalog:openStreetCatalog,openMyHistory:openMyStreetHistory,openMyShared:openMySharedStreet,previewResult,sharedPreviewSvg,debug:{BOARD,LANES,PIECES,axialTransform,applyPieceMirror,pieceGeometry,visualWallsFor,visualWallPolygonsFor,snapPieceAnchor,coordinateForTriangle,traceRay,validatePieces}};
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',bind);else bind();
 })();
-        button.addEventListener('contextmenu',event=>{event.preventDefault();event.stopPropagation();if(state.mode!=='solo'||!state.started||state.over)return;toggleStreetPreviewWave(edgeIndex,directionIndex);});
