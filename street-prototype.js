@@ -776,7 +776,7 @@
   function renderBoard(){
     const svg=byId('streetBoard');svg.innerHTML='';
     const useDirectionChoices=resolvedWavePreference()==='choices';
-    const previewTrace=streetPlayerMode()&&(state.waveModeActive||state.previewWave?.temporary)&&state.previewWave
+    const previewTrace=streetPlayerMode()&&state.previewWave
       ?traceRay(state.previewWave.edgeIndex,state.previewWave.directionIndex,state.pieces)
       :null;
     const displayTraceAt=(edgeIndex,directionIndex)=>findTraceAt(edgeIndex,directionIndex);
@@ -820,14 +820,15 @@
         if(streetPlayerMode())state.tool='pieces';
         render();void recordStreetAction('coord');
       });
-      // Clic droit : masque/démasque la case comme le mode « Masquer les cases ».
       poly.addEventListener('contextmenu',event=>{
-        if(!state.started||!streetPlayerMode()||streetTutorial.active||state.over)return;
-        event.preventDefault();event.stopPropagation();
+        if(state.mode!=='solo'||state.over||streetTutorial.active)return;
+        event.preventDefault();
+        event.stopPropagation();
         state.draftCells=state.draftCells&&typeof state.draftCells==='object'?state.draftCells:{};
         if(state.draftCells[key])delete state.draftCells[key];else state.draftCells[key]=true;
         render();
-      });boardGroup.appendChild(poly);
+      });
+      boardGroup.appendChild(poly);
     });
     svg.appendChild(boardGroup);
     const labelGroup=svgEl('g',{class:'street-labels'});
@@ -890,7 +891,7 @@
           text.textContent=usedTrace?(traceExitInfo(usedTrace,edgeIndex,directionIndex)||'∅'):`→ ${destination}`;
           choice.appendChild(box);choice.appendChild(text);
           choice.addEventListener('click',event=>{event.stopPropagation();if(!streetTutorialAllowWave(edge,directionIndex))return;activateStreetWaveControl(edgeIndex,directionIndex,usedTrace);scheduleDirectionChoicesHide(edgeIndex);});
-          choice.addEventListener('contextmenu',event=>previewStreetWaveOnce(event,edgeIndex,directionIndex));
+          choice.addEventListener('contextmenu',event=>{event.preventDefault();event.stopPropagation();if(state.mode!=='solo'||!state.started||state.over)return;toggleStreetPreviewWave(edgeIndex,directionIndex);});
           labelGroup.appendChild(choice);
         });
       }
@@ -903,8 +904,7 @@
         const arrow=[add(pos,mul(direction,7)),rearA,rearB];
         const usedTrace=displayTraceAt(edgeIndex,directionIndex);
         const button=svgEl('polygon',{points:pointsAttr(arrow),class:`street-ray-button${usedTrace?' used':''}${usedTrace?.color?.name==='Transparent'?' transparent':''}${state.started?'':' disabled'}`,'data-edge':edgeIndex,'data-direction':directionIndex,style:usedTrace?`--street-result:${usedTrace.color.hex}`:''});
-        button.addEventListener('click',event=>{event.stopPropagation();if(!streetTutorialAllowWave(edge,directionIndex))return;activateStreetWaveControl(edgeIndex,directionIndex,usedTrace);});
-        button.addEventListener('contextmenu',event=>previewStreetWaveOnce(event,edgeIndex,directionIndex));labelGroup.appendChild(button);
+        button.addEventListener('click',event=>{event.stopPropagation();if(!streetTutorialAllowWave(edge,directionIndex))return;activateStreetWaveControl(edgeIndex,directionIndex,usedTrace);});labelGroup.appendChild(button);
         const exitInfo=usedTrace&&traceExitInfo(usedTrace,edgeIndex,directionIndex);
         if(exitInfo){
           const leftSide=['1','2','3','4','A','B','C'].includes(edge.label);
@@ -1027,24 +1027,16 @@
     if(partner)pulseStreetControl(partner.index,partnerDirection);
   }
   function showPreviewWave(edgeIndex,directionIndex,realTrace=null){
-    if(!state.started||!streetPlayerMode()||!state.waveModeActive)return;
+    if(!state.started||!streetPlayerMode())return;
     state.previewWave={edgeIndex,directionIndex};
     render();
     if(realTrace)setTimeout(()=>showStreetTraceFeedback(realTrace,edgeIndex,directionIndex),0);
   }
-  // Clic droit sur une flèche ou une case de départ : affiche l'onde comme le
-  // mode « Afficher une onde », sans activer ce mode ni créer d'entrée réelle.
-  function previewStreetWaveOnce(event,edgeIndex,directionIndex){
-    event.preventDefault();event.stopPropagation();
-    if(!state.started||!streetPlayerMode()||streetTutorial.active||state.over)return;
-    const current=state.previewWave;
-    if(current?.temporary&&current.edgeIndex===edgeIndex&&current.directionIndex===directionIndex){
-      state.previewWave=null;render();return;
-    }
-    state.previewWave={edgeIndex,directionIndex,temporary:!state.waveModeActive};
-    const usedTrace=findTraceAt(edgeIndex,directionIndex);
-    render();
-    if(usedTrace)setTimeout(()=>showStreetTraceFeedback(usedTrace,edgeIndex,directionIndex),0);
+  function toggleStreetPreviewWave(edgeIndex,directionIndex){
+    const same=state.previewWave&&state.previewWave.edgeIndex===edgeIndex&&state.previewWave.directionIndex===directionIndex;
+    if(same){state.previewWave=null;render();return;}
+    const trace=traceRay(edgeIndex,directionIndex,state.pieces);
+    showPreviewWave(edgeIndex,directionIndex,trace);
   }
   function activateStreetWaveControl(edgeIndex,directionIndex,knownTrace=null){
     const usedTrace=knownTrace||findTraceAt(edgeIndex,directionIndex);
@@ -1068,7 +1060,6 @@
     trace.time=new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
     state.traces.push(trace);
     if(streetPlayerMode()&&state.waveModeActive)state.previewWave={edgeIndex,directionIndex};
-    else if(state.previewWave?.temporary)state.previewWave=null;
     render();void recordStreetAction('ray');streetTutorialAfterWave(edgeIndex,directionIndex);setTimeout(()=>showStreetTraceFeedback(trace,edgeIndex,directionIndex),0);
   }
   function launchAllStreetWaves(){
@@ -1395,6 +1386,13 @@
   function bind(){
     const create=byId('createStreetMode');
     if(!create)return;
+    document.addEventListener('keydown',event=>{
+      if(event.key!=='Tab'||event.altKey||event.ctrlKey||event.metaKey||event.shiftKey)return;
+      if(state.mode!=='solo'||state.over||streetTutorial.active||byId('streetPrototype').hidden)return;
+      event.preventDefault();
+      state.tool=state.tool==='draft'?'pieces':'draft';
+      clearDirectionChoicesTimer();selectedWaveEdge=null;render();
+    });
     create.addEventListener('click',()=>openCreation());
     byId('streetClose').addEventListener('click',()=>streetTutorial.active?requestStreetTutorialExit():close());
     byId('streetRandom').addEventListener('click',()=>{if(state.started)return;if(!randomizePieces())setMessage('Impossible de trouver un placement valide. Réessaie.',true);render();});
@@ -1423,17 +1421,9 @@
       }
       state.tool=state.tool==='draft'?'pieces':'draft';clearDirectionChoicesTimer();selectedWaveEdge=null;render();
     });
-    document.addEventListener('keydown',event=>{
-      if(event.key!=='Tab'||event.ctrlKey||event.altKey||event.metaKey||event.shiftKey||event.defaultPrevented)return;
-      if(event.target?.closest?.('input,textarea,select,[contenteditable="true"]'))return;
-      if(document.querySelector('.modal-backdrop.open'))return;
-      const root=byId('streetPrototype'),tools=byId('streetCellTools');
-      if(!root||root.hidden||!tools||tools.hidden||streetTutorial.active||state.over)return;
-      event.preventDefault();byId('streetDraft').click();
-    });
     byId('streetShowWave').addEventListener('click',()=>{
       if(streetTutorial.active&&(streetTutorial.stage!==6||streetTutorial.phase!==0)){showErrorToast('Suis l’étape indiquée par le tutoriel.');return;}
-      state.waveModeActive=!state.waveModeActive;if(!state.waveModeActive||state.previewWave?.temporary)state.previewWave=null;clearDirectionChoicesTimer();selectedWaveEdge=null;
+      state.waveModeActive=!state.waveModeActive;if(!state.waveModeActive)state.previewWave=null;clearDirectionChoicesTimer();selectedWaveEdge=null;
       if(streetTutorial.active&&state.waveModeActive){streetTutorial.phase=1;streetTutorialShow();}render();
     });
     byId('streetToggleGuess').addEventListener('click',()=>{state.showGuess=state.showGuess===false;render();});
@@ -1524,3 +1514,4 @@
   window.OrapaStreetPrototype={open:openCreation,openCreation,openSolo,resume:attempt=>openSolo(attempt.reference,attempt),close,startTutorial:startStreetTutorial,decode:decodeStreetGrid,encode:encodeStreetGrid,setWavePreference:value=>applyWavePreference(value),openRanking:openStreetRanking,openResult:openStreetResultModal,openGlobalHistory:openStreetGlobalHistory,openCatalog:openStreetCatalog,openMyHistory:openMyStreetHistory,openMyShared:openMySharedStreet,previewResult,sharedPreviewSvg,debug:{BOARD,LANES,PIECES,axialTransform,applyPieceMirror,pieceGeometry,visualWallsFor,visualWallPolygonsFor,snapPieceAnchor,coordinateForTriangle,traceRay,validatePieces}};
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',bind);else bind();
 })();
+        button.addEventListener('contextmenu',event=>{event.preventDefault();event.stopPropagation();if(state.mode!=='solo'||!state.started||state.over)return;toggleStreetPreviewWave(edgeIndex,directionIndex);});

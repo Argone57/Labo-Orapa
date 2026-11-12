@@ -8,9 +8,9 @@ const LOCAL_STORAGE_PREFIX = IS_PREPRODUCTION ? 'orapaPreprod' : 'orapaMine';
 // publication et provoque une demande de mise à jour en boucle.
 const APP_VERSION = (()=>{
   try{
-    return new URL(document.currentScript?.src || '',window.location.href).searchParams.get('v') || '20260902-0001';
+    return new URL(document.currentScript?.src || '',window.location.href).searchParams.get('v') || '20261112-0001';
   }catch(_error){
-    return '20260902-0001';
+    return '20261112-0001';
   }
 })();
 let publishedAppVersion = null;
@@ -4274,10 +4274,18 @@ function renderBgGrid(){
       cell.dataset.row=r; cell.dataset.col=c;
       const key=r+','+c;
       cell.classList.toggle('draft-empty',state.mode==='solo'&&!state.soloOver&&!!state.draftEmptyCells?.[key]);
-      if(raysEnabled()){
-        cell.addEventListener('click', ()=> onCellClick(r,c,cell));
-        cell.addEventListener('contextmenu', event=> onCellContextMenu(event,r,c,cell));
-      }
+      if(raysEnabled()) cell.addEventListener('click', ()=> onCellClick(r,c,cell));
+      // En solo, le clic droit masque/démasque directement la case, sans dépendre
+      // du mode « Masquer les cases » et sans afficher le menu du navigateur.
+      cell.addEventListener('contextmenu', event=>{
+        if(state.mode!=='solo'||state.soloOver)return;
+        event.preventDefault();
+        state.draftEmptyCells=state.draftEmptyCells&&typeof state.draftEmptyCells==='object'?state.draftEmptyCells:{};
+        if(state.draftEmptyCells[key])delete state.draftEmptyCells[key];
+        else state.draftEmptyCells[key]=true;
+        cell.classList.toggle('draft-empty',!!state.draftEmptyCells[key]);
+        saveState();
+      });
       frag.appendChild(cell);
     }
   }
@@ -5177,24 +5185,13 @@ function updateCellToolsUI(){
   document.getElementById('board')?.classList.toggle('cell-tool-active',hintModeActive||draftModeActive);
 }
 
-function toggleDraftCell(key,cellEl){
-  state.draftEmptyCells=state.draftEmptyCells&&typeof state.draftEmptyCells==='object'?state.draftEmptyCells:{};
-  if(state.draftEmptyCells[key])delete state.draftEmptyCells[key];else state.draftEmptyCells[key]=true;
-  cellEl.classList.toggle('draft-empty',!!state.draftEmptyCells[key]);
-  saveState();
-}
-// Clic droit : marque/démarque une case comme si le mode « Masquer les cases »
-// était activé, sans modifier l'état de ce mode.
-function onCellContextMenu(event,r,c,cellEl){
-  if(state.mode!=='solo'||state.soloOver||tutorialActive)return;
-  event.preventDefault();
-  toggleDraftCell(r+','+c,cellEl);
-}
-
 async function onCellClick(r,c,cellEl){
   const key = r+','+c;
   if(draftModeActive&&state.mode==='solo'&&!state.soloOver){
-    toggleDraftCell(key,cellEl);
+    state.draftEmptyCells=state.draftEmptyCells&&typeof state.draftEmptyCells==='object'?state.draftEmptyCells:{};
+    if(state.draftEmptyCells[key])delete state.draftEmptyCells[key];else state.draftEmptyCells[key]=true;
+    cellEl.classList.toggle('draft-empty',!!state.draftEmptyCells[key]);
+    saveState();
     return;
   }
   if(tutorialActive&&(![5,15,17].includes(tutorialStage)||!tutorialTargetCell||r!==tutorialTargetCell.r||c!==tutorialTargetCell.c)){showErrorToast('Touche la case mise en \u00e9vidence.');return;}
@@ -5832,17 +5829,8 @@ $('#btnShareGrid').addEventListener('click',async()=>{
 });
 $('#btnHint').addEventListener('click', ()=> setHintMode(!hintModeActive));
 $('#btnDraft').addEventListener('click',()=>setDraftMode(!draftModeActive));
-// Tab : active/désactive le mode « Masquer les cases » (hors saisie de texte,
-// fenêtres ouvertes et mode Street, qui gère sa propre touche Tab).
 document.addEventListener('keydown',event=>{
-  if(event.key!=='Tab'||event.ctrlKey||event.altKey||event.metaKey||event.shiftKey||event.defaultPrevented)return;
-  const target=event.target;
-  if(target?.closest?.('input,textarea,select,[contenteditable="true"]'))return;
-  if(document.querySelector('.modal-backdrop.open'))return;
-  const street=document.getElementById('streetPrototype');
-  if(street&&!street.hidden)return;
-  const draftButton=document.getElementById('btnDraft');
-  if(!draftButton||draftButton.style.display==='none'||draftButton.offsetParent===null)return;
+  if(event.key!=='Tab'||event.altKey||event.ctrlKey||event.metaKey||event.shiftKey)return;
   if(state.mode!=='solo'||state.soloOver||tutorialActive)return;
   event.preventDefault();
   setDraftMode(!draftModeActive);
