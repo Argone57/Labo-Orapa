@@ -1035,17 +1035,17 @@
     const control=traceControl(edgeIndex,directionIndex);showStreetBubble(control,text);pulseStreetControl(edgeIndex,directionIndex);
     if(partner)pulseStreetControl(partner.index,partnerDirection);
   }
-  function showPreviewWave(edgeIndex,directionIndex,realTrace=null){
+  function showPreviewWave(edgeIndex,directionIndex,realTrace=null,showFeedback=true){
     if(!state.started||!streetPlayerMode())return;
     state.previewWave={edgeIndex,directionIndex};
     render();
-    if(realTrace)setTimeout(()=>showStreetTraceFeedback(realTrace,edgeIndex,directionIndex),0);
+    if(realTrace&&showFeedback)setTimeout(()=>showStreetTraceFeedback(realTrace,edgeIndex,directionIndex),0);
   }
   function toggleStreetPreviewWave(edgeIndex,directionIndex){
     const same=state.previewWave&&state.previewWave.edgeIndex===edgeIndex&&state.previewWave.directionIndex===directionIndex;
     if(same){state.previewWave=null;render();return;}
     const trace=traceRay(edgeIndex,directionIndex,state.pieces);
-    showPreviewWave(edgeIndex,directionIndex,trace);
+    showPreviewWave(edgeIndex,directionIndex,trace,false);
   }
   function activateStreetWaveControl(edgeIndex,directionIndex,knownTrace=null){
     const usedTrace=knownTrace||findTraceAt(edgeIndex,directionIndex);
