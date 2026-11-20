@@ -1333,7 +1333,7 @@
   function render(){
     renderPalette();renderBoard();renderHistory();
     const officialCreation=state.mode==='gm'&&!state.started&&state.pieceSet==='official';
-    const issues=validatePieces(state.pieces,state.pieceSet!=='official'),placed=state.pieces.filter(p=>p.anchor).length;
+    const issues=validatePieces(state.pieces),placed=state.pieces.filter(p=>p.anchor).length;
     const officialStreet=state.pieceSet==='official';
     const complete=placed===(officialStreet?STREET_PIECES.length:PIECES.length)&&!issues.size;
     const canStart=officialStreet?placed>=5&&!issues.size:complete;
