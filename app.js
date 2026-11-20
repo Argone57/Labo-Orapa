@@ -580,7 +580,9 @@ const DAILY_REMIX_FINAL_SNAPSHOTS_KEY = `${LOCAL_STORAGE_PREFIX}DailyRemixFinalS
 // indépendant du compte : chaque navigateur garde sa propre dernière visite.
 const UPDATES_READ_KEY = `${LOCAL_STORAGE_PREFIX}UpdatesReadV2`;
 const GAME_UPDATES = [
-  {id:'pc-shortcuts-20261120',date:'20/11/2026',title:'Raccourcis PC : clic droit pour masquer ou réafficher une case vide ; la touche Tab active ou désactive le mode correspondant. Dans Orapa Street, un clic droit affiche une onde de test sur une flèche, ou sur une direction en mode Cases.'},
+  {id:'pc-shortcuts-20261120',date:'20/11/2026',title:'2 nouveautés sur PC'},
+  {id:'pc-shortcuts-20261120',date:'20/11/2026',title:'Clic droit sur une case permet de masquer ou réafficher une case vide. Le mode peut également être activé/désactivé avec la touche Tab'},
+  {id:'pc-shortcuts-20261120',date:'20/11/2026',title:'Pour Orapa Street, clic droit sur une flèche ou une case permet d\'afficher directement l\'onde de test (y compris sur les moitiés des cases autour de la grille)'},
   {id:'street-20261001',date:'01/10/2026',title:'Nouveau mode de jeu : Orapa Street. A noter que tout est basé sur la seule image existante à ce jour donc il est possible que toutes les règles ne soient pas respectées.'},
   {id:'aides-20260914',date:'14/09/2026',title:'Légère correction du mode indice et ajout d\'un mode pour marquer les cases vides'},
   {id:'daily-remix-20260913',date:'13/09/2026',title:'Nouveau mode de jeu : Défi du jour remix'},  
