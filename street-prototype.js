@@ -1334,7 +1334,9 @@
     renderPalette();renderBoard();renderHistory();
     const officialCreation=state.mode==='gm'&&!state.started&&state.pieceSet==='official';
     const issues=validatePieces(state.pieces,state.pieceSet!=='official'),placed=state.pieces.filter(p=>p.anchor).length;
-    const complete=placed===(state.pieceSet==='official'?STREET_PIECES.length:PIECES.length)&&!issues.size;
+    const officialStreet=state.pieceSet==='official';
+    const complete=placed===(officialStreet?STREET_PIECES.length:PIECES.length)&&!issues.size;
+    const canStart=officialStreet?placed>=5&&!issues.size:complete;
     const preStart=!state.started;
     const showPalette=preStart||(streetPlayerMode()&&!state.over&&(!streetTutorial.active||streetTutorial.puzzle));
     byId('streetRandom').hidden=!preStart||officialCreation;
@@ -1351,7 +1353,7 @@
       streetEnd.innerHTML=`<span>✅ Proposer une solution</span><span class="attempt-counter${remaining===1?' last':''}" aria-label="${remaining} proposition${remaining>1?'s':''} restante${remaining>1?'s':''}" title="Propositions restantes">${remaining} essai${remaining>1?'s':''}</span>`;
     }else streetEnd.textContent=state.mode==='gm'?'🏁 Fin de partie':'Proposer une solution';
     streetEnd.disabled=state.mode==='solo'&&!complete;
-    byId('streetStart').disabled=!complete;
+    byId('streetStart').disabled=!canStart;
     byId('streetShare').disabled=!complete;
     byId('streetPaletteTitle').style.display=showPalette?'flex':'none';
     byId('streetPalette').style.display=showPalette?'flex':'none';
@@ -1395,7 +1397,7 @@
     if(state.started)setMessage('',false);
     else if(officialCreation)setMessage('Nouvelles pièces Street : démarre la partie pour tester les ondes. Le partage reste indisponible.',false);
     else if(issues.size)setMessage([...new Set(issues.values())][0],true);
-    else if(placed<PIECES.length)setMessage('Place toutes les pièces avant de démarrer.',true);
+    else if(!canStart)setMessage(officialStreet?'Place au moins cinq pièces valides pour démarrer le test.':'Place toutes les pièces avant de démarrer.',true);
     else setMessage('');
   }
   function ensureStreetTutorialCoach(){
