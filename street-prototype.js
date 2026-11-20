@@ -35,7 +35,7 @@
   const STREET_PIECES=[
     {id:'red1',name:'Rouge 1 — Rache',color:'red',pivot:[0,0],poly:[[-.5,.5],[.5,.5],[1.5,-.5],[.5,-.5],[-.5,-.5],[-1.5,.5]],walls:[]},
     {id:'red2',name:'Rouge 2 — Violon',color:'red',pivot:[0,0],poly:[[1,0],[0,1],[-1,1],[-1,0],[0,-1],[1,-1]],walls:[[[1,0],[2,0]]]},
-    {id:'red3',name:'Rouge 3 — Pipe',color:'red',pivot:[0,0],poly:[[.8,.4],[.8,-.6],[-.2,-.6],[-1.2,.4],[-.2,.4]],walls:[[[-2.2,.4],[-1.2,.4]]],wallStyle:'red'},
+    {id:'red3',name:'Rouge 3 — Pipe',color:'red',pivot:[0,0],poly:[[.8,.4],[.8,-.6],[-.2,-.6],[-1.2,.4],[-.2,.4]],walls:[[[-1.2,.4],[-2.2,.4]]],wallStyle:'red'},
     {id:'white1',name:'Blanc 1 — Révolver',color:'white',pivot:[1,1],poly:[[0,0],[1,0],[1,1],[0,1]],walls:[[[1,1],[2,1]]],wallStyle:'red'},
     {id:'white2',name:'Blanc 2 — Napoléon',color:'white',pivot:[0,0],poly:[[-1,1],[0,1],[1,0],[1,-1],[0,-1],[-1,0]],walls:[]},
     {id:'white3',name:'Blanc 3 — Hommes dansants',color:'white',pivot:[0,0],poly:[[-.286,.571],[.714,.571],[1.714,-.429],[.714,-.429],[-.286,-.429],[-1.286,-.429],[-1.286,.571]],walls:[]},
@@ -45,7 +45,7 @@
     {id:'blue3',name:'Bleu 3 — Escarboucle',color:'blue',pivot:[0,0],poly:[[.667,.667],[.667,-.333],[.667,-1.333],[-.333,-.333],[-1.333,.667],[-.333,.667]],walls:[]},
     {id:'yellow1',name:'Jaune 1 — Machine à écrire',color:'yellow',pivot:[0,0],poly:[[.8,.4],[.8,-.6],[-.2,-.6],[-1.2,.4],[-.2,.4]],walls:[]},
     {id:'yellow2',name:'Jaune 2 — Loupe',color:'yellow',pivot:[1,0],poly:[[0,0],[1,0],[1,1],[0,1]],walls:[[[1,0],[2,-1]]]},
-    {id:'yellow3',name:'Jaune 3 — Chapeau',color:'yellow',pivot:[0,0],poly:[[-.8,.6],[.2,.6],[1.2,-.4],[.2,-.4],[-.8,-.4]],walls:[[[-1.8,-.4],[-.8,-.4]]],wallStyle:'red'},
+    {id:'yellow3',name:'Jaune 3 — Chapeau',color:'yellow',pivot:[0,0],poly:[[-.8,.6],[.2,.6],[1.2,-.4],[.2,-.4],[-.8,-.4]],walls:[[[-.8,-.4],[-1.8,-.4]]],wallStyle:'red'},
   ];
   const MIRROR_DISABLED=new Set(['blueSmall','whiteSmall','whiteLarge']);
 
