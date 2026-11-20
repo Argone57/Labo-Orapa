@@ -35,8 +35,8 @@
   const STREET_PIECES=[
     {id:'red1',name:'Rouge 1 — Rache',color:'red',pivot:[0,0],poly:[[-.5,.5],[.5,.5],[1.5,-.5],[.5,-.5],[-.5,-.5],[-1.5,.5]],walls:[]},
     {id:'red2',name:'Rouge 2 — Violon',color:'red',pivot:[0,0],poly:[[1,0],[0,1],[-1,1],[-1,0],[0,-1],[1,-1]],walls:[[[1,0],[2,0]]]},
-    {id:'red3',name:'Rouge 3 — Pipe',color:'red',pivot:[1,1],poly:[[0,0],[1,0],[1,1],[0,1]],walls:[[[1,1],[2,1]]],wallStyle:'red'},
-    {id:'white1',name:'Blanc 1 — Révolver',color:'white',pivot:[0,0],poly:[[.5,.5],[.5,-.5],[-.5,-.5],[-.5,.5]],walls:[[[-1.5,-.5],[-.5,-.5]]]},
+    {id:'red3',name:'Rouge 3 — Pipe',color:'red',pivot:[0,0],poly:[[.8,.4],[.8,-.6],[-.2,-.6],[-1.2,.4],[-.2,.4]],walls:[[[-2.2,.4],[-1.2,.4]]],wallStyle:'red'},
+    {id:'white1',name:'Blanc 1 — Révolver',color:'white',pivot:[1,1],poly:[[0,0],[1,0],[1,1],[0,1]],walls:[[[1,1],[2,1]]],wallStyle:'red'},
     {id:'white2',name:'Blanc 2 — Napoléon',color:'white',pivot:[0,0],poly:[[-1,1],[0,1],[1,0],[1,-1],[0,-1],[-1,0]],walls:[]},
     {id:'white3',name:'Blanc 3 — Hommes dansants',color:'white',pivot:[0,0],poly:[[-.286,.571],[.714,.571],[1.714,-.429],[.714,-.429],[-.286,-.429],[-1.286,-.429],[-1.286,.571]],walls:[]},
     {id:'white4',name:'Blanc 4 — Empreinte',color:'white',pivot:[0,0],poly:[[-.5,1],[.5,1],[1.5,0],[.5,0],[.5,-1],[-.5,-1],[-1.5,0],[-.5,0]],walls:[]},
@@ -45,7 +45,7 @@
     {id:'blue3',name:'Bleu 3 — Escarboucle',color:'blue',pivot:[0,0],poly:[[.667,.667],[.667,-.333],[.667,-1.333],[-.333,-.333],[-1.333,.667],[-.333,.667]],walls:[]},
     {id:'yellow1',name:'Jaune 1 — Machine à écrire',color:'yellow',pivot:[0,0],poly:[[.8,.4],[.8,-.6],[-.2,-.6],[-1.2,.4],[-.2,.4]],walls:[]},
     {id:'yellow2',name:'Jaune 2 — Loupe',color:'yellow',pivot:[1,0],poly:[[0,0],[1,0],[1,1],[0,1]],walls:[[[1,0],[2,-1]]]},
-    {id:'yellow3',name:'Jaune 3 — Chapeau',color:'yellow',pivot:[0,0],poly:[[-2,1],[-1,1],[0,0],[-1,0]],walls:[[[0,0],[1,0]]],wallStyle:'red'},
+    {id:'yellow3',name:'Jaune 3 — Chapeau',color:'yellow',pivot:[0,0],poly:[[-.8,.6],[.2,.6],[1.2,-.4],[.2,-.4],[-.8,-.4]],walls:[[[-1.8,-.4],[-.8,-.4]]],wallStyle:'red'},
   ];
   const MIRROR_DISABLED=new Set(['blueSmall','whiteSmall','whiteLarge']);
 
@@ -148,6 +148,10 @@
   // Zone centrale interdite par les règles du Street actuel. Elle reste traversée
   // par les ondes et ne concerne pas le Street Prototype.
   const STREET_FORBIDDEN_TRIANGLE_IDS=new Set([40,41,43,59,60,61,62,78,80,81]);
+  const STREET_FORBIDDEN_WALLS=[
+    [[11,5],[10,4]],[[8,4],[10,4]],[[9,5],[10,4]],[[9,3],[10,4]],[[9,3],[11,3]],
+    [[11,3],[12,4]],[[11,3],[13,3]],[[11,3],[12,2]],[[11,3],[10,2]],[[10,4],[12,4]],[[10,4],[11,3]]
+  ].map(wall=>wall.map(([q,r])=>screenPoint({q,r})));
 
   function axialTransform(point,rotation,flipped){
     let [a,b]=point;
@@ -178,6 +182,7 @@
   }
   function visualWallsFor(geometry){
     return geometry.walls.map(wall=>{
+      if(geometry.definition.rayWallsOnly)return wall;
       const direction=norm(sub(wall[1],wall[0]));
       return [add(wall[0],mul(direction,-EDGE*.24)),wall[1]];
     });
@@ -276,15 +281,20 @@
     return first.some(([a1,a2])=>second.some(([b1,b2])=>collinearOverlap(a1,a2,b1,b2)||!!segmentIntersection(a1,a2,b1,b2,true)));
   }
   function geometryUsesForbiddenStreetZone(geometry){
-    return BOARD.triangles.some(triangle=>{
+    const usesTriangle=BOARD.triangles.some(triangle=>{
       if(!STREET_FORBIDDEN_TRIANGLE_IDS.has(triangle.id))return false;
+      const center=triangleCenter(triangle);
       const conflict=polygonsConflict(geometry.poly,triangle.points);
-      if(conflict==='overlap')return true;
+      if(conflict==='overlap'||pointInPolygon(center,geometry.poly,false)||geometry.poly.some(point=>pointInPolygon(point,triangle.points,false)))return true;
       return geometry.walls.some(wall=>{
         if(pointInPolygon(midpoint(wall[0],wall[1]),triangle.points,false))return true;
         return triangle.points.some((point,index)=>!!segmentIntersection(wall[0],wall[1],point,triangle.points[(index+1)%triangle.points.length],false));
       });
     });
+    if(usesTriangle)return true;
+    return geometry.walls.some(wall=>STREET_FORBIDDEN_WALLS.some(blocked=>
+      collinearOverlap(wall[0],wall[1],blocked[0],blocked[1])||!!segmentIntersection(wall[0],wall[1],blocked[0],blocked[1],false)
+    ));
   }
   function directlyReachablePieceIds(placed,geometries){
     const segments=[];
@@ -807,7 +817,11 @@
       event.preventDefault();event.stopPropagation();state.selected=piece.id;
       const startX=event.clientX,startY=event.clientY,pointerId=event.pointerId;
       try{element.setPointerCapture?.(pointerId);}catch(_error){}
-      let moved=false,longPressed=false,ghost=null,ghostFrame=0,ghostX=startX,ghostY=startY,ghostScale=1;
+      const board=byId('streetBoard');
+      const startPoint=board?svgClientPoint(startX,startY,board):null;
+      const originalAnchor=piece.anchor?.q!==undefined?screenPoint(piece.anchor):piece.anchor;
+      const dragOffset=startPoint&&originalAnchor?sub(startPoint,originalAnchor):{x:0,y:0};
+      let moved=false,longPressed=false,ghost=null,ghostFrame=0,ghostX=startX,ghostY=startY,ghostScale=1,ghostOffset={x:0,y:0};
       element.classList.add('gesture-active');
       const timer=setTimeout(()=>{
         if(moved)return;
@@ -816,10 +830,11 @@
         if(navigator.vibrate)navigator.vibrate(15);
         render();
       },480);
-      const positionGhost=(x,y)=>{ghostX=x;ghostY=y;if(ghostFrame)return;ghostFrame=requestAnimationFrame(()=>{ghostFrame=0;if(ghost?.isConnected)ghost.style.transform=`translate3d(${ghostX}px,${ghostY}px,0) scale(${ghostScale})`;});};
+      const positionGhost=(x,y)=>{ghostX=x;ghostY=y;if(ghostFrame)return;ghostFrame=requestAnimationFrame(()=>{ghostFrame=0;if(ghost?.isConnected)ghost.style.transform=`translate3d(${ghostX-ghostOffset.x}px,${ghostY-ghostOffset.y}px,0) scale(${ghostScale})`;});};
       const startDrag=()=>{
-        const matrix=byId('streetBoard')?.getScreenCTM();
+        const matrix=board?.getScreenCTM();
         ghostScale=matrix?Math.hypot(matrix.a,matrix.b):1;
+        ghostOffset=matrix?{x:matrix.a*dragOffset.x+matrix.c*dragOffset.y,y:matrix.b*dragOffset.x+matrix.d*dragOffset.y}:{...dragOffset};
         ghost=createPieceGhost(piece);element.classList.add('dragging');positionGhost(startX,startY);
       };
       const cleanup=()=>{clearTimeout(timer);if(ghostFrame)cancelAnimationFrame(ghostFrame);element.classList.remove('gesture-active','dragging');try{if(element.hasPointerCapture?.(pointerId))element.releasePointerCapture(pointerId);}catch(_error){}window.removeEventListener('pointermove',onMove);window.removeEventListener('pointerup',onUp);window.removeEventListener('pointercancel',onCancel);};
@@ -833,12 +848,12 @@
         if(upEvent.pointerId!==pointerId)return;
         const wasMoved=moved;cleanup();
         if(wasMoved){
-          const svg=byId('streetBoard'),local=svgClientPoint(upEvent.clientX,upEvent.clientY,svg);
+          const svg=byId('streetBoard'),local=svgClientPoint(upEvent.clientX,upEvent.clientY,svg),anchorPoint=sub(local,dragOffset);
           const tutorialTarget=streetTutorial.active&&streetTutorial.puzzle&&streetTutorial.stage===6&&streetTutorial.phase===2&&streetTutorialPlacementOrder[streetTutorial.draftIndex]===piece.id
             ?streetTutorialTargetPiece(piece.id)
             :null;
           if(tutorialTarget?.anchor&&pointInPolygon(local,pieceGeometry(tutorialTarget).poly,true))piece.anchor={...tutorialTarget.anchor};
-          else if(pointInPolygon(local,BOARD.polygon,true))piece.anchor=snapPieceAnchor(piece,local);
+          else if(pointInPolygon(local,BOARD.polygon,true))piece.anchor=snapPieceAnchor(piece,anchorPoint);
           else piece.anchor=null;
           ghost?.remove();
           streetTutorialCheckPlacement(piece);
@@ -1058,6 +1073,7 @@
       if(display==='guess')Object.assign(attrs,{stroke:color,'stroke-width':2.2,'vector-effect':'non-scaling-stroke'});
       const body=svgEl('polygon',attrs);
       if(display!=='guess'&&geo.definition.renderBody!==false)group.appendChild(body);
+      else if(display==='normal'&&geo.definition.renderBody===false)group.appendChild(svgEl('polygon',{points:pointsAttr(geo.poly),fill:'transparent','pointer-events':'all',class:'street-piece-hit-area'}));
       visualWallPolygonsFor(geo,display!=='guess').forEach(wall=>{
         const wallAttrs={points:pointsAttr(wall),fill:display==='guess'?'none':color,class:'street-wall'};
         if(display==='guess')Object.assign(wallAttrs,{stroke:color,'stroke-width':2.2,'vector-effect':'non-scaling-stroke'});
@@ -1318,12 +1334,12 @@
     renderPalette();renderBoard();renderHistory();
     const officialCreation=state.mode==='gm'&&!state.started&&state.pieceSet==='official';
     const issues=validatePieces(state.pieces,state.pieceSet!=='official'),placed=state.pieces.filter(p=>p.anchor).length;
-    const complete=placed===PIECES.length&&!issues.size;
+    const complete=placed===(state.pieceSet==='official'?STREET_PIECES.length:PIECES.length)&&!issues.size;
     const preStart=!state.started;
     const showPalette=preStart||(streetPlayerMode()&&!state.over&&(!streetTutorial.active||streetTutorial.puzzle));
     byId('streetRandom').hidden=!preStart||officialCreation;
     byId('streetShare').hidden=!preStart||officialCreation;
-    byId('streetStart').hidden=!preStart||officialCreation;
+    byId('streetStart').hidden=!preStart;
     const streetEnd=byId('streetEnd');
     const showAttemptCounter=state.mode==='solo'&&state.started&&!state.over;
     streetEnd.hidden=preStart||state.over||streetTutorial.active;
@@ -1377,7 +1393,7 @@
     pill.querySelector('span:last-child').textContent=streetTutorial.active?'Tutoriel interactif':(state.over?(state.result==='win'?'Victoire':'Défaite'):(state.started?(state.mode==='solo'?'Partie en cours':'Test de la grille'):'Placement des pièces'));
     if(preStart){clearDirectionChoicesTimer();selectedWaveEdge=null;}
     if(state.started)setMessage('',false);
-    else if(officialCreation)setMessage('Nouvelles pièces Street : aperçu de création uniquement, sans lancement ni partage de grille.',false);
+    else if(officialCreation)setMessage('Nouvelles pièces Street : démarre la partie pour tester les ondes. Le partage reste indisponible.',false);
     else if(issues.size)setMessage([...new Set(issues.values())][0],true);
     else if(placed<PIECES.length)setMessage('Place toutes les pièces avant de démarrer.',true);
     else setMessage('');
