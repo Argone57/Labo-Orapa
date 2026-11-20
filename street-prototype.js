@@ -1053,7 +1053,7 @@
       svg.appendChild(svgEl('polyline',{points:pointsAttr(previewTrace.points),class:'street-trace-halo street-preview-trace',stroke}));
       svg.appendChild(svgEl('polyline',{points:pointsAttr(previewTrace.points),class:'street-trace street-preview-trace',stroke}));
     }
-    const issues=validatePieces(state.pieces,state.pieceSet!=='official');
+    const issues=validatePieces(state.pieces);
     const tutorialPieceId=streetTutorial.active&&streetTutorial.puzzle&&streetTutorial.stage===6&&streetTutorial.phase===2
       ?streetTutorialPlacementOrder[streetTutorial.draftIndex]
       :null;
