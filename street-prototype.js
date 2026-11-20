@@ -34,18 +34,18 @@
   // Elles ne participent ni au format ST1, ni aux parties jouables du Prototype.
   const STREET_PIECES=[
     {id:'red1',name:'Rouge 1 — Rache',color:'red',pivot:[0,0],poly:[[-.5,.5],[.5,.5],[1.5,-.5],[.5,-.5],[-.5,-.5],[-1.5,.5]],walls:[]},
-    {id:'red2',name:'Rouge 2 — Violon',color:'red',pivot:[0,0],poly:[[-1,1],[0,1],[1,0],[1,-1],[0,-1],[-1,0]],walls:[[[0,-2],[0,-1]]]},
-    {id:'red3',name:'Rouge 3 — Pipe',color:'red',pivot:[0,0],poly:[[.8,.4],[.8,-.6],[-.2,-.6],[-1.2,.4],[-.2,.4]],walls:[[[-2.2,.4],[-1.2,.4]]]},
+    {id:'red2',name:'Rouge 2 — Violon',color:'red',pivot:[0,0],poly:[[1,0],[0,1],[-1,1],[-1,0],[0,-1],[1,-1]],walls:[[[1,0],[2,0]]]},
+    {id:'red3',name:'Rouge 3 — Pipe',color:'red',pivot:[1,1],poly:[[0,0],[1,0],[1,1],[0,1]],walls:[[[1,1],[2,1]]],wallStyle:'red'},
     {id:'white1',name:'Blanc 1 — Révolver',color:'white',pivot:[0,0],poly:[[.5,.5],[.5,-.5],[-.5,-.5],[-.5,.5]],walls:[[[-1.5,-.5],[-.5,-.5]]]},
     {id:'white2',name:'Blanc 2 — Napoléon',color:'white',pivot:[0,0],poly:[[-1,1],[0,1],[1,0],[1,-1],[0,-1],[-1,0]],walls:[]},
     {id:'white3',name:'Blanc 3 — Hommes dansants',color:'white',pivot:[0,0],poly:[[-.286,.571],[.714,.571],[1.714,-.429],[.714,-.429],[-.286,-.429],[-1.286,-.429],[-1.286,.571]],walls:[]},
     {id:'white4',name:'Blanc 4 — Empreinte',color:'white',pivot:[0,0],poly:[[-.5,1],[.5,1],[1.5,0],[.5,0],[.5,-1],[-.5,-1],[-1.5,0],[-.5,0]],walls:[]},
     {id:'blue1',name:'Bleu 1 — Chien',color:'blue',pivot:[0,0],poly:[[-.125,1.5],[-.125,.5],[-1.125,.5],[-1.125,-.5],[-.125,-.5],[.875,-1.5],[.875,-.5],[.875,.5]],walls:[]},
-    {id:'blue2',name:'Bleu 2 — Serpent',color:'blue',pivot:[0,0],poly:[],walls:[[[2,0],[2,1]],[[2,1],[1,1]],[[1,1],[1,2]],[[1,2],[0,2]],[[0,2],[0,3]]]},
+    {id:'blue2',name:'Bleu 2 — Serpent',color:'blue',pivot:[0,0],poly:[[-.5,.5],[.5,.5],[1.5,-.5],[.5,-.5],[-.5,-.5],[-1.5,.5]],walls:[[[-1.5,.5],[-.5,-.5]],[[-.5,.5],[-.5,-.5]],[[-.5,.5],[.5,-.5]],[[.5,-.5],[.5,.5]],[[.5,.5],[1.5,-.5]]],renderBody:false,rayWallsOnly:true},
     {id:'blue3',name:'Bleu 3 — Escarboucle',color:'blue',pivot:[0,0],poly:[[.667,.667],[.667,-.333],[.667,-1.333],[-.333,-.333],[-1.333,.667],[-.333,.667]],walls:[]},
     {id:'yellow1',name:'Jaune 1 — Machine à écrire',color:'yellow',pivot:[0,0],poly:[[.8,.4],[.8,-.6],[-.2,-.6],[-1.2,.4],[-.2,.4]],walls:[]},
-    {id:'yellow2',name:'Jaune 2 — Loupe',color:'yellow',pivot:[0,0],poly:[[.5,.5],[.5,-.5],[-.5,-.5],[-.5,.5]],walls:[[[-1.5,1.5],[-.5,.5]]]},
-    {id:'yellow3',name:'Jaune 3 — Chapeau',color:'yellow',pivot:[0,0],poly:[[-.8,.6],[.2,.6],[1.2,-.4],[.2,-.4],[-.8,-.4]],walls:[[[-1.8,-.4],[-.8,-.4]]]},
+    {id:'yellow2',name:'Jaune 2 — Loupe',color:'yellow',pivot:[1,0],poly:[[0,0],[1,0],[1,1],[0,1]],walls:[[[1,0],[2,-1]]]},
+    {id:'yellow3',name:'Jaune 3 — Chapeau',color:'yellow',pivot:[0,0],poly:[[-2,1],[-1,1],[0,0],[-1,0]],walls:[[[0,0],[1,0]]],wallStyle:'red'},
   ];
   const MIRROR_DISABLED=new Set(['blueSmall','whiteSmall','whiteLarge']);
 
@@ -192,7 +192,7 @@
       const startTop=add(wall[0],mul(normal,half));
       const startBottom=add(wall[0],mul(normal,-half));
       const shoulder=add(wall[1],mul(direction,-bevel));
-      if(geometry.definition.id==='redWall'){
+      if(geometry.definition.id==='redWall'||geometry.definition.wallStyle==='red'){
         const physical=geometry.walls[index];
         const probeBase=add(physical[0],mul(direction,-4));
         if(!pointInPolygon(add(probeBase,mul(normal,STREET_WALL_WIDTH)),geometry.poly,true))normal=mul(normal,-1);
@@ -290,7 +290,7 @@
     const segments=[];
     placed.forEach(piece=>{
       const geometry=geometries.get(piece.id);
-      geometry.poly.forEach((point,index)=>segments.push({a:point,b:geometry.poly[(index+1)%geometry.poly.length],piece}));
+      if(!geometry.definition.rayWallsOnly)geometry.poly.forEach((point,index)=>segments.push({a:point,b:geometry.poly[(index+1)%geometry.poly.length],piece}));
       geometry.walls.forEach(wall=>segments.push({a:wall[0],b:wall[1],piece}));
     });
     const reachable=new Set();
@@ -357,7 +357,7 @@
     const entry=BOARD.boundary[edgeIndex],segments=[];
     pieces.filter(p=>p.anchor).forEach(piece=>{
       const geo=pieceGeometry(piece);
-      geo.poly.forEach((p,i)=>segments.push({a:p,b:geo.poly[(i+1)%geo.poly.length],piece,color:geo.definition.color}));
+      if(!geo.definition.rayWallsOnly)geo.poly.forEach((p,i)=>segments.push({a:p,b:geo.poly[(i+1)%geo.poly.length],piece,color:geo.definition.color}));
       geo.walls.forEach(w=>segments.push({a:w[0],b:w[1],piece,color:geo.definition.color,wall:true}));
     });
     let direction=entry.directions[directionIndex],colorSet=new Set(),points=[entry.mid],exit=null,exitDirectionIndex=null,loop=false;
@@ -444,7 +444,7 @@
     const colors=new Set();
     queryPieces().filter(piece=>piece.anchor).forEach(piece=>{
       const geometry=pieceGeometry(piece);
-      if(pointInPolygon(center,geometry.poly,true))colors.add(geometry.definition.color);
+      if(!geometry.definition.rayWallsOnly&&pointInPolygon(center,geometry.poly,true))colors.add(geometry.definition.color);
     });
     if(!colors.size)return {empty:true,name:'Vide',hex:null,colors:[]};
     const result=resolveStreetColor(colors);
@@ -782,11 +782,12 @@
     const geo=pieceGeometry({...piece,anchor:{x:0,y:0}}),wallPolygons=visualWallPolygonsFor(geo),all=[...geo.poly,...wallPolygons.flat()];
     const xs=all.map(p=>p.x),ys=all.map(p=>p.y),pad=9;
     const minX=Math.min(...xs)-pad,minY=Math.min(...ys)-pad,width=Math.max(...xs)-Math.min(...xs)+pad*2,height=Math.max(...ys)-Math.min(...ys)+pad*2;
-    return `<svg viewBox="${minX} ${minY} ${width} ${height}" aria-hidden="true"><polygon points="${pointsAttr(geo.poly)}" fill="${COLORS[geo.definition.color]}"/>${wallPolygons.map(poly=>`<polygon points="${pointsAttr(poly)}" fill="${COLORS[geo.definition.color]}"/>`).join('')}</svg>`;
+    const body=geo.definition.renderBody===false?'':`<polygon points="${pointsAttr(geo.poly)}" fill="${COLORS[geo.definition.color]}"/>`;
+    return `<svg viewBox="${minX} ${minY} ${width} ${height}" aria-hidden="true">${body}${wallPolygons.map(poly=>`<polygon points="${pointsAttr(poly)}" fill="${COLORS[geo.definition.color]}"/>`).join('')}</svg>`;
   }
   function createPieceGhost(piece){
     const geo=pieceGeometry({...piece,anchor:{x:0,y:0}}),wallPolygons=visualWallPolygonsFor(geo),ghost=svgEl('svg',{width:1,height:1,class:'street-drag-ghost','aria-hidden':'true'});
-    ghost.appendChild(svgEl('polygon',{points:pointsAttr(geo.poly),fill:COLORS[geo.definition.color]}));
+    if(geo.definition.renderBody!==false)ghost.appendChild(svgEl('polygon',{points:pointsAttr(geo.poly),fill:COLORS[geo.definition.color]}));
     wallPolygons.forEach(poly=>ghost.appendChild(svgEl('polygon',{points:pointsAttr(poly),fill:COLORS[geo.definition.color],class:'street-wall'})));
     document.body.appendChild(ghost);return ghost;
   }
@@ -1056,13 +1057,13 @@
       const attrs={points:pointsAttr(geo.poly),fill:display==='guess'?'none':color};
       if(display==='guess')Object.assign(attrs,{stroke:color,'stroke-width':2.2,'vector-effect':'non-scaling-stroke'});
       const body=svgEl('polygon',attrs);
-      if(display!=='guess')group.appendChild(body);
+      if(display!=='guess'&&geo.definition.renderBody!==false)group.appendChild(body);
       visualWallPolygonsFor(geo,display!=='guess').forEach(wall=>{
         const wallAttrs={points:pointsAttr(wall),fill:display==='guess'?'none':color,class:'street-wall'};
         if(display==='guess')Object.assign(wallAttrs,{stroke:color,'stroke-width':2.2,'vector-effect':'non-scaling-stroke'});
         group.appendChild(svgEl('polygon',wallAttrs));
       });
-      if(display==='guess')group.appendChild(body);
+      if(display==='guess'&&geo.definition.renderBody!==false)group.appendChild(body);
       if(display==='normal')attachPieceGesture(group,piece);
       svg.appendChild(group);
     };
