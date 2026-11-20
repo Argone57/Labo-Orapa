@@ -33,19 +33,19 @@
   // Les pièces Street actuelles restent pour l'instant dans l'atelier de création.
   // Elles ne participent ni au format ST1, ni aux parties jouables du Prototype.
   const STREET_PIECES=[
-    {id:'red1',name:'Rouge 1 — Rache',color:'red',pivot:[0,0],poly:[[1,0],[0,1],[-1,1],[-1,0],[0,-1],[1,-1]],walls:[]},
-    {id:'red2',name:'Rouge 2 — Violon',color:'red',pivot:[1,1],poly:[[0,0],[2,0],[3,1],[2,2],[0,2],[-1,1]],walls:[[[2,1],[4,1]]]},
-    {id:'red3',name:'Rouge 3 — Pipe',color:'red',pivot:[1.5,1],poly:[[0,0],[3,0],[3,1],[2,2],[1,2],[0,1]],walls:[[[3,1],[5,1]]]},
-    {id:'white1',name:'Blanc 1 — Révolver',color:'white',pivot:[1,1],poly:[[0,0],[2,0],[2,1],[1,2],[0,1]],walls:[[[2,0],[4,0]]]},
-    {id:'white2',name:'Blanc 2 — Napoléon',color:'white',pivot:[0,1],poly:[[-1,0],[1,0],[2,1],[1,2],[-1,2],[-2,1]],walls:[]},
-    {id:'white3',name:'Blanc 3 — Hommes dansants',color:'white',pivot:[2,.5],poly:[[0,0],[4,0],[5,1],[4,2],[0,2],[-1,1]],walls:[]},
-    {id:'white4',name:'Blanc 4 — Prison',color:'white',pivot:[1.5,1],poly:[[0,0],[3,0],[4,1],[3,2],[2,2],[2,3],[0,3],[-1,2],[-1,1]],walls:[]},
-    {id:'blue1',name:'Bleu 1 — Chien',color:'blue',pivot:[1,1],poly:[[0,0],[2,0],[3,1],[2,2],[1,2],[0,3],[-1,2],[-1,1]],walls:[]},
-    {id:'blue2',name:'Bleu 2 — Serpent',color:'blue',pivot:[2,1],poly:[[0,0],[2,0],[3,1],[3,2],[2,3],[1,3],[1,2],[2,1],[1,1],[0,2],[-1,2],[-1,1]],walls:[[[2,3],[4,3]]]},
-    {id:'blue3',name:'Bleu 3 — Escarboucle',color:'blue',pivot:[1,1],poly:[[1,-1],[2,0],[2,1],[1,2],[0,3],[-1,2],[-1,1],[0,0]],walls:[]},
-    {id:'yellow1',name:'Jaune 1 — Machine à écrire',color:'yellow',pivot:[2,1],poly:[[0,0],[3,0],[4,1],[4,2],[0,2],[-1,1]],walls:[]},
-    {id:'yellow2',name:'Jaune 2 — Loupe',color:'yellow',pivot:[0,0],poly:[[1,0],[0,1],[-1,1],[-1,0],[0,-1],[1,-1]],walls:[[[1,0],[3,0]]]},
-    {id:'yellow3',name:'Jaune 3 — Chapeau',color:'yellow',pivot:[1.5,1],poly:[[-1,1],[0,0],[3,0],[4,1],[3,2],[0,2]],walls:[[[0,2],[-2,2]]]},
+    {id:'red1',name:'Rouge 1 — Rache',color:'red',pivot:[0,0],poly:[[-.5,.5],[.5,.5],[1.5,-.5],[.5,-.5],[-.5,-.5],[-1.5,.5]],walls:[]},
+    {id:'red2',name:'Rouge 2 — Violon',color:'red',pivot:[0,0],poly:[[-1,1],[0,1],[1,0],[1,-1],[0,-1],[-1,0]],walls:[[[0,-2],[0,-1]]]},
+    {id:'red3',name:'Rouge 3 — Pipe',color:'red',pivot:[0,0],poly:[[.8,.4],[.8,-.6],[-.2,-.6],[-1.2,.4],[-.2,.4]],walls:[[[-2.2,.4],[-1.2,.4]]]},
+    {id:'white1',name:'Blanc 1 — Révolver',color:'white',pivot:[0,0],poly:[[.5,.5],[.5,-.5],[-.5,-.5],[-.5,.5]],walls:[[[-1.5,-.5],[-.5,-.5]]]},
+    {id:'white2',name:'Blanc 2 — Napoléon',color:'white',pivot:[0,0],poly:[[-1,1],[0,1],[1,0],[1,-1],[0,-1],[-1,0]],walls:[]},
+    {id:'white3',name:'Blanc 3 — Hommes dansants',color:'white',pivot:[0,0],poly:[[-.286,.571],[.714,.571],[1.714,-.429],[.714,-.429],[-.286,-.429],[-1.286,-.429],[-1.286,.571]],walls:[]},
+    {id:'white4',name:'Blanc 4 — Empreinte',color:'white',pivot:[0,0],poly:[[-.5,1],[.5,1],[1.5,0],[.5,0],[.5,-1],[-.5,-1],[-1.5,0],[-.5,0]],walls:[]},
+    {id:'blue1',name:'Bleu 1 — Chien',color:'blue',pivot:[0,0],poly:[[-.125,1.5],[-.125,.5],[-1.125,.5],[-1.125,-.5],[-.125,-.5],[.875,-1.5],[.875,-.5],[.875,.5]],walls:[]},
+    {id:'blue2',name:'Bleu 2 — Serpent',color:'blue',pivot:[0,0],poly:[],walls:[[[2,0],[2,1]],[[2,1],[1,1]],[[1,1],[1,2]],[[1,2],[0,2]],[[0,2],[0,3]]]},
+    {id:'blue3',name:'Bleu 3 — Escarboucle',color:'blue',pivot:[0,0],poly:[[.667,.667],[.667,-.333],[.667,-1.333],[-.333,-.333],[-1.333,.667],[-.333,.667]],walls:[]},
+    {id:'yellow1',name:'Jaune 1 — Machine à écrire',color:'yellow',pivot:[0,0],poly:[[.8,.4],[.8,-.6],[-.2,-.6],[-1.2,.4],[-.2,.4]],walls:[]},
+    {id:'yellow2',name:'Jaune 2 — Loupe',color:'yellow',pivot:[0,0],poly:[[.5,.5],[.5,-.5],[-.5,-.5],[-.5,.5]],walls:[[[-1.5,1.5],[-.5,.5]]]},
+    {id:'yellow3',name:'Jaune 3 — Chapeau',color:'yellow',pivot:[0,0],poly:[[-.8,.6],[.2,.6],[1.2,-.4],[.2,-.4],[-.8,-.4]],walls:[[[-1.8,-.4],[-.8,-.4]]]},
   ];
   const MIRROR_DISABLED=new Set(['blueSmall','whiteSmall','whiteLarge']);
 
@@ -250,6 +250,7 @@
     return Math.min(1,Math.max(t1,t2))-Math.max(0,Math.min(t1,t2))>.02;
   }
   function polygonsConflict(a,b){
+    if(!a.length||!b.length)return null;
     for(let i=0;i<a.length;i++)for(let j=0;j<b.length;j++){
       const a1=a[i],a2=a[(i+1)%a.length],b1=b[j],b2=b[(j+1)%b.length];
       if(collinearOverlap(a1,a2,b1,b2))return 'side';
@@ -766,7 +767,8 @@
     return point.matrixTransform(svg.getScreenCTM().inverse());
   }
   function snapPieceAnchor(piece,target){
-    const definition=pieceDefinition(piece),first=definition.poly[0];
+    const definition=pieceDefinition(piece),first=definition.poly[0]||definition.walls[0]?.[0];
+    if(!first)return {...target};
     const relative=[first[0]-definition.pivot[0],first[1]-definition.pivot[1]];
     const firstOffset=axialVectorToScreen(axialTransform(relative,piece.rotation,piece.flipped));
     let best=null,bestDistance=Infinity;
