@@ -8,9 +8,9 @@ const LOCAL_STORAGE_PREFIX = IS_PREPRODUCTION ? 'orapaPreprod' : 'orapaMine';
 // publication et provoque une demande de mise à jour en boucle.
 const APP_VERSION = (()=>{
   try{
-    return new URL(document.currentScript?.src || '',window.location.href).searchParams.get('v') || '20261112-0001';
+    return new URL(document.currentScript?.src || '',window.location.href).searchParams.get('v') || '20260902-0001';
   }catch(_error){
-    return '20261112-0001';
+    return '20260902-0001';
   }
 })();
 let publishedAppVersion = null;
@@ -580,6 +580,7 @@ const DAILY_REMIX_FINAL_SNAPSHOTS_KEY = `${LOCAL_STORAGE_PREFIX}DailyRemixFinalS
 // indépendant du compte : chaque navigateur garde sa propre dernière visite.
 const UPDATES_READ_KEY = `${LOCAL_STORAGE_PREFIX}UpdatesReadV2`;
 const GAME_UPDATES = [
+  {id:'pc-shortcuts-20261120',date:'20/11/2026',title:'Raccourcis PC : clic droit pour masquer ou réafficher une case vide ; la touche Tab active ou désactive le mode correspondant. Dans Orapa Street, un clic droit affiche une onde de test sur une flèche, ou sur une direction en mode Cases.'},
   {id:'street-20261001',date:'01/10/2026',title:'Nouveau mode de jeu : Orapa Street. A noter que tout est basé sur la seule image existante à ce jour donc il est possible que toutes les règles ne soient pas respectées.'},
   {id:'aides-20260914',date:'14/09/2026',title:'Légère correction du mode indice et ajout d\'un mode pour marquer les cases vides'},
   {id:'daily-remix-20260913',date:'13/09/2026',title:'Nouveau mode de jeu : Défi du jour remix'},  
@@ -4275,16 +4276,10 @@ function renderBgGrid(){
       const key=r+','+c;
       cell.classList.toggle('draft-empty',state.mode==='solo'&&!state.soloOver&&!!state.draftEmptyCells?.[key]);
       if(raysEnabled()) cell.addEventListener('click', ()=> onCellClick(r,c,cell));
-      // En solo, le clic droit masque/démasque directement la case, sans dépendre
-      // du mode « Masquer les cases » et sans afficher le menu du navigateur.
-      cell.addEventListener('contextmenu', event=>{
-        if(state.mode!=='solo'||state.soloOver)return;
+      cell.addEventListener('contextmenu',event=>{
+        if(state.mode!=='solo'||state.soloOver||tutorialActive)return;
         event.preventDefault();
-        state.draftEmptyCells=state.draftEmptyCells&&typeof state.draftEmptyCells==='object'?state.draftEmptyCells:{};
-        if(state.draftEmptyCells[key])delete state.draftEmptyCells[key];
-        else state.draftEmptyCells[key]=true;
-        cell.classList.toggle('draft-empty',!!state.draftEmptyCells[key]);
-        saveState();
+        toggleDraftCell(r,c,cell);
       });
       frag.appendChild(cell);
     }
@@ -5167,6 +5162,13 @@ function setDraftMode(active){
   if(draftModeActive)hintModeActive=false;
   updateCellToolsUI();
 }
+function toggleDraftCell(r,c,cellEl){
+  const key=r+','+c;
+  state.draftEmptyCells=state.draftEmptyCells&&typeof state.draftEmptyCells==='object'?state.draftEmptyCells:{};
+  if(state.draftEmptyCells[key])delete state.draftEmptyCells[key];else state.draftEmptyCells[key]=true;
+  cellEl?.classList.toggle('draft-empty',!!state.draftEmptyCells[key]);
+  saveState();
+}
 function resetCellTools(){
   hintModeActive=false;
   draftModeActive=false;
@@ -5188,10 +5190,7 @@ function updateCellToolsUI(){
 async function onCellClick(r,c,cellEl){
   const key = r+','+c;
   if(draftModeActive&&state.mode==='solo'&&!state.soloOver){
-    state.draftEmptyCells=state.draftEmptyCells&&typeof state.draftEmptyCells==='object'?state.draftEmptyCells:{};
-    if(state.draftEmptyCells[key])delete state.draftEmptyCells[key];else state.draftEmptyCells[key]=true;
-    cellEl.classList.toggle('draft-empty',!!state.draftEmptyCells[key]);
-    saveState();
+    toggleDraftCell(r,c,cellEl);
     return;
   }
   if(tutorialActive&&(![5,15,17].includes(tutorialStage)||!tutorialTargetCell||r!==tutorialTargetCell.r||c!==tutorialTargetCell.c)){showErrorToast('Touche la case mise en \u00e9vidence.');return;}
@@ -5830,8 +5829,9 @@ $('#btnShareGrid').addEventListener('click',async()=>{
 $('#btnHint').addEventListener('click', ()=> setHintMode(!hintModeActive));
 $('#btnDraft').addEventListener('click',()=>setDraftMode(!draftModeActive));
 document.addEventListener('keydown',event=>{
-  if(event.key!=='Tab'||event.altKey||event.ctrlKey||event.metaKey||event.shiftKey)return;
-  if(state.mode!=='solo'||state.soloOver||tutorialActive)return;
+  if(event.key!=='Tab'||event.defaultPrevented||event.ctrlKey||event.metaKey||event.altKey)return;
+  if(document.body.classList.contains('street-open')||state.mode!=='solo'||state.soloOver||tutorialActive)return;
+  if(event.target?.matches?.('input,textarea,select,[contenteditable="true"]'))return;
   event.preventDefault();
   setDraftMode(!draftModeActive);
 });

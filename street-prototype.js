@@ -468,6 +468,24 @@
       if(selectedWaveEdge===edgeIndex){selectedWaveEdge=null;render();}
     },2000);
   }
+  function streetSoloShortcutActive(){
+    return state.mode==='solo'&&state.started&&!state.over&&!streetTutorial.active;
+  }
+  function toggleStreetPreviewWave(edgeIndex,directionIndex){
+    if(!streetSoloShortcutActive())return false;
+    if(state.previewWave?.edgeIndex===edgeIndex&&state.previewWave?.directionIndex===directionIndex)state.previewWave=null;
+    else state.previewWave={edgeIndex,directionIndex};
+    render();
+    return true;
+  }
+  function toggleStreetDraftCell(triangle){
+    if(!streetSoloShortcutActive())return false;
+    const key=String(triangle.id);
+    state.draftCells=state.draftCells&&typeof state.draftCells==='object'?state.draftCells:{};
+    if(state.draftCells[key])delete state.draftCells[key];else state.draftCells[key]=true;
+    render();
+    return true;
+  }
   function streetTutorialExpectedWave(){
     if(!streetTutorial.active)return null;
     if(streetTutorial.stage===3)return {entry:'J',exit:'14'};
@@ -821,12 +839,8 @@
         render();void recordStreetAction('coord');
       });
       poly.addEventListener('contextmenu',event=>{
-        if(state.mode!=='solo'||state.over||streetTutorial.active)return;
-        event.preventDefault();
-        event.stopPropagation();
-        state.draftCells=state.draftCells&&typeof state.draftCells==='object'?state.draftCells:{};
-        if(state.draftCells[key])delete state.draftCells[key];else state.draftCells[key]=true;
-        render();
+        if(!toggleStreetDraftCell(triangle))return;
+        event.preventDefault();event.stopPropagation();
       });
       boardGroup.appendChild(poly);
     });
@@ -876,12 +890,10 @@
           render();
         });
         hit.addEventListener('contextmenu',event=>{
+          const point=svgClientPoint(event.clientX,event.clientY,svg);
+          const directionIndex=dot(sub(point,labelPos),sub(edge.directions[0],edge.directions[1]))>=0?0:1;
+          if(!toggleStreetPreviewWave(edgeIndex,directionIndex))return;
           event.preventDefault();event.stopPropagation();
-          if(state.mode!=='solo'||!state.started||state.over)return;
-          const local=svgClientPoint(event.clientX,event.clientY,byId('streetBoard'));
-          const delta=sub(local,labelPos);
-          const directionIndex=dot(delta,sub(edge.directions[0],edge.directions[1]))>=0?0:1;
-          toggleStreetPreviewWave(edgeIndex,directionIndex);
         });
         labelGroup.appendChild(hit);
       }
@@ -899,7 +911,7 @@
           text.textContent=usedTrace?(traceExitInfo(usedTrace,edgeIndex,directionIndex)||'∅'):`→ ${destination}`;
           choice.appendChild(box);choice.appendChild(text);
           choice.addEventListener('click',event=>{event.stopPropagation();if(!streetTutorialAllowWave(edge,directionIndex))return;activateStreetWaveControl(edgeIndex,directionIndex,usedTrace);scheduleDirectionChoicesHide(edgeIndex);});
-          choice.addEventListener('contextmenu',event=>{event.preventDefault();event.stopPropagation();if(state.mode!=='solo'||!state.started||state.over)return;toggleStreetPreviewWave(edgeIndex,directionIndex);});
+          choice.addEventListener('contextmenu',event=>{if(!toggleStreetPreviewWave(edgeIndex,directionIndex))return;event.preventDefault();event.stopPropagation();scheduleDirectionChoicesHide(edgeIndex);});
           labelGroup.appendChild(choice);
         });
       }
@@ -913,7 +925,7 @@
         const usedTrace=displayTraceAt(edgeIndex,directionIndex);
         const button=svgEl('polygon',{points:pointsAttr(arrow),class:`street-ray-button${usedTrace?' used':''}${usedTrace?.color?.name==='Transparent'?' transparent':''}${state.started?'':' disabled'}`,'data-edge':edgeIndex,'data-direction':directionIndex,style:usedTrace?`--street-result:${usedTrace.color.hex}`:''});
         button.addEventListener('click',event=>{event.stopPropagation();if(!streetTutorialAllowWave(edge,directionIndex))return;activateStreetWaveControl(edgeIndex,directionIndex,usedTrace);});labelGroup.appendChild(button);
-        button.addEventListener('contextmenu',event=>{event.preventDefault();event.stopPropagation();if(state.mode!=='solo'||!state.started||state.over)return;toggleStreetPreviewWave(edgeIndex,directionIndex);});
+        button.addEventListener('contextmenu',event=>{if(!toggleStreetPreviewWave(edgeIndex,directionIndex))return;event.preventDefault();event.stopPropagation();});
         const exitInfo=usedTrace&&traceExitInfo(usedTrace,edgeIndex,directionIndex);
         if(exitInfo){
           const leftSide=['1','2','3','4','A','B','C'].includes(edge.label);
@@ -1035,17 +1047,11 @@
     const control=traceControl(edgeIndex,directionIndex);showStreetBubble(control,text);pulseStreetControl(edgeIndex,directionIndex);
     if(partner)pulseStreetControl(partner.index,partnerDirection);
   }
-  function showPreviewWave(edgeIndex,directionIndex,realTrace=null,showFeedback=true){
-    if(!state.started||!streetPlayerMode())return;
+  function showPreviewWave(edgeIndex,directionIndex,realTrace=null){
+    if(!state.started||!streetPlayerMode()||!state.waveModeActive)return;
     state.previewWave={edgeIndex,directionIndex};
     render();
-    if(realTrace&&showFeedback)setTimeout(()=>showStreetTraceFeedback(realTrace,edgeIndex,directionIndex),0);
-  }
-  function toggleStreetPreviewWave(edgeIndex,directionIndex){
-    const same=state.previewWave&&state.previewWave.edgeIndex===edgeIndex&&state.previewWave.directionIndex===directionIndex;
-    if(same){state.previewWave=null;render();return;}
-    const trace=traceRay(edgeIndex,directionIndex,state.pieces);
-    showPreviewWave(edgeIndex,directionIndex,trace,false);
+    if(realTrace)setTimeout(()=>showStreetTraceFeedback(realTrace,edgeIndex,directionIndex),0);
   }
   function activateStreetWaveControl(edgeIndex,directionIndex,knownTrace=null){
     const usedTrace=knownTrace||findTraceAt(edgeIndex,directionIndex);
@@ -1395,13 +1401,6 @@
   function bind(){
     const create=byId('createStreetMode');
     if(!create)return;
-    document.addEventListener('keydown',event=>{
-      if(event.key!=='Tab'||event.altKey||event.ctrlKey||event.metaKey||event.shiftKey)return;
-      if(state.mode!=='solo'||state.over||streetTutorial.active||byId('streetPrototype').hidden)return;
-      event.preventDefault();
-      state.tool=state.tool==='draft'?'pieces':'draft';
-      clearDirectionChoicesTimer();selectedWaveEdge=null;render();
-    });
     create.addEventListener('click',()=>openCreation());
     byId('streetClose').addEventListener('click',()=>streetTutorial.active?requestStreetTutorialExit():close());
     byId('streetRandom').addEventListener('click',()=>{if(state.started)return;if(!randomizePieces())setMessage('Impossible de trouver un placement valide. Réessaie.',true);render();});
@@ -1429,6 +1428,14 @@
         state.tool='draft';streetTutorial.phase=5;streetTutorial.draftIndex=0;clearDirectionChoicesTimer();selectedWaveEdge=null;streetTutorialShow();render();return;
       }
       state.tool=state.tool==='draft'?'pieces':'draft';clearDirectionChoicesTimer();selectedWaveEdge=null;render();
+    });
+    document.addEventListener('keydown',event=>{
+      if(event.key!=='Tab'||event.defaultPrevented||event.ctrlKey||event.metaKey||event.altKey)return;
+      if(byId('streetPrototype').hidden||!streetSoloShortcutActive())return;
+      if(event.target?.matches?.('input,textarea,select,[contenteditable="true"]'))return;
+      event.preventDefault();
+      state.tool=state.tool==='draft'?'pieces':'draft';
+      clearDirectionChoicesTimer();selectedWaveEdge=null;render();
     });
     byId('streetShowWave').addEventListener('click',()=>{
       if(streetTutorial.active&&(streetTutorial.stage!==6||streetTutorial.phase!==0)){showErrorToast('Suis l’étape indiquée par le tutoriel.');return;}
