@@ -540,6 +540,11 @@ function streetShareLabel(decoded){
   const profiles={normal:'Normal',sherlock7:'Sherlock 7',sherlockExtreme:'Sherlock Extrême',absurd:'Absurde',free:'Libre'};
   return decoded.profile==='free'?`Orapa Street v2 · Libre · ${decoded.pieces?.length||0} 🧩 · ⬢${decoded.centralZone?'✅':'❌'}`:`Orapa Street v2 · ${profiles[decoded.profile]||'Normal'}`;
 }
+function streetHistoryOption(decoded){
+  if(decoded?.version!==2)return 'v1';
+  const profiles={normal:'Normal',sherlock7:'Sherlock 7',sherlockExtreme:'Sherlock Extrême',absurd:'Absurde',free:'Libre'};
+  return decoded.profile==='free'?`Libre · ${decoded.pieces?.length||0} 🧩 · ⬢${decoded.centralZone?'✅':'❌'}`:(profiles[decoded.profile]||'Normal');
+}
 function formatShareText(e){
   const d = e.isDaily && e.dailyDate
     ? formatDailyDate(e.dailyDate)
@@ -1260,7 +1265,7 @@ function gridRankingRows(rows){
 }
 function gridRankingIntro(gridId,copyButtonId,playButtonId,returnToVictory=false){
   const decoded=decodeGridId(gridId);
-  const gems=decoded?.variant==='lost'?'💎 Gemme perdue':(decoded?.variant==='space'?`🪐 Orapa Space · ${spaceFlagsEmojiLine(decoded)}`:(decoded?.variant==='earthSky'?`🌍☁️ Terre et Ciel · ${earthSkyFlagsEmojiLine(decoded)}`:(decoded?.variant==='street'?`🏠 ${streetShareLabel(decoded)}`:(decoded?gemFlagsEmojiLine(decoded.includeGray,decoded.includeOnyx,decoded.includeSapphire):''))));
+  const gems=decoded?.variant==='lost'?'💎 Gemme perdue':(decoded?.variant==='space'?`🪐 Orapa Space · ${spaceFlagsEmojiLine(decoded)}`:(decoded?.variant==='earthSky'?`🌍☁️ Terre et Ciel · ${earthSkyFlagsEmojiLine(decoded)}`:(decoded?.variant==='street'?`🏠 ${streetHistoryOption(decoded)}`:(decoded?gemFlagsEmojiLine(decoded.includeGray,decoded.includeOnyx,decoded.includeSapphire):''))));
   return `<div class="grid-ranking-idline"><p>Grille <b>${escapeHtml(publicGridId(gridId))}</b></p><span class="ranking-gems">${gems}</span></div><div class="controls ranked-grid-actions"><button id="${copyButtonId}" class="ghost">📋 Copier ID</button>${returnToVictory?'<button id="gridResultBack" class="ghost">← Retour au résultat</button>':''}<button id="${playButtonId}" class="primary ranked-grid-play">▶ Jouer cette grille</button></div>`;
 }
 async function playGridFromRanking(gridId,button){
@@ -1332,7 +1337,7 @@ async function openMyGridHistory(){
   const viewRevision=++accountHistoryViewRevision;
   if(!$('#gridDataModal').classList.contains('open'))accountFilteredHistoryPagers={};
   const optionFilters=newHistoryOptionFilters('classic');
-  openGridDataShell('🕘 Historique des grilles',`<div class="achievement-subtabs"><button id="accountHistoryClassic" class="ghost active">Mine</button><button id="accountHistorySpace" class="ghost">Space</button><button id="accountHistoryLost" class="ghost">Gemme perdue</button><button id="accountHistoryEarthSky" class="ghost">Terre et Ciel</button></div><div class="shared-grid-toolbar">${historyOptionFilterHtml('accountHistoryOptionFilters','classic')}<select id="accountHistorySortSelect" class="ranking-select"><option value="date">Date</option><option value="points">Points</option><option value="time">Temps</option></select><button id="accountHistorySortReverse" class="ghost shared-sort-reverse" aria-label="Inverser le tri">↓</button></div>`,true);
+  openGridDataShell('🕘 Historique des grilles',`<div class="achievement-subtabs"><button id="accountHistoryClassic" class="ghost active">Mine</button><button id="accountHistorySpace" class="ghost">Space</button><button id="accountHistoryStreet" class="ghost">Street</button><button id="accountHistoryLost" class="ghost">Gemme perdue</button><button id="accountHistoryEarthSky" class="ghost">Terre et Ciel</button></div><div class="shared-grid-toolbar">${historyOptionFilterHtml('accountHistoryOptionFilters','classic')}<select id="accountHistorySortSelect" class="ranking-select"><option value="date">Date</option><option value="points">Points</option><option value="time">Temps</option></select><button id="accountHistorySortReverse" class="ghost shared-sort-reverse" aria-label="Inverser le tri">↓</button></div>`,true);
   const historyState=accountFilteredHistoryPager('classic',(filters,offset,limit)=>supabaseRpc('orapa_my_grid_history_filtered',{p_session_token:currentPlayerAccount.session_token,p_limit:limit,p_offset:offset,...historyFilterRpcArgs(filters)}));
   historyState.reverse=false;
   let renderRevision=0;
@@ -1363,6 +1368,7 @@ async function openMyGridHistory(){
     $('#accountHistorySortSelect').addEventListener('change',()=>renderHistory());
     $('#accountHistorySortReverse').addEventListener('click',()=>{historyState.reverse=!historyState.reverse;$('#accountHistorySortReverse').textContent=historyState.reverse?'↑':'↓';renderHistory();});
     $('#accountHistoryClassic').addEventListener('click',openMyGridHistory);
+    $('#accountHistoryStreet').addEventListener('click',openMyStreetGridHistory);
     $('#accountHistoryLost').addEventListener('click',openMyLostGridHistory);
     $('#accountHistorySpace').addEventListener('click',openMySpaceGridHistory);
     $('#accountHistoryEarthSky').addEventListener('click',openMyEarthSkyGridHistory);
@@ -1373,7 +1379,7 @@ async function openMyLostGridHistory(){
   if(!currentPlayerAccount)return;
   const viewRevision=++accountHistoryViewRevision;
   if(!$('#gridDataModal').classList.contains('open'))accountFilteredHistoryPagers={};
-  openGridDataShell('🕘 Historique des grilles',`<div class="achievement-subtabs"><button id="accountHistoryClassic" class="ghost">Mine</button><button id="accountHistorySpace" class="ghost">Space</button><button id="accountHistoryLost" class="ghost active">Gemme perdue</button><button id="accountHistoryEarthSky" class="ghost">Terre et Ciel</button></div><div class="shared-grid-toolbar"><select id="accountHistoryLostFilter" class="ranking-select"><option value="ALL">Toutes les parties</option><option value="WIN">Réussites</option><option value="FAIL">Échecs</option></select><select id="accountHistoryLostSort" class="ranking-select"><option value="date">Date</option><option value="points">Points</option><option value="time">Temps</option></select><button id="accountHistoryLostReverse" class="ghost shared-sort-reverse" aria-label="Inverser le tri">↓</button></div>`,true);
+  openGridDataShell('🕘 Historique des grilles',`<div class="achievement-subtabs"><button id="accountHistoryClassic" class="ghost">Mine</button><button id="accountHistorySpace" class="ghost">Space</button><button id="accountHistoryStreet" class="ghost">Street</button><button id="accountHistoryLost" class="ghost active">Gemme perdue</button><button id="accountHistoryEarthSky" class="ghost">Terre et Ciel</button></div><div class="shared-grid-toolbar"><select id="accountHistoryLostFilter" class="ranking-select"><option value="ALL">Toutes les parties</option><option value="WIN">Réussites</option><option value="FAIL">Échecs</option></select><select id="accountHistoryLostSort" class="ranking-select"><option value="date">Date</option><option value="points">Points</option><option value="time">Temps</option></select><button id="accountHistoryLostReverse" class="ghost shared-sort-reverse" aria-label="Inverser le tri">↓</button></div>`,true);
   const list=accountFilteredHistoryPager('lost',(filters,offset,limit)=>supabaseRpc('orapa_my_lost_grid_history_filtered',{p_session_token:currentPlayerAccount.session_token,p_limit:limit,p_offset:offset,p_result:filters.result||0}));
   list.reverse=false;let renderRevision=0;
   const render=async(addPage=false)=>{
@@ -1388,14 +1394,14 @@ async function openMyLostGridHistory(){
     $('#gridDataContent').querySelectorAll('.lost-account-id').forEach(button=>button.onclick=()=>{const id=publicGridId(rows[Number(button.dataset.index)].grid_id);navigator.clipboard?.writeText(id).then(()=>showToast('Identifiant copié : '+id));});
     if($('#lostAccountLoadMore'))$('#lostAccountLoadMore').onclick=async()=>{const button=$('#lostAccountLoadMore');button.disabled=true;button.textContent='Chargement…';try{await render(true);}catch(error){showErrorToast(`Chargement impossible : ${error.message}`);button.disabled=false;button.textContent='Afficher les résultats suivants';}};
   };
-  try{$('#accountHistoryClassic').onclick=openMyGridHistory;$('#accountHistoryLost').onclick=openMyLostGridHistory;$('#accountHistorySpace').onclick=openMySpaceGridHistory;$('#accountHistoryEarthSky').onclick=openMyEarthSkyGridHistory;$('#accountHistoryLostFilter').onchange=()=>render();$('#accountHistoryLostSort').onchange=()=>render();$('#accountHistoryLostReverse').onclick=()=>{list.reverse=!list.reverse;$('#accountHistoryLostReverse').textContent=list.reverse?'↑':'↓';render();};await render();}catch(error){$('#gridDataContent').innerHTML=`<div class="account-error" style="display:block">${escapeHtml(error.message)}</div>`;}
+  try{$('#accountHistoryClassic').onclick=openMyGridHistory;$('#accountHistoryStreet').onclick=openMyStreetGridHistory;$('#accountHistoryLost').onclick=openMyLostGridHistory;$('#accountHistorySpace').onclick=openMySpaceGridHistory;$('#accountHistoryEarthSky').onclick=openMyEarthSkyGridHistory;$('#accountHistoryLostFilter').onchange=()=>render();$('#accountHistoryLostSort').onchange=()=>render();$('#accountHistoryLostReverse').onclick=()=>{list.reverse=!list.reverse;$('#accountHistoryLostReverse').textContent=list.reverse?'↑':'↓';render();};await render();}catch(error){$('#gridDataContent').innerHTML=`<div class="account-error" style="display:block">${escapeHtml(error.message)}</div>`;}
 }
 async function openMySpaceGridHistory(){
   if(!currentPlayerAccount)return;
   const viewRevision=++accountHistoryViewRevision;
   if(!$('#gridDataModal').classList.contains('open'))accountFilteredHistoryPagers={};
   const optionFilters=newHistoryOptionFilters('space');
-  openGridDataShell('🕘 Historique des grilles',`<div class="achievement-subtabs"><button id="accountHistoryClassic" class="ghost">Mine</button><button id="accountHistorySpace" class="ghost active">Space</button><button id="accountHistoryLost" class="ghost">Gemme perdue</button><button id="accountHistoryEarthSky" class="ghost">Terre et Ciel</button></div><div class="shared-grid-toolbar">${historyOptionFilterHtml('accountHistorySpaceFilters','space')}<select id="accountHistorySpaceSort" class="ranking-select"><option value="date">Date</option><option value="points">Points</option><option value="time">Temps</option></select><button id="accountHistorySpaceReverse" class="ghost shared-sort-reverse" aria-label="Inverser le tri">↓</button></div>`,true);
+  openGridDataShell('🕘 Historique des grilles',`<div class="achievement-subtabs"><button id="accountHistoryClassic" class="ghost">Mine</button><button id="accountHistorySpace" class="ghost active">Space</button><button id="accountHistoryStreet" class="ghost">Street</button><button id="accountHistoryLost" class="ghost">Gemme perdue</button><button id="accountHistoryEarthSky" class="ghost">Terre et Ciel</button></div><div class="shared-grid-toolbar">${historyOptionFilterHtml('accountHistorySpaceFilters','space')}<select id="accountHistorySpaceSort" class="ranking-select"><option value="date">Date</option><option value="points">Points</option><option value="time">Temps</option></select><button id="accountHistorySpaceReverse" class="ghost shared-sort-reverse" aria-label="Inverser le tri">↓</button></div>`,true);
   const list=accountFilteredHistoryPager('space',(filters,offset,limit)=>supabaseRpc('orapa_my_space_grid_history_filtered',{p_session_token:currentPlayerAccount.session_token,p_limit:limit,p_offset:offset,...historyFilterRpcArgs(filters)}));
   list.reverse=false;
   let renderRevision=0;
@@ -1412,18 +1418,18 @@ async function openMySpaceGridHistory(){
     $('#gridDataContent').querySelectorAll('.space-account-summary').forEach(button=>button.onclick=()=>{const row=rows[Number(button.dataset.index)];navigator.clipboard?.writeText(formatShareText({gameVariant:'space',gridId:row.grid_id,name:currentPlayerAccount.display_name,success:row.success,cost:row.cost,rayCount:row.ray_count,coordCount:row.coord_count,timeMs:row.time_ms,date:new Date(row.played_at).getTime()})).then(()=>showToast('Résumé copié !'));});
     if($('#spaceAccountMore'))$('#spaceAccountMore').onclick=async()=>{const button=$('#spaceAccountMore');button.disabled=true;button.textContent='Chargement…';try{await render(true);}catch(error){showErrorToast(`Chargement impossible : ${error.message}`);button.disabled=false;button.textContent='Afficher les résultats suivants';}};
   };
-  try{$('#accountHistoryClassic').onclick=openMyGridHistory;$('#accountHistoryLost').onclick=openMyLostGridHistory;$('#accountHistorySpace').onclick=openMySpaceGridHistory;$('#accountHistoryEarthSky').onclick=openMyEarthSkyGridHistory;bindHistoryOptionFilters('accountHistorySpaceFilters',optionFilters,()=>render());$('#accountHistorySpaceSort').onchange=()=>render();$('#accountHistorySpaceReverse').onclick=()=>{list.reverse=!list.reverse;$('#accountHistorySpaceReverse').textContent=list.reverse?'↑':'↓';render();};await render();}catch(error){$('#gridDataContent').innerHTML=`<div class="account-error" style="display:block">${escapeHtml(error.message)}</div>`;}
+  try{$('#accountHistoryClassic').onclick=openMyGridHistory;$('#accountHistoryStreet').onclick=openMyStreetGridHistory;$('#accountHistoryLost').onclick=openMyLostGridHistory;$('#accountHistorySpace').onclick=openMySpaceGridHistory;$('#accountHistoryEarthSky').onclick=openMyEarthSkyGridHistory;bindHistoryOptionFilters('accountHistorySpaceFilters',optionFilters,()=>render());$('#accountHistorySpaceSort').onchange=()=>render();$('#accountHistorySpaceReverse').onclick=()=>{list.reverse=!list.reverse;$('#accountHistorySpaceReverse').textContent=list.reverse?'↑':'↓';render();};await render();}catch(error){$('#gridDataContent').innerHTML=`<div class="account-error" style="display:block">${escapeHtml(error.message)}</div>`;}
 }
 async function openMyEarthSkyGridHistory(){
   if(!currentPlayerAccount)return;
   const viewRevision=++accountHistoryViewRevision;
   if(!$('#gridDataModal').classList.contains('open'))accountFilteredHistoryPagers={};
   const optionFilters=newHistoryOptionFilters('earthSky');
-  openGridDataShell('🕘 Historique des grilles',`<div class="achievement-subtabs"><button id="accountHistoryClassic" class="ghost">Mine</button><button id="accountHistorySpace" class="ghost">Space</button><button id="accountHistoryLost" class="ghost">Gemme perdue</button><button id="accountHistoryEarthSky" class="ghost active">Terre et Ciel</button></div><div class="shared-grid-toolbar">${historyOptionFilterHtml('accountHistoryEarthSkyFilters','earthSky')}<select id="accountHistoryEarthSkySort" class="ranking-select"><option value="date">Date</option><option value="points">Points</option><option value="time">Temps</option></select><button id="accountHistoryEarthSkyReverse" class="ghost shared-sort-reverse" aria-label="Inverser le tri">↓</button></div>`,true);
+  openGridDataShell('🕘 Historique des grilles',`<div class="achievement-subtabs"><button id="accountHistoryClassic" class="ghost">Mine</button><button id="accountHistorySpace" class="ghost">Space</button><button id="accountHistoryStreet" class="ghost">Street</button><button id="accountHistoryLost" class="ghost">Gemme perdue</button><button id="accountHistoryEarthSky" class="ghost active">Terre et Ciel</button></div><div class="shared-grid-toolbar">${historyOptionFilterHtml('accountHistoryEarthSkyFilters','earthSky')}<select id="accountHistoryEarthSkySort" class="ranking-select"><option value="date">Date</option><option value="points">Points</option><option value="time">Temps</option></select><button id="accountHistoryEarthSkyReverse" class="ghost shared-sort-reverse" aria-label="Inverser le tri">↓</button></div>`,true);
   const list=accountFilteredHistoryPager('earthSky',(filters,offset,limit)=>supabaseRpc('orapa_my_earth_sky_grid_history_filtered',{p_session_token:currentPlayerAccount.session_token,p_limit:limit,p_offset:offset,...historyFilterRpcArgs(filters)}));
   list.reverse=false;
   let renderRevision=0;
-  const bindTabs=()=>{$('#accountHistoryClassic').onclick=openMyGridHistory;$('#accountHistoryLost').onclick=openMyLostGridHistory;$('#accountHistorySpace').onclick=openMySpaceGridHistory;$('#accountHistoryEarthSky').onclick=openMyEarthSkyGridHistory;};
+  const bindTabs=()=>{$('#accountHistoryClassic').onclick=openMyGridHistory;$('#accountHistoryStreet').onclick=openMyStreetGridHistory;$('#accountHistoryLost').onclick=openMyLostGridHistory;$('#accountHistorySpace').onclick=openMySpaceGridHistory;$('#accountHistoryEarthSky').onclick=openMyEarthSkyGridHistory;};
   const render=async(addPage=false)=>{
     const revision=++renderRevision;
     const pageResult=await list.result(optionFilters,addPage);
@@ -1442,8 +1448,7 @@ async function openMyEarthSkyGridHistory(){
 async function openMyStreetGridHistory(){
   if(!currentPlayerAccount)return;
   const viewRevision=++accountHistoryViewRevision;
-  openGridDataShell('🕘 Historique des grilles',`<div class="achievement-subtabs"><button id="accountHistoryClassic" class="ghost">Mine</button><button id="accountHistorySpace" class="ghost">Space</button><button id="accountHistoryLost" class="ghost">Gemme perdue</button><button id="accountHistoryEarthSky" class="ghost">Terre et Ciel</button></div><div class="shared-grid-toolbar"><select id="accountHistoryStreetVersion" class="ranking-select"><option value="2">Street v2</option><option value="1">Street v1</option></select><select id="accountHistoryStreetFilter" class="ranking-select"><option value="ALL">Toutes les parties</option><option value="WIN">Réussites</option><option value="FAIL">Échecs</option></select><select id="accountHistoryStreetSort" class="ranking-select"><option value="date">Date</option><option value="points">Points</option><option value="time">Temps</option></select><button id="accountHistoryStreetReverse" class="ghost shared-sort-reverse" aria-label="Inverser le tri">↓</button></div>`,true);
-  $('#accountHistoryStreet')?.classList.add('active');
+  openGridDataShell('🕘 Historique des grilles',`<div class="achievement-subtabs"><button id="accountHistoryClassic" class="ghost">Mine</button><button id="accountHistorySpace" class="ghost">Space</button><button id="accountHistoryStreet" class="ghost active">Street</button><button id="accountHistoryLost" class="ghost">Gemme perdue</button><button id="accountHistoryEarthSky" class="ghost">Terre et Ciel</button></div><div class="shared-grid-toolbar"><select id="accountHistoryStreetSort" class="ranking-select"><option value="date">Date</option><option value="points">Points</option><option value="time">Temps</option></select><button id="accountHistoryStreetReverse" class="ghost shared-sort-reverse" aria-label="Inverser le tri">↓</button></div>`,true);
   const list={rows:[],hasMore:true,loading:false,reverse:false};
   const loadPage=async()=>{
     if(list.loading||!list.hasMore)return;
@@ -1456,15 +1461,15 @@ async function openMyStreetGridHistory(){
   };
   const render=()=>{
     if(viewRevision!==accountHistoryViewRevision)return;
-    const filter=$('#accountHistoryStreetFilter')?.value||'ALL',version=$('#accountHistoryStreetVersion')?.value||'2',sort=$('#accountHistoryStreetSort')?.value||'date';
-    const rows=list.rows.filter(row=>(String(row.grid_id||'').replace(/-/g,'').startsWith(`ST${version}`))&&(filter==='ALL'||(filter==='WIN'&&row.success)||(filter==='FAIL'&&!row.success))).sort((a,b)=>{
+    const sort=$('#accountHistoryStreetSort')?.value||'date';
+    const rows=list.rows.slice().sort((a,b)=>{
       let value=sort==='points'?Number(a.cost)-Number(b.cost):sort==='time'?Number(a.time_ms)-Number(b.time_ms):new Date(b.played_at)-new Date(a.played_at);
       if(value===0)value=String(a.grid_id).localeCompare(String(b.grid_id));
       return list.reverse?-value:value;
     });
     $('#gridDataContent').innerHTML=(rows.length?rows.map((row,index)=>{
-      const key=`street-account:${row.grid_id}`,expanded=expandedScores.has(key),date=new Date(row.played_at).toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'2-digit'}),moves=`${row.ray_count} 🔦 + ${row.coord_count} 📍`;
-      return `<div class="ranking-row account-history-row account-ranked-history${expanded?' expanded':''}" data-index="${index}"><div class="ranking-row-top"><span class="account-result-position"><span class="solo-result-mark ${row.success?'win':'fail'}">${row.success?'✓':'✕'}</span><b>#${row.rank}</b></span><span class="ranking-query-cell">${moves}</span><span class="ranking-points">${row.cost} pts</span><span class="ranking-date">${date}</span></div>${expanded?`<div class="ranking-row-detail">ID <b>${escapeHtml(publicGridId(row.grid_id))}</b> · ${formatDuration(row.time_ms)}</div><div class="controls ranking-compact-actions three"${myludoHistoryEntryAttribute(row,'street')}><button class="street-account-summary ghost" data-index="${index}">📋 Résumé</button><button class="street-account-id ghost" data-index="${index}">📋 ID</button><button class="street-account-ranking primary" data-index="${index}">🏆 Grille</button></div>`:''}</div>`;
+      const key=`street-account:${row.grid_id}`,expanded=expandedScores.has(key),date=new Date(row.played_at).toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'2-digit'}),moves=`${row.ray_count} 🔦 + ${row.coord_count} 📍`,configuration=streetHistoryOption(decodeGridId(row.grid_id));
+      return `<div class="ranking-row account-history-row account-ranked-history${expanded?' expanded':''}" data-index="${index}"><div class="ranking-row-top"><span class="account-result-position"><span class="solo-result-mark ${row.success?'win':'fail'}">${row.success?'✓':'✕'}</span><b>#${row.rank}</b></span><span class="ranking-query-cell street-history-option">${escapeHtml(configuration)}</span><span class="ranking-points">${row.cost} pts</span><span class="ranking-date">${date}</span></div>${expanded?`<div class="ranking-row-detail">ID <b>${escapeHtml(publicGridId(row.grid_id))}</b> · ${moves} · ${formatDuration(row.time_ms)}</div><div class="controls ranking-compact-actions three"${myludoHistoryEntryAttribute(row,'street')}><button class="street-account-summary ghost" data-index="${index}">📋 Résumé</button><button class="street-account-id ghost" data-index="${index}">📋 ID</button><button class="street-account-ranking primary" data-index="${index}">🏆 Grille</button></div>`:''}</div>`;
     }).join(''):'<div class="history-empty">Aucune partie correspondant à ce filtre.</div>')+(list.hasMore?'<button id="streetAccountMore" class="ghost solo-load-more">Afficher les résultats suivants</button>':'');
     $('#gridDataContent').querySelectorAll('.account-history-row').forEach(node=>node.onclick=event=>{if(event.target.closest('button'))return;const row=rows[Number(node.dataset.index)],key=`street-account:${row.grid_id}`;expandedScores.has(key)?expandedScores.delete(key):expandedScores.add(key);render();});
     $('#gridDataContent').querySelectorAll('.street-account-ranking').forEach(button=>button.onclick=()=>openGridRanking(rows[Number(button.dataset.index)].grid_id,true));
@@ -1473,12 +1478,11 @@ async function openMyStreetGridHistory(){
     if($('#streetAccountMore'))$('#streetAccountMore').onclick=async()=>{const button=$('#streetAccountMore');button.disabled=true;button.textContent='Chargement…';try{await loadPage();render();}catch(error){showErrorToast(`Chargement impossible : ${error.message}`);button.disabled=false;button.textContent='Afficher les résultats suivants';}};
   };
   $('#accountHistoryClassic').onclick=openMyGridHistory;
+  $('#accountHistoryStreet').onclick=openMyStreetGridHistory;
   $('#accountHistoryLost').onclick=openMyLostGridHistory;
   $('#accountHistorySpace').onclick=openMySpaceGridHistory;
   $('#accountHistoryEarthSky').onclick=openMyEarthSkyGridHistory;
   $('#accountHistoryStreet').onclick=openMyStreetGridHistory;
-  $('#accountHistoryStreetFilter').onchange=render;
-  $('#accountHistoryStreetVersion').onchange=render;
   $('#accountHistoryStreetSort').onchange=render;
   $('#accountHistoryStreetReverse').onclick=()=>{list.reverse=!list.reverse;$('#accountHistoryStreetReverse').textContent=list.reverse?'↑':'↓';render();};
   try{await loadPage();render();}catch(error){$('#gridDataContent').innerHTML=`<div class="account-error" style="display:block">${escapeHtml(error.message)}</div>`;}
@@ -6793,7 +6797,6 @@ const GLOBAL_SOLO_PAGE_SIZE=10;
 let globalSoloRenderRevision=0;
 let globalFilteredHistoryPagers={classic:null,space:null,earthSky:null,street:null};
 let globalFilteredHistoryRenderRevision={classic:0,space:0,earthSky:0,street:0};
-let streetHistoryVersion=2;
 function invalidateGlobalSoloScores(){
   globalSoloRenderRevision=0;
   globalFilteredHistoryPagers={classic:null,space:null,earthSky:null,street:null};
@@ -6938,13 +6941,11 @@ async function renderStreetHistoryRanking(addPage=false){
   try{
     const pageResult=await pager.result({},addPage);
     if(revision!==globalFilteredHistoryRenderRevision.street||rankingView!=='solo'||historyDisplayMode!=='street')return;
-    const rows=pageResult.rows.filter(row=>String(row.grid_id||'').replace(/-/g,'').startsWith(`ST${streetHistoryVersion}`));
-    const versionTabs=`<div class="achievement-subtabs"><button class="ghost${streetHistoryVersion===1?' active':''}" id="streetHistoryV1">Street v1</button><button class="ghost${streetHistoryVersion===2?' active':''}" id="streetHistoryV2">Street v2</button></div>`;
-    el.innerHTML=versionTabs+(rows.length?rows.map((row,index)=>{
-      const key=`global-street-history:${row.id}`,expanded=expandedScores.has(key),date=new Date(row.played_at).toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'2-digit'}),moves=`${row.ray_count} 🔦 + ${row.coord_count} 📍`;
-      return `<div class="ranking-row solo-global-row${expanded?' expanded':''}" data-index="${index}"><div class="ranking-row-top"><span class="solo-ranking-player"><span class="ranking-rank solo-result-mark ${row.success?'win':'fail'}">${row.success?'✓':'✕'}</span><span class="ranking-name${row.is_mine?' mine':''}">${escapeHtml(row.player_name||'Anonyme')}</span></span><span class="solo-ranking-config ranking-query-cell">${moves}</span><span class="solo-ranking-score"><span class="ranking-points">${row.cost} pts</span><span class="ranking-date">${date}</span></span></div>${expanded?`<div class="ranking-row-detail">ID <b>${escapeHtml(publicGridId(row.grid_id))}</b> · ${formatDuration(row.time_ms)}</div><div class="controls ranking-compact-actions three"><button class="street-history-summary ghost" data-index="${index}">📋 Résumé</button><button class="street-history-id ghost" data-index="${index}">📋 ID</button><button class="street-history-ranking primary" data-index="${index}">🏆 Grille</button></div>`:''}</div>`;
+    const rows=pageResult.rows;
+    el.innerHTML=(rows.length?rows.map((row,index)=>{
+      const key=`global-street-history:${row.id}`,expanded=expandedScores.has(key),date=new Date(row.played_at).toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'2-digit'}),moves=`${row.ray_count} 🔦 + ${row.coord_count} 📍`,configuration=streetHistoryOption(decodeGridId(row.grid_id));
+      return `<div class="ranking-row solo-global-row${expanded?' expanded':''}" data-index="${index}"><div class="ranking-row-top"><span class="solo-ranking-player"><span class="ranking-rank solo-result-mark ${row.success?'win':'fail'}">${row.success?'✓':'✕'}</span><span class="ranking-name${row.is_mine?' mine':''}">${escapeHtml(row.player_name||'Anonyme')}</span></span><span class="solo-ranking-config street-history-option">${escapeHtml(configuration)}</span><span class="solo-ranking-score"><span class="ranking-points">${row.cost} pts</span><span class="ranking-date">${date}</span></span></div>${expanded?`<div class="ranking-row-detail">ID <b>${escapeHtml(publicGridId(row.grid_id))}</b> · ${moves} · ${formatDuration(row.time_ms)}</div><div class="controls ranking-compact-actions three"><button class="street-history-summary ghost" data-index="${index}">📋 Résumé</button><button class="street-history-id ghost" data-index="${index}">📋 ID</button><button class="street-history-ranking primary" data-index="${index}">🏆 Grille</button></div>`:''}</div>`;
     }).join(''):'<div class="history-empty">Aucune partie Orapa Street enregistrée.</div>')+(pageResult.hasMore?'<button id="streetHistoryLoadMore" class="ghost solo-load-more">Afficher les résultats suivants</button>':'');
-    $('#streetHistoryV1').onclick=()=>{streetHistoryVersion=1;renderStreetHistoryRanking();};$('#streetHistoryV2').onclick=()=>{streetHistoryVersion=2;renderStreetHistoryRanking();};
     el.querySelectorAll('.solo-global-row').forEach(node=>node.onclick=event=>{if(event.target.closest('button'))return;const row=rows[Number(node.dataset.index)],key=`global-street-history:${row.id}`;expandedScores.has(key)?expandedScores.delete(key):expandedScores.add(key);renderStreetHistoryRanking();});
     el.querySelectorAll('.street-history-ranking').forEach(button=>button.onclick=()=>openGridRanking(rows[Number(button.dataset.index)].grid_id));
     el.querySelectorAll('.street-history-id').forEach(button=>button.onclick=()=>{const id=publicGridId(rows[Number(button.dataset.index)].grid_id);navigator.clipboard?.writeText(id).then(()=>showToast('Identifiant copié : '+id));});
