@@ -30,8 +30,7 @@
     {id:'yellowBent',name:'Jaune — 2 demi-hexagones décalés',color:'yellow',pivot:[1.5,0],poly:[[0,0],[1,0],[2,-1],[3,-1],[3,0],[2,0],[1,1],[0,1]],walls:[]},
     {id:'redWall',name:'Rouge — 2 triangles + mur',color:'red',pivot:[1,1],poly:[[0,0],[1,0],[1,1],[0,1]],walls:[[[1,1],[2,1]]]},
   ];
-  // Les pièces Street actuelles restent pour l'instant dans l'atelier de création.
-  // Elles ne participent ni au format ST1, ni aux parties jouables du Prototype.
+  // Les pièces officielles d'Orapa Street v2.
   const STREET_PIECES=[
     {id:'red1',name:'Rouge 1 — Rache',color:'red',pivot:[0,0],poly:[[-.5,.5],[.5,.5],[1.5,-.5],[.5,-.5],[-.5,-.5],[-1.5,.5]],walls:[]},
     {id:'red2',name:'Rouge 2 — Violon',color:'red',pivot:[0,0],poly:[[1,0],[0,1],[-1,1],[-1,0],[0,-1],[1,-1]],walls:[[[1,0],[2,0]]]},
@@ -48,6 +47,15 @@
     {id:'yellow3',name:'Jaune 3 — Chapeau',color:'yellow',pivot:[0,0],poly:[[-.8,.6],[.2,.6],[1.2,-.4],[.2,-.4],[-.8,-.4]],walls:[[[-.8,-.4],[-1.8,-.4]]],wallStyle:'red'},
   ];
   const MIRROR_DISABLED=new Set(['blueSmall','whiteSmall','whiteLarge']);
+  const STREET_V2_MIRROR_IDS=new Set(['red1','red3','white1','white4','blue1','blue2','yellow3']);
+  const STREET_V2_PROFILES={
+    normal:{label:'Normal',count:6,allColors:true,centralZone:true,allowPrototype:false},
+    sherlock7:{label:'Sherlock 7',count:7,allColors:true,centralZone:true,allowPrototype:false},
+    sherlockExtreme:{label:'Sherlock Extrême',count:5,allColors:true,centralZone:true,allowPrototype:false},
+    absurd:{label:'Absurde',count:5,allColors:false,centralZone:true,allowPrototype:false},
+    free:{label:'Libre',count:5,allColors:false,centralZone:null,allowPrototype:true}
+  };
+  const STREET_V2_PROFILE_KEYS=Object.keys(STREET_V2_PROFILES);
 
   const byId=id=>document.getElementById(id);
   const svgEl=(name,attrs={})=>{
@@ -162,7 +170,8 @@
   function axialVectorToScreen([a,b]){return {x:(a+b/2)*EDGE,y:b*TRI_H};}
   const pieceDefinition=piece=>PIECES.find(item=>item.id===piece.id)||STREET_PIECES.find(item=>item.id===piece.id);
   function applyPieceMirror(piece){
-    if(state.pieceSet==='official'||MIRROR_DISABLED.has(piece.id))return false;
+    const official=STREET_PIECES.some(item=>item.id===piece.id);
+    if((official&&!STREET_V2_MIRROR_IDS.has(piece.id))||(!official&&MIRROR_DISABLED.has(piece.id)))return false;
     const turningOn=!piece.flipped;
     const rotationCompensation=piece.id==='redWall'?1:(piece.id==='blueLarge'||piece.id==='yellowLarge'?2:0);
     piece.rotation=(piece.rotation+(turningOn?rotationCompensation:6-rotationCompensation))%6;
@@ -214,12 +223,12 @@
     const margin=4;
     const svg=svgEl('svg',{viewBox:`${-margin} ${-margin} ${BOARD.width+margin*2} ${BOARD.height+margin*2}`,class:'street-shared-preview-svg',role:'img','aria-label':'Disposition complète de la grille Orapa Street'});
     const board=svgEl('g',{});
-    BOARD.triangles.forEach(triangle=>board.appendChild(svgEl('polygon',{points:pointsAttr(triangle.points),fill:'#747d8c',stroke:'#4d5663','stroke-width':'1'})));
+    BOARD.triangles.forEach(triangle=>board.appendChild(svgEl('polygon',{points:pointsAttr(triangle.points),fill:decoded.version===2&&decoded.centralZone&&STREET_FORBIDDEN_TRIANGLE_IDS.has(triangle.id)?'#3a2e20':'#747d8c',stroke:'#4d5663','stroke-width':'1'})));
     svg.appendChild(board);
     decoded.pieces.forEach(piece=>{
       const geometry=pieceGeometry(piece),color=COLORS[geometry.definition.color];
       const group=svgEl('g',{});
-      group.appendChild(svgEl('polygon',{points:pointsAttr(geometry.poly),fill:color,stroke:'rgba(0,0,0,.4)','stroke-width':'1.15','vector-effect':'non-scaling-stroke'}));
+      if(geometry.definition.renderBody!==false)group.appendChild(svgEl('polygon',{points:pointsAttr(geometry.poly),fill:color,stroke:'rgba(0,0,0,.4)','stroke-width':'1.15','vector-effect':'non-scaling-stroke'}));
       visualWallPolygonsFor(geometry).forEach(wall=>group.appendChild(svgEl('polygon',{points:pointsAttr(wall),fill:color,stroke:'rgba(0,0,0,.4)','stroke-width':'1.15','vector-effect':'non-scaling-stroke'})));
       svg.appendChild(group);
     });
@@ -317,21 +326,26 @@
     }));
     return reachable;
   }
-  function validatePieces(pieces,checkReachability=true){
+  function streetRules(profile=state.profile,centralZone=state.centralZone){
+    const config=STREET_V2_PROFILES[profile];
+    if(!config)return {v2:false,centralZone:false};
+    return {v2:true,centralZone:config.centralZone===null?centralZone!==false:config.centralZone};
+  }
+  function validatePieces(pieces,checkReachability=true,rules=streetRules()){
     const issues=new Map();
-    const officialStreet=state.pieceSet==='official';
+    const strictStreet=!!rules.v2;
     const placed=pieces.filter(piece=>piece.anchor);
     const geometries=new Map(placed.map(piece=>[piece.id,pieceGeometry(piece)]));
     placed.forEach(piece=>{
       const geo=geometries.get(piece.id);
       if(geo.poly.some(p=>!pointInPolygon(p,BOARD.polygon,true))||geo.walls.some(w=>w.some(p=>!pointInPolygon(p,BOARD.polygon,true))))issues.set(piece.id,'La pièce doit rester entièrement dans la grille.');
-      else if(officialStreet&&geometryUsesForbiddenStreetZone(geo))issues.set(piece.id,'Cette zone centrale est interdite aux pièces.');
+      else if(rules.centralZone&&geometryUsesForbiddenStreetZone(geo))issues.set(piece.id,'Cette zone centrale est interdite aux pièces.');
     });
     for(let i=0;i<placed.length;i++)for(let j=i+1;j<placed.length;j++){
       const pa=placed[i],pb=placed[j],a=geometries.get(pa.id),b=geometries.get(pb.id);
       const conflict=polygonsConflict(a.poly,b.poly);
-      const touching=officialStreet&&geometriesTouch(a,b);
-      if(conflict||touching){const message=officialStreet?'Les pièces ne peuvent pas se toucher, même par une pointe.':(conflict==='side'?'Deux pièces ne peuvent pas partager un côté.':'Deux pièces ne peuvent pas se chevaucher.');issues.set(pa.id,message);issues.set(pb.id,message);}
+      const touching=strictStreet&&geometriesTouch(a,b);
+      if(conflict||touching){const message=strictStreet?'Les pièces ne peuvent pas se toucher, même par une pointe.':(conflict==='side'?'Deux pièces ne peuvent pas partager un côté.':'Deux pièces ne peuvent pas se chevaucher.');issues.set(pa.id,message);issues.set(pb.id,message);}
       for(const wall of a.walls){
         if(b.poly.some((p,k)=>collinearOverlap(wall[0],wall[1],p,b.poly[(k+1)%b.poly.length])||segmentIntersection(wall[0],wall[1],p,b.poly[(k+1)%b.poly.length],false))||pointInPolygon(midpoint(wall[0],wall[1]),b.poly,false)){issues.set(pa.id,'Un mur traverse ou longe une autre pièce.');issues.set(pb.id,'Un mur traverse ou longe une autre pièce.');}
       }
@@ -462,7 +476,27 @@
   }
 
   const freshPieces=(definitions=PIECES)=>definitions.map(def=>({id:def.id,anchor:null,rotation:0,flipped:false}));
-  let state={mode:'gm',pieceSet:'prototype',pieces:freshPieces(),secretPieces:[],selected:'blueSmall',tool:'pieces',waveModeActive:false,previewWave:null,started:false,traces:[],coords:[],draftCells:{},gridId:null,gridAlias:null,attempts:0,over:false,result:null,showGuess:true,showSecret:true,startedAt:null,finalTimeMs:null,rank:null};
+  const streetProfileConfig=profile=>STREET_V2_PROFILES[profile]||null;
+  const streetAllowedDefinitions=profile=>streetProfileConfig(profile)?.allowPrototype?[...STREET_PIECES,...PIECES]:STREET_PIECES;
+  const streetPlacedPieces=pieces=>pieces.filter(piece=>piece.anchor);
+  function streetProfileIssues(pieces,profile=state.profile){
+    const config=streetProfileConfig(profile);if(!config)return [];
+    const placed=streetPlacedPieces(pieces),issues=[];
+    if(!config.allowPrototype&&placed.some(piece=>PIECES.some(definition=>definition.id===piece.id)))issues.push('Ce profil utilise uniquement les pièces Street v2.');
+    if(new Set(placed.map(piece=>piece.id)).size!==placed.length)issues.push('Une même pièce ne peut être utilisée qu’une seule fois.');
+    if(profile==='free'){if(placed.length<config.count)issues.push(`Place au moins ${config.count} pièces avant de démarrer.`);return issues;}
+    if(placed.length!==config.count)issues.push(`Ce profil demande exactement ${config.count} pièces.`);
+    if(config.allColors){
+      const colors=new Set(placed.map(piece=>pieceDefinition(piece)?.color));
+      const missing=['blue','white','yellow','red'].filter(color=>!colors.has(color));
+      if(missing.length)issues.push('Il faut au moins une pièce de chacune des quatre couleurs.');
+    }
+    return issues;
+  }
+  function streetV2Ready(pieces=state.pieces){
+    return !validatePieces(pieces,true,streetRules()).size&&!streetProfileIssues(pieces).length;
+  }
+  let state={mode:'gm',pieceSet:'prototype',profile:null,centralZone:false,pieces:freshPieces(),secretPieces:[],selected:'blueSmall',tool:'pieces',waveModeActive:false,previewWave:null,started:false,traces:[],coords:[],draftCells:{},gridId:null,gridAlias:null,attempts:0,over:false,result:null,showGuess:true,showSecret:true,startedAt:null,finalTimeMs:null,rank:null};
   let savedPrototypeCreationPieces=null;
   let wavePreference='auto';
   let streetAttempt=null;
@@ -470,7 +504,14 @@
   let selectedWaveEdge=null;
   let directionChoicesHideTimer=null;
   let streetPieceSurvey={active:false,triangles:new Set(),wallStart:null,walls:[]};
-  const officialStreetCreationActive=()=>state.mode==='gm'&&!state.started&&state.pieceSet==='official';
+  const officialStreetCreationActive=()=>state.mode==='gm'&&!state.started&&!!streetProfileConfig(state.profile);
+  function resetV2Creation(profile=state.profile||'normal',centralZone=profile==='free'?state.centralZone!==false:true){
+    const config=streetProfileConfig(profile)||STREET_V2_PROFILES.normal;
+    state.profile=profile;state.centralZone=config.centralZone===null?centralZone:true;state.pieceSet='official';
+    state.pieces=freshPieces(streetAllowedDefinitions(profile));state.selected=state.pieces[0]?.id||'red1';
+    state.traces=[];state.coords=[];state.draftCells={};state.gridId=null;state.gridAlias=null;state.previewWave=null;state.tool='pieces';
+    resetStreetPieceSurvey();clearDirectionChoicesTimer();selectedWaveEdge=null;
+  }
   function resetStreetPieceSurvey(){streetPieceSurvey={active:false,triangles:new Set(),wallStart:null,walls:[]};}
   function surveyVertexKey(vertex){return `${vertex.q},${vertex.r}`;}
   function surveyVertexFromKey(key){const [q,r]=key.split(',').map(Number);return {q,r};}
@@ -639,35 +680,43 @@
     for(let i=result.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[result[i],result[j]]=[result[j],result[i]];}
     return result;
   }
+  function randomStreetDefinitions(profile){
+    const config=streetProfileConfig(profile);
+    if(!config)return PIECES;
+    const allowed=streetAllowedDefinitions(profile);
+    if(profile==='free')return shuffled(allowed).slice(0,config.count);
+    const mandatory=['blue','white','yellow','red'].map(color=>shuffled(allowed.filter(definition=>definition.color===color))[0]);
+    return [...mandatory,...shuffled(allowed.filter(definition=>!mandatory.includes(definition))).slice(0,config.count-mandatory.length)];
+  }
   function randomizePieces(){
     const vertices=[...BOARD.vertices.values()].map(screenPoint);
     for(let boardAttempt=0;boardAttempt<180;boardAttempt++){
       const placed=[];
-      const definitions=shuffled(PIECES);
+      const definitions=shuffled(randomStreetDefinitions(state.profile));
       let failed=false;
       for(const definition of definitions){
         let accepted=null;
         for(let pieceAttempt=0;pieceAttempt<420;pieceAttempt++){
           const target=vertices[Math.floor(Math.random()*vertices.length)];
-          const candidate={id:definition.id,anchor:{...target},rotation:Math.floor(Math.random()*6),flipped:Math.random()<.5};
+          const candidate={id:definition.id,anchor:{...target},rotation:Math.floor(Math.random()*6),flipped:(STREET_PIECES.some(item=>item.id===definition.id)?STREET_V2_MIRROR_IDS.has(definition.id):!MIRROR_DISABLED.has(definition.id))&&Math.random()<.5};
           candidate.anchor=snapPieceAnchor(candidate,target);
-          if(validatePieces([...placed,candidate],false).size===0){accepted=candidate;break;}
+          if(validatePieces([...placed,candidate],false,streetRules()).size===0){accepted=candidate;break;}
         }
         if(!accepted){failed=true;break;}
         placed.push(accepted);
       }
-      if(!failed&&validatePieces(placed,true).size===0){
+      if(!failed&&validatePieces(placed,true,streetRules()).size===0&&!streetProfileIssues(placed,state.profile).length){
         const byPiece=new Map(placed.map(piece=>[piece.id,piece]));
-        state.pieces=PIECES.map(definition=>byPiece.get(definition.id));
-        state.selected=state.pieces[0].id;state.traces=[];state.coords=[];state.tool='pieces';
+        state.pieces=state.profile?streetAllowedDefinitions(state.profile).map(definition=>byPiece.get(definition.id)||{id:definition.id,anchor:null,rotation:0,flipped:false}):PIECES.map(definition=>byPiece.get(definition.id));
+        state.selected=state.pieces.find(piece=>piece.anchor)?.id||state.pieces[0].id;state.traces=[];state.coords=[];state.tool='pieces';
         return true;
       }
     }
     return false;
   }
   const STREET_VERTICES=[...BOARD.vertices.values()].map(screenPoint);
-  function encodeStreetGrid(pieces){
-    if(pieces.length!==PIECES.length||validatePieces(pieces,true).size)return null;
+  function encodeStreetV1Grid(pieces){
+    if(pieces.length!==PIECES.length||validatePieces(pieces,true,{v2:false,centralZone:false}).size)return null;
     const bytes=[];
     for(const definition of PIECES){
       const piece=pieces.find(item=>item.id===definition.id);if(!piece?.anchor)return null;
@@ -681,8 +730,54 @@
     const hex=bytes.map(byte=>byte.toString(16).padStart(2,'0')).join('').toUpperCase();
     return `ST1-${hex.match(/.{1,4}/g).join('-')}`;
   }
+  function pieceFromStoredVertex(definition,vertex,rotation,flipped){
+    const piece={id:definition.id,anchor:{...vertex},rotation,flipped};
+    const first=definition.poly[0],relative=[first[0]-definition.pivot[0],first[1]-definition.pivot[1]];
+    piece.anchor=sub(vertex,axialVectorToScreen(axialTransform(relative,rotation,flipped)));
+    return piece;
+  }
+  function encodeStreetV2Grid(pieces,profile=state.profile,centralZone=state.centralZone){
+    const profileIndex=STREET_V2_PROFILE_KEYS.indexOf(profile);
+    const config=STREET_V2_PROFILES[profile],effectiveCentral=config?.centralZone===null?centralZone!==false:true;
+    if(profileIndex<0||validatePieces(pieces,true,streetRules(profile,effectiveCentral)).size||streetProfileIssues(pieces,profile).length)return null;
+    const placed=streetPlacedPieces(pieces),definitions=[...STREET_PIECES,...PIECES],bytes=[profileIndex|(effectiveCentral?8:0),placed.length];
+    for(const piece of placed){
+      const definition=pieceDefinition(piece),definitionIndex=definitions.findIndex(item=>item.id===definition?.id);
+      if(definitionIndex<0)return null;
+      const first=pieceGeometry(piece).poly[0];let index=0,distance=Infinity;
+      STREET_VERTICES.forEach((point,i)=>{const value=Math.hypot(point.x-first.x,point.y-first.y);if(value<distance){distance=value;index=i;}});
+      if(distance>.1||index>255)return null;
+      bytes.push(definitionIndex,index,(piece.rotation%6)|((piece.flipped?1:0)<<3));
+    }
+    bytes.push(bytes.reduce((value,byte)=>value^byte,0)^0xa7);
+    const hex=bytes.map(byte=>byte.toString(16).padStart(2,'0')).join('').toUpperCase();
+    return `ST2-${hex.match(/.{1,6}/g).join('-')}`;
+  }
+  function encodeStreetGrid(pieces,options={}){
+    const profile=options.profile??state.profile;
+    return profile?encodeStreetV2Grid(pieces,profile,options.centralZone??state.centralZone):encodeStreetV1Grid(pieces);
+  }
   function decodeStreetGrid(input){
     const clean=String(input||'').trim().toUpperCase().replace(/[^A-Z0-9]/g,'');
+    if(clean.startsWith('ST2')){
+      const hex=clean.slice(3);if(hex.length<36||hex.length%6!==0||!/^[0-9A-F]+$/.test(hex))return null;
+      const bytes=hex.match(/../g).map(value=>parseInt(value,16)),checksum=bytes.pop();
+      if(((bytes.reduce((value,byte)=>value^byte,0)^0xa7)&255)!==checksum)return null;
+      const header=bytes[0],profile=STREET_V2_PROFILE_KEYS[header&7],centralZone=!!(header&8),count=bytes[1];
+      if(!profile||count<1||bytes.length!==2+count*3)return null;
+      if(STREET_V2_PROFILES[profile].centralZone===true&&!centralZone)return null;
+      const definitions=[...STREET_PIECES,...PIECES],pieces=[];
+      for(let i=0;i<count;i++){
+        const definition=definitions[bytes[2+i*3]],vertex=STREET_VERTICES[bytes[3+i*3]],meta=bytes[4+i*3];
+        if(!definition||!vertex||meta>13||(meta&7)>5)return null;
+        const official=STREET_PIECES.some(item=>item.id===definition.id);
+        if((official&&!STREET_V2_MIRROR_IDS.has(definition.id)&&(meta&8))||(!official&&MIRROR_DISABLED.has(definition.id)&&(meta&8)))return null;
+        pieces.push(pieceFromStoredVertex(definition,vertex,meta&7,!!(meta&8)));
+      }
+      const rules=streetRules(profile,centralZone);
+      if(validatePieces(pieces,true,rules).size||streetProfileIssues(pieces,profile).length)return null;
+      return {variant:'street',version:2,profile,centralZone,pieces,id:encodeStreetV2Grid(pieces,profile,centralZone)};
+    }
     if(!clean.startsWith('ST1'))return null;
     const hex=clean.slice(3);if(hex.length!==PIECES.length*4+2||!/^[0-9A-F]+$/.test(hex))return null;
     const bytes=hex.match(/../g).map(value=>parseInt(value,16));
@@ -690,12 +785,10 @@
     const pieces=[];
     for(let i=0;i<PIECES.length;i++){
       const vertex=STREET_VERTICES[bytes[i*2]],meta=bytes[i*2+1];if(!vertex||meta>13||(meta&7)>5)return null;
-      const piece={id:PIECES[i].id,anchor:{...vertex},rotation:meta&7,flipped:!!(meta&8)};
-      const definition=PIECES[i],first=definition.poly[0],relative=[first[0]-definition.pivot[0],first[1]-definition.pivot[1]];
-      piece.anchor=sub(vertex,axialVectorToScreen(axialTransform(relative,piece.rotation,piece.flipped)));pieces.push(piece);
+      const definition=PIECES[i];pieces.push(pieceFromStoredVertex(definition,vertex,meta&7,!!(meta&8)));
     }
-    if(validatePieces(pieces,true).size)return null;
-    return {variant:'street',pieces,id:encodeStreetGrid(pieces)};
+    if(validatePieces(pieces,true,{v2:false,centralZone:false}).size)return null;
+    return {variant:'street',version:1,pieces,id:encodeStreetV1Grid(pieces)};
   }
   function geometrySignature(piece){
     const geometry=pieceGeometry(piece),point=p=>`${p.x.toFixed(2)},${p.y.toFixed(2)}`;
@@ -714,7 +807,8 @@
     })).join('|');
   }
   function guessIsCorrect(){
-    const exact=PIECES.every(definition=>{
+    const definitions=state.secretPieces.map(piece=>pieceDefinition(piece)).filter(Boolean);
+    const exact=definitions.length===state.pieces.length&&definitions.every(definition=>{
       const guess=state.pieces.find(piece=>piece.id===definition.id),secret=state.secretPieces.find(piece=>piece.id===definition.id);
       return guess?.anchor&&secret?.anchor&&geometrySignature(guess)===geometrySignature(secret);
     });
@@ -724,7 +818,7 @@
   function streetProgress(){return {pieces:state.pieces,traces:state.traces.map(trace=>({entryIndex:trace.entry.index,entryDirectionIndex:trace.entryDirectionIndex,exitIndex:trace.exit?.index??null,exitDirectionIndex:trace.exitDirectionIndex,points:trace.points,colors:trace.colors,color:trace.color,bounced:trace.bounced,loop:trace.loop,time:trace.time})),coords:state.coords,draftCells:state.draftCells,attempts:state.attempts,startedAt:state.startedAt};}
   function restoreStreetProgress(progress){
     if(!progress||typeof progress!=='object')return;
-    if(Array.isArray(progress.pieces)&&progress.pieces.length===PIECES.length)state.pieces=progress.pieces;
+    if(Array.isArray(progress.pieces)&&progress.pieces.length===state.pieces.length)state.pieces=progress.pieces;
     state.coords=Array.isArray(progress.coords)?progress.coords:[];state.draftCells=progress.draftCells&&typeof progress.draftCells==='object'?progress.draftCells:{};state.attempts=Math.max(0,Number(progress.attempts)||0);state.startedAt=Number(progress.startedAt)||Date.now();
     state.traces=(Array.isArray(progress.traces)?progress.traces:[]).map(item=>({...item,entry:BOARD.boundary[item.entryIndex],exit:item.exitIndex==null?null:BOARD.boundary[item.exitIndex]})).filter(item=>item.entry);
   }
@@ -897,7 +991,7 @@
     BOARD.triangles.forEach(triangle=>{
       const key=String(triangle.id),draftEmpty=!!state.draftCells?.[key];
       const draftTarget=streetTutorialDraftTargetId()===triangle.id;
-      const forbidden=state.pieceSet==='official'&&STREET_FORBIDDEN_TRIANGLE_IDS.has(triangle.id);
+      const forbidden=streetRules().centralZone&&STREET_FORBIDDEN_TRIANGLE_IDS.has(triangle.id);
       const surveyed=streetPieceSurvey.active&&streetPieceSurvey.triangles.has(triangle.id);
       const poly=svgEl('polygon',{points:pointsAttr(triangle.points),class:`street-cell${forbidden?' street-forbidden-cell':''}${surveyed?' street-survey-selected':''}${draftEmpty?' draft-empty':''}${draftTarget?' street-tutorial-target':''}`,'data-cell':triangle.id});
       poly.addEventListener('click',async event=>{
@@ -1244,9 +1338,15 @@
   }
   function setMessage(text,error=false){const el=byId('streetStartBlockMsg');el.textContent=text;el.style.color=error?'#f5b8ae':'var(--text-faint)';}
   function elapsedMs(){return Math.max(0,Date.now()-(state.startedAt||Date.now()));}
+  function streetSummaryLabel(decoded={version:state.profile?2:1,profile:state.profile,centralZone:state.centralZone,pieces:state.secretPieces.length?state.secretPieces:state.pieces}){
+    if(decoded.version!==2)return 'Orapa Street';
+    const profile=STREET_V2_PROFILES[decoded.profile]?.label||'Libre';
+    const options=decoded.profile==='free'?` · ${streetPlacedPieces(decoded.pieces||[]).length} 🧩 · ⬢${decoded.centralZone?'✅':'❌'}`:` · ${profile}`;
+    return `Orapa Street v2${options}`;
+  }
   function streetSummary(success=state.result==='win'){
     const name=currentPlayerAccount?.display_name||'Anonyme',cost=state.traces.length+state.coords.length*3,date=new Date().toLocaleDateString('fr-FR');
-    return `Orapa Street · ${date}\n${name} - ${success?'🏅':'😞'} - ${cost} pts (${state.traces.length}🔦/${state.coords.length}📍) - ID: ${publicGridId(state.gridId)}\nhttps://argone57.github.io/Orapa-Mine/`;
+    return `${streetSummaryLabel()} · ${date}\n${name} - ${success?'🏅':'😞'} - ${cost} pts (${state.traces.length}🔦/${state.coords.length}📍) - ID: ${publicGridId(state.gridId)}\nhttps://argone57.github.io/Orapa-Mine/`;
   }
   function ensureStreetModal(){
     let backdrop=byId('streetResultModal');if(backdrop)return backdrop;
@@ -1265,9 +1365,10 @@
     const success=state.result==='win',time=Number.isFinite(state.finalTimeMs)?state.finalTimeMs:elapsedMs(),cost=state.traces.length+state.coords.length*3;
     const modal=ensureStreetModal();
     byId('streetResultTitle').textContent=success?'🏆 Victoire !':'💥 Défaite';
+    const count=state.secretPieces.length;
     byId('streetResultMessage').textContent=state.gridRanked===false
-      ?`${success?'Tu as retrouvé la disposition exacte des sept pièces !':'La seconde proposition est incorrecte : la grille secrète est révélée.'} Cette nouvelle partie n’est pas enregistrée car cette grille a déjà été jouée avec ce compte.`
-      :(success?'Tu as retrouvé la disposition exacte des sept pièces !':'La seconde proposition est incorrecte : la grille secrète est révélée.');
+      ?`${success?`Tu as retrouvé la disposition exacte des ${count} pièces !`:'La seconde proposition est incorrecte : la grille secrète est révélée.'} Cette nouvelle partie n’est pas enregistrée car cette grille a déjà été jouée avec ce compte.`
+      :(success?`Tu as retrouvé la disposition exacte des ${count} pièces !`:'La seconde proposition est incorrecte : la grille secrète est révélée.');
     byId('streetResultScore').textContent=`${cost} pts (${state.traces.length}🔦 + ${state.coords.length}📍) · ${formatDuration(time)}`;
     byId('streetResultRank').textContent=state.rank?`Classé #${state.rank} dans « classement global de la grille »`:'';
     byId('streetResultId').textContent=`Orapa Street · ${publicGridId(state.gridId)}`;
@@ -1332,15 +1433,15 @@
   }
   function render(){
     renderPalette();renderBoard();renderHistory();
-    const officialCreation=state.mode==='gm'&&!state.started&&state.pieceSet==='official';
-    const issues=validatePieces(state.pieces),placed=state.pieces.filter(p=>p.anchor).length;
-    const officialStreet=state.pieceSet==='official';
-    const complete=placed===(officialStreet?STREET_PIECES.length:PIECES.length)&&!issues.size;
-    const canStart=officialStreet?placed>=5&&!issues.size:complete;
+    const v2=!!streetProfileConfig(state.profile),v2Creation=state.mode==='gm'&&!state.started&&v2;
+    const issues=validatePieces(state.pieces,true,streetRules()),placed=state.pieces.filter(p=>p.anchor).length;
+    const profileIssues=v2?streetProfileIssues(state.pieces,state.profile):[];
+    const complete=v2?(!issues.size&&!profileIssues.length):placed===PIECES.length&&!issues.size;
+    const canStart=complete;
     const preStart=!state.started;
     const showPalette=preStart||(streetPlayerMode()&&!state.over&&(!streetTutorial.active||streetTutorial.puzzle));
-    byId('streetRandom').hidden=!preStart||officialCreation;
-    byId('streetShare').hidden=!preStart||officialCreation;
+    byId('streetRandom').hidden=!preStart||state.mode!=='gm';
+    byId('streetShare').hidden=!preStart||state.mode!=='gm';
     byId('streetStart').hidden=!preStart;
     const streetEnd=byId('streetEnd');
     const showAttemptCounter=state.mode==='solo'&&state.started&&!state.over;
@@ -1358,22 +1459,21 @@
     byId('streetPaletteTitle').style.display=showPalette?'flex':'none';
     byId('streetPalette').style.display=showPalette?'flex':'none';
     byId('streetSetupHint').style.display=showPalette?'block':'none';
-    byId('streetSetupHint').textContent=officialCreation?'Glisse une pièce sur la grille · tape dessus pour la faire pivoter de 60°':'Glisse une pièce sur la grille · tape dessus pour la faire pivoter de 60° · reste appuyé pour la retourner en miroir';
+    byId('streetSetupHint').textContent='Glisse une pièce sur la grille · tape dessus pour la faire pivoter de 60° · reste appuyé pour la retourner en miroir';
     byId('streetStartBlockMsg').style.display=preStart?'block':'none';
     const pieceSetToggle=byId('streetPieceSetToggle');
-    pieceSetToggle.hidden=!preStart||state.mode!=='gm';
-    pieceSetToggle.setAttribute('aria-pressed',String(officialCreation));
-    pieceSetToggle.textContent=officialCreation?'Street Prototype':'Nouvelles pièces';
-    pieceSetToggle.title=officialCreation?'Revenir aux pièces Street Prototype':'Afficher les nouvelles pièces Street';
+    pieceSetToggle.hidden=true;
     const surveyToggle=byId('streetSurveyToggle'),surveyTools=byId('streetSurveyTools');
-    surveyToggle.hidden=!officialCreation;
-    surveyToggle.setAttribute('aria-pressed',String(streetPieceSurvey.active&&officialCreation));
+    surveyToggle.hidden=true;
+    surveyToggle.setAttribute('aria-pressed',String(streetPieceSurvey.active&&v2Creation));
     surveyToggle.textContent=streetPieceSurvey.active?'Fin du relevé':'Relever';
-    surveyTools.hidden=!officialCreation||!streetPieceSurvey.active;
-    if(officialCreation&&streetPieceSurvey.active){
+    surveyTools.hidden=true;
+    if(v2Creation&&streetPieceSurvey.active){
       const count=streetPieceSurvey.triangles.size,walls=streetPieceSurvey.walls.length;
       byId('streetSurveyStatus').textContent=streetPieceSurvey.wallStart?`Sommet de départ choisi : sélectionne le sommet d’arrivée. (${count} triangles, ${walls} mur${walls>1?'s':''})`:`${count} triangle${count>1?'s':''} · ${walls} mur${walls>1?'s':''}. Clique deux sommets pour ajouter un mur.`;
     }
+    const profileControls=byId('streetProfileControls'),profileSelect=byId('streetProfileSelect'),centralControl=byId('streetCentralZoneControl'),centralInput=byId('streetCentralZone');
+    profileControls.hidden=!v2Creation;profileSelect.value=state.profile||'normal';centralControl.hidden=state.profile!=='free';centralInput.checked=state.centralZone!==false;
     byId('streetWaveSetting').hidden=true;
     byId('streetWavePreference').value=wavePreference;
     const showCellTools=streetPlayerMode()&&state.started&&!state.over&&(!streetTutorial.active||streetTutorial.puzzle);
@@ -1395,9 +1495,8 @@
     pill.querySelector('span:last-child').textContent=streetTutorial.active?'Tutoriel interactif':(state.over?(state.result==='win'?'Victoire':'Défaite'):(state.started?(state.mode==='solo'?'Partie en cours':'Test de la grille'):'Placement des pièces'));
     if(preStart){clearDirectionChoicesTimer();selectedWaveEdge=null;}
     if(state.started)setMessage('',false);
-    else if(officialCreation)setMessage('Nouvelles pièces Street : démarre la partie pour tester les ondes. Le partage reste indisponible.',false);
+    else if(profileIssues.length)setMessage(profileIssues[0],true);
     else if(issues.size)setMessage([...new Set(issues.values())][0],true);
-    else if(!canStart)setMessage(officialStreet?'Place au moins cinq pièces valides pour démarrer le test.':'Place toutes les pièces avant de démarrer.',true);
     else setMessage('');
   }
   function ensureStreetTutorialCoach(){
@@ -1493,6 +1592,7 @@
     streetTutorial={active:true,stage:1,puzzle:false,secretPieces:decoded.pieces.map(piece=>({...piece,anchor:piece.anchor?{...piece.anchor}:null})),draftIndex:0,preference:previousPreference,waveIndex:0,phase:0};
     streetTutorialIntroState();
     byId('streetPrototype').querySelector('.subtitle').textContent='Parcours interactif';
+    byId('streetPrototype').querySelector('h1').textContent='🏠 Orapa Street';
     byId('streetPrototype').hidden=false;document.body.classList.add('street-open');document.body.classList.remove('home-view');
     streetTutorialShow();render();return true;
   }
@@ -1533,6 +1633,7 @@
     create.addEventListener('click',()=>openCreation());
     byId('streetClose').addEventListener('click',()=>streetTutorial.active?requestStreetTutorialExit():close());
     byId('streetPieceSetToggle').addEventListener('click',()=>{
+      if(state.profile)return;
       if(state.mode!=='gm'||state.started)return;
       resetStreetPieceSurvey();
       if(state.pieceSet==='official'){
@@ -1565,6 +1666,8 @@
       catch(_error){showErrorToast('Copie impossible.');}
     });
     byId('streetRandom').addEventListener('click',()=>{if(state.started)return;if(!randomizePieces())setMessage('Impossible de trouver un placement valide. Réessaie.',true);render();});
+    byId('streetProfileSelect').addEventListener('change',event=>{if(state.mode!=='gm'||state.started)return;resetV2Creation(event.target.value,event.target.value==='free'?byId('streetCentralZone').checked:true);render();});
+    byId('streetCentralZone').addEventListener('change',event=>{if(state.mode!=='gm'||state.started||state.profile!=='free')return;state.centralZone=event.target.checked;render();});
     byId('streetStart').addEventListener('click',()=>{if(state.started||byId('streetStart').disabled)return;state.started=true;state.startedAt=Date.now();state.tool='pieces';state.traces=[];state.coords=[];clearDirectionChoicesTimer();selectedWaveEdge=null;toggleHistory(false);render();});
     byId('streetEnd').addEventListener('click',async()=>{
       if(state.mode==='gm'){
@@ -1579,6 +1682,9 @@
       if(!confirm(state.mode==='solo'?'Abandonner cette partie et recommencer ?':'Effacer tous les placements et l’historique Street ?'))return;
       if(state.mode==='solo'&&streetAttempt?.attempt_id)try{const abandonedAttempt=streetAttempt;await supabaseRpc('orapa_abandon_street_attempt',{p_session_token:currentPlayerAccount.session_token,p_attempt_id:abandonedAttempt.attempt_id});if(activeAttempt?.attempt_id===abandonedAttempt.attempt_id)activeAttempt=null;streetAttempt=null;}catch(error){showErrorToast('Abandon impossible : '+error.message);return;}
       if(state.mode==='solo'){await openSolo();return;}
+      if(state.profile){
+        resetV2Creation(state.profile,state.centralZone);render();return;
+      }
       if(state.pieceSet==='official'){
         resetStreetPieceSurvey();
         state.pieces=freshPieces(STREET_PIECES);state.selected='red1';state.traces=[];state.coords=[];state.draftCells={};state.gridId=null;state.gridAlias=null;clearDirectionChoicesTimer();selectedWaveEdge=null;render();return;
@@ -1635,18 +1741,37 @@
     await loadStreetPreference();
     try{localStorage.removeItem('orapa_street_creation_v3');}catch(_error){}
     streetTutorial={active:false,stage:0,puzzle:false,secretPieces:[],draftIndex:0};byId('streetTutorialCoach')?.remove();
-    resetStreetPieceSurvey();savedPrototypeCreationPieces=null;state={mode:'gm',pieceSet:'prototype',pieces:freshPieces(),secretPieces:[],selected:'blueSmall',tool:'pieces',waveModeActive:false,previewWave:null,started:false,traces:[],coords:[],draftCells:{},gridId:null,gridAlias:null,attempts:0,over:false,result:null,showGuess:true,showSecret:true,startedAt:null,finalTimeMs:null,rank:null};
-    byId('streetPrototype').querySelector('.subtitle').textContent='Console du maître du jeu';
+    resetStreetPieceSurvey();savedPrototypeCreationPieces=null;state={mode:'gm',pieceSet:'official',profile:'normal',centralZone:true,pieces:freshPieces(STREET_PIECES),secretPieces:[],selected:'red1',tool:'pieces',waveModeActive:false,previewWave:null,started:false,traces:[],coords:[],draftCells:{},gridId:null,gridAlias:null,attempts:0,over:false,result:null,showGuess:true,showSecret:true,startedAt:null,finalTimeMs:null,rank:null};
+    byId('streetPrototype').querySelector('.subtitle').textContent='Console du maître du jeu · v2';
+    byId('streetPrototype').querySelector('h1').textContent='🏠 Orapa Street v2';
     byId('streetPrototype').hidden=false;document.body.classList.add('street-open');document.body.classList.remove('home-view');toggleHistory(false);render();
   }
-  async function openSolo(gridId=null,resumeAttempt=null){
+  function openStreetProfilePicker(){
+    let modal=byId('streetProfileModal');
+    if(!modal){modal=document.createElement('div');modal.id='streetProfileModal';modal.className='modal-backdrop';document.body.appendChild(modal);}
+    modal.innerHTML=`<div class="modal"><button class="close-x" id="streetProfileClose">×</button><h2>🏠 Orapa Street v2</h2><p>Choisis le profil de la grille aléatoire.</p><div class="street-profile-picker"><label>Profil <select id="streetSoloProfileSelect">${STREET_V2_PROFILE_KEYS.map(key=>`<option value="${key}">${STREET_V2_PROFILES[key].label}</option>`).join('')}</select></label><p id="streetSoloProfileDescription"></p><label id="streetSoloCentralZoneLabel" class="street-v2-profile-controls" style="justify-content:flex-start"><input id="streetSoloCentralZone" type="checkbox" checked> Zone centrale</label></div><div class="controls" style="justify-content:flex-end;margin-top:14px"><button class="ghost" id="streetProfileCancel">Annuler</button><button class="primary" id="streetProfileStart">Lancer</button></div></div>`;
+    const close=()=>{modal.classList.remove('open');byId('soloChoiceModal')?.classList.add('open');document.body.classList.add('solo-menu-open');};
+    byId('streetProfileClose').onclick=close;byId('streetProfileCancel').onclick=close;
+    modal.onclick=event=>{if(event.target===modal)close();};
+    const select=byId('streetSoloProfileSelect'),description=byId('streetSoloProfileDescription'),centralLabel=byId('streetSoloCentralZoneLabel');
+    const sync=()=>{const config=STREET_V2_PROFILES[select.value];description.textContent=`${config.count}${select.value==='free'?' pièces minimum':' pièces'} · ${config.allColors?'au moins une pièce de chacune des quatre couleurs':config.allowPrototype?'pièces v2 et prototypes disponibles':'sans contrainte de couleur'}`;centralLabel.hidden=select.value!=='free';};
+    select.addEventListener('change',sync);sync();
+    byId('streetProfileStart').onclick=()=>{const profile=select.value,centralZone=profile==='free'?byId('streetSoloCentralZone').checked:true;modal.classList.remove('open');byId('soloChoiceModal')?.classList.remove('open');document.body.classList.remove('solo-menu-open');void openSolo(null,null,profile,centralZone);};
+    modal.classList.add('open');
+  }
+  async function openSolo(gridId=null,resumeAttempt=null,profile=null,centralZone=true){
     if(!currentPlayerAccount?.session_token){closeSoloChoiceModal?.();openAccountModal();return false;}
-    if(!gridId&&!resumeAttempt&&typeof verifyStreetTutorialPrerequisite==='function'&&!await verifyStreetTutorialPrerequisite(true))return false;
+    if(!gridId&&!resumeAttempt&&!profile){if(typeof verifyStreetTutorialPrerequisite==='function'&&!await verifyStreetTutorialPrerequisite(true))return false;openStreetProfilePicker();return false;}
     streetTutorial={active:false,stage:0,puzzle:false,secretPieces:[],draftIndex:0};byId('streetTutorialCoach')?.remove();
     await loadStreetPreference();
     let decoded=gridId?decodeStreetGrid(gridId):null;
     if(gridId&&!decoded){showErrorToast('Identifiant Street invalide.');return false;}
-    if(!decoded){const pieces=freshPieces();state.pieces=pieces;if(!randomizePieces()){showErrorToast('Impossible de générer une grille Street.');return false;}decoded={variant:'street',pieces:state.pieces.map(piece=>({...piece,anchor:{...piece.anchor}}))};decoded.id=encodeStreetGrid(decoded.pieces);}
+    if(!decoded){
+      const selectedProfile=STREET_V2_PROFILES[profile]?profile:'normal';
+      state={...state,profile:selectedProfile,centralZone:selectedProfile==='free'?centralZone!==false:true,pieceSet:'official',pieces:freshPieces(streetAllowedDefinitions(selectedProfile))};
+      if(!randomizePieces()){showErrorToast('Impossible de générer une grille Street v2.');return false;}
+      decoded={variant:'street',version:2,profile:selectedProfile,centralZone:state.centralZone,pieces:streetPlacedPieces(state.pieces).map(piece=>({...piece,anchor:{...piece.anchor}}))};decoded.id=encodeStreetGrid(decoded.pieces,{profile:decoded.profile,centralZone:decoded.centralZone});
+    }
     let alreadyPlayed=false;
     if(gridId&&!resumeAttempt){
       const status=await supabaseRpc('orapa_get_street_grid_status',{p_grid_id:decoded.id,p_session_token:currentPlayerAccount.session_token}).catch(()=>null);
@@ -1658,10 +1783,12 @@
     const start=resumeAttempt?{ok:true,attempt:resumeAttempt,resumed:true}:await prepareNewActiveAttempt(target,!alreadyPlayed);
     if(!start?.ok){if(start?.reason==='already_played')showErrorToast('Cette grille Street a déjà été jouée avec ce compte.');else if(start?.resume&&start.attempt)await resumeServerAttempt(start.attempt);return false;}
     streetAttempt=start.attempt;
-    state={mode:'solo',pieces:freshPieces(),secretPieces:decoded.pieces.map(piece=>({...piece,anchor:{...piece.anchor}})),selected:'blueSmall',tool:'pieces',waveModeActive:false,previewWave:null,started:true,traces:[],coords:[],draftCells:{},gridId:decoded.id,gridAlias,gridRanked:!alreadyPlayed,gridUnrankedReason:alreadyPlayed?'already_played':null,attempts:0,over:false,result:null,showGuess:true,showSecret:true,startedAt:null,finalTimeMs:null,rank:null};
+    const playerDefinitions=decoded.pieces.map(piece=>pieceDefinition(piece)).filter(Boolean);
+    state={mode:'solo',pieceSet:decoded.version===2?'official':'prototype',profile:decoded.profile||null,centralZone:decoded.version===2?decoded.centralZone!==false:false,pieces:freshPieces(playerDefinitions),secretPieces:decoded.pieces.map(piece=>({...piece,anchor:{...piece.anchor}})),selected:playerDefinitions[0]?.id||'blueSmall',tool:'pieces',waveModeActive:false,previewWave:null,started:true,traces:[],coords:[],draftCells:{},gridId:decoded.id,gridAlias,gridRanked:!alreadyPlayed,gridUnrankedReason:alreadyPlayed?'already_played':null,attempts:0,over:false,result:null,showGuess:true,showSecret:true,startedAt:null,finalTimeMs:null,rank:null};
     if(start.resumed)restoreStreetProgress(start.attempt?.progress);
     byId('soloChoiceModal')?.classList.remove('open');document.body.classList.remove('solo-menu-open');
-    byId('streetPrototype').querySelector('.subtitle').textContent='Grille classique';
+    byId('streetPrototype').querySelector('.subtitle').textContent=decoded.version===2?`Orapa Street v2 · ${STREET_V2_PROFILES[decoded.profile]?.label||'Libre'}`:'Grille classique';
+    byId('streetPrototype').querySelector('h1').textContent=decoded.version===2?'🏠 Orapa Street v2':'🏠 Orapa Street';
     byId('streetPrototype').hidden=false;document.body.classList.add('street-open');document.body.classList.remove('home-view');toggleHistory(false);render();
     if(alreadyPlayed)setTimeout(()=>{if(typeof openAlreadyPlayedGridModal==='function')openAlreadyPlayedGridModal();else showToast('Cette grille a déjà été jouée avec ce compte : le nouveau score ne sera pas enregistré.');},60);
     return true;
@@ -1677,10 +1804,11 @@
     if(!decoded&&typeof resolveGridReference==='function')decoded=await resolveGridReference(reference);
     if(decoded?.variant!=='street')throw new Error('Identifiant Street invalide.');
     const clonePieces=()=>decoded.pieces.map(piece=>({...piece,anchor:piece.anchor?{...piece.anchor}:null}));
-    state={mode:'solo',pieces:clonePieces(),secretPieces:clonePieces(),selected:'blueSmall',tool:'pieces',waveModeActive:false,previewWave:null,started:true,traces:[],coords:[],draftCells:{},gridId:decoded.id,gridAlias:String(reference||''),attempts:0,over:true,result:'win',showGuess:true,showSecret:false,startedAt:Date.now(),finalTimeMs:0,rank:null};
+    state={mode:'solo',pieceSet:decoded.version===2?'official':'prototype',profile:decoded.profile||null,centralZone:decoded.version===2?decoded.centralZone!==false:false,pieces:clonePieces(),secretPieces:clonePieces(),selected:decoded.pieces[0]?.id||'blueSmall',tool:'pieces',waveModeActive:false,previewWave:null,started:true,traces:[],coords:[],draftCells:{},gridId:decoded.id,gridAlias:String(reference||''),attempts:0,over:true,result:'win',showGuess:true,showSecret:false,startedAt:Date.now(),finalTimeMs:0,rank:null};
     streetAttempt=null;clearDirectionChoicesTimer();selectedWaveEdge=null;
     byId('soloChoiceModal')?.classList.remove('open');document.body.classList.remove('solo-menu-open');
     byId('streetPrototype').querySelector('.subtitle').textContent='Aperçu local du résultat';
+    byId('streetPrototype').querySelector('h1').textContent=decoded.version===2?'🏠 Orapa Street v2':'🏠 Orapa Street';
     byId('streetPrototype').hidden=false;document.body.classList.add('street-open');document.body.classList.remove('home-view');toggleHistory(false);render();
     ensureStreetModal();byId('streetResultActions').dataset.orapaMyludoResult='false';byId('streetResultModal').classList.remove('open');
   }

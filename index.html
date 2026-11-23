@@ -357,7 +357,7 @@ body.app-loading .app,body.app-loading .account-fab,body.app-loading .about-fab,
 .street-exit-side-tuner{margin-top:10px}.street-exit-side-header{display:flex;align-items:center;justify-content:space-between;gap:10px}.street-exit-side-header h3{margin:0;color:var(--gold-bright);font-size:.73rem}.street-exit-side-header select{width:auto;min-width:155px;margin:0;padding:6px 28px 6px 8px;font-size:.68rem}.street-exit-side-note{margin:5px 0 0;color:var(--text-faint);font-size:.61rem;text-align:left}@media(max-width:480px){.street-exit-side-header{align-items:stretch;flex-direction:column}.street-exit-side-header select{width:100%}}
 .street-ray-button.used.transparent{fill:transparent;stroke:var(--street-result);stroke-width:2}
 </style>
-<style>.street-piece.invalid>polygon{fill:rgba(224,73,58,.58)!important;stroke:#ff9b87;stroke-width:1.6;vector-effect:non-scaling-stroke}.street-cell.street-forbidden-cell{stroke:#4d5663;stroke-width:1;stroke-dasharray:none}</style>
+<style>.street-piece.invalid>polygon{fill:rgba(224,73,58,.58)!important;stroke:#ff9b87;stroke-width:1.6;vector-effect:non-scaling-stroke}.street-cell.street-forbidden-cell{stroke:#4d5663;stroke-width:1;stroke-dasharray:none}.street-v2-profile-controls{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:10px;font-size:.72rem;color:var(--text-dim)}.street-v2-profile-controls label{display:flex;align-items:center;gap:6px}.street-v2-profile-controls select{min-height:31px;padding:4px 7px}.street-profile-picker{display:grid;gap:8px;margin-top:12px}.street-profile-picker button{text-align:left}.street-profile-picker small{display:block;margin-top:3px;color:var(--text-dim)}</style>
 <style>body.tutorial-active #btnEndGame,body.tutorial-active #optBlackHoleLabel,body.tutorial-active #optWormholeLabel{display:none!important}</style>
 </head>
 <body class="home-view app-loading">
@@ -774,7 +774,7 @@ body.app-loading .app,body.app-loading .account-fab,body.app-loading .about-fab,
     <section class="choice-zone"><h3 class="choice-zone-title">🎲 Classiques</h3><div class="solo-choice-grid classics">
       <button id="soloChoiceRandom" class="ghost solo-choice-card"><span class="choice-icon">💎</span><span class="choice-copy"><strong>Orapa Mine · Aléatoire</strong><em>Une grille classique générée au hasard.</em></span></button>
       <button id="soloChoiceSpace" class="ghost solo-choice-card"><span class="choice-icon">🚀</span><span class="choice-copy"><strong>Orapa Space · Aléatoire</strong><em>Explore l’espace avec ses planètes et mécanismes.</em></span></button>
-      <button id="soloChoiceStreet" class="ghost solo-choice-card"><span class="choice-icon">🏠</span><span class="choice-copy"><strong>Orapa Street · Aléatoire</strong><em>Une nouvelle forme de grille composée de triangles.</em></span></button>
+      <button id="soloChoiceStreet" class="ghost solo-choice-card"><span class="choice-icon">🏠</span><span class="choice-copy"><strong>Orapa Street v2 · Aléatoire</strong><em>Une nouvelle forme de grille composée de triangles.</em></span></button>
     </div></section>
     <section class="choice-zone"><h3 class="choice-zone-title">📅 Défis du jour</h3><div class="solo-choice-grid">
       <button id="soloChoiceDaily" class="ghost solo-choice-card solo-choice-daily"><span class="choice-icon">💎</span><span class="choice-copy"><strong>Défi du jour classique</strong><em>Gemmes et règles spéciales sur une grille quotidienne.</em><small>Une seule tentative aujourd’hui</small></span></button>
@@ -846,7 +846,7 @@ body.app-loading .app,body.app-loading .account-fab,body.app-loading .about-fab,
       <button class="primary" id="createClassicMode">Grille classique</button>
       <button class="ghost" id="createLostMode">💎 Gemme perdue</button>
     </div></section><section class="choice-zone"><h3 class="choice-zone-title">🪐 Orapa Space</h3><div class="controls" style="justify-content:center;margin-top:10px;"><button class="ghost" id="createSpaceMode">🚀 Grille classique</button></div></section>
-    <section class="choice-zone"><h3 class="choice-zone-title">🏠 Orapa Street</h3><div class="controls" style="justify-content:center;margin-top:10px;"><button class="ghost" id="createStreetMode">Grille classique</button></div></section>
+    <section class="choice-zone"><h3 class="choice-zone-title">🏠 Orapa Street v2</h3><div class="controls" style="justify-content:center;margin-top:10px;"><button class="ghost" id="createStreetMode">Créer une grille</button></div></section>
     <section class="choice-zone earth-sky-preview" hidden><h3 class="choice-zone-title">🌍☁️ Terre et Ciel</h3><div class="controls" style="justify-content:center;margin-top:10px;"><button class="ghost" id="createEarthSkyMode">🌗 Double grille</button></div></section>
   </div>
 </div>
@@ -864,6 +864,10 @@ body.app-loading .app,body.app-loading .account-fab,body.app-loading .about-fab,
         <button class="ghost" id="streetShare" disabled>📤 Partager la grille</button>
         <button class="ghost" id="streetClose">← Retour à l’accueil</button>
         <button class="danger" id="streetReset">Recommencer</button>
+      </div>
+      <div class="street-v2-profile-controls" id="streetProfileControls">
+        <label>Profil <select id="streetProfileSelect"><option value="normal">Normal</option><option value="sherlock7">Sherlock 7</option><option value="sherlockExtreme">Sherlock Extrême</option><option value="absurd">Absurde</option><option value="free">Libre</option></select></label>
+        <label id="streetCentralZoneControl" hidden><input id="streetCentralZone" type="checkbox" checked> Zone centrale</label>
       </div>
       <div id="streetStartBlockMsg">Place toutes les pièces avant de démarrer.</div>
       <div class="controls" id="streetCellTools" hidden>
@@ -1008,6 +1012,6 @@ body.app-loading .app,body.app-loading .account-fab,body.app-loading .about-fab,
   </div>
 </div>
 
-<script src="boot.js?v=20261120-0011"></script>
+<script src="boot.js?v=20261123-0001"></script>
 </body>
 </html>
