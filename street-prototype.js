@@ -527,7 +527,9 @@
     const key=surveyVertexKey(vertex);
     if(!streetPieceSurvey.wallStart){streetPieceSurvey.wallStart=key;return;}
     if(streetPieceSurvey.wallStart===key){streetPieceSurvey.wallStart=null;return;}
-    streetPieceSurvey.walls.push([streetPieceSurvey.wallStart,key]);streetPieceSurvey.wallStart=null;
+    const existing=streetPieceSurvey.walls.findIndex(([start,end])=>(start===streetPieceSurvey.wallStart&&end===key)||(start===key&&end===streetPieceSurvey.wallStart));
+    if(existing>=0)streetPieceSurvey.walls.splice(existing,1);else streetPieceSurvey.walls.push([streetPieceSurvey.wallStart,key]);
+    streetPieceSurvey.wallStart=null;
   }
   function surveyPayload(){
     const name=byId('streetSurveyName')?.value.trim()||'Pièce Street';

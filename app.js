@@ -221,7 +221,9 @@ function togglePlacementSurveyVertex(x,y){
   const key=placementSurveyVertexKey(x,y);
   if(!placementSurvey.wallStart){placementSurvey.wallStart=key;return;}
   if(placementSurvey.wallStart===key){placementSurvey.wallStart=null;return;}
-  placementSurvey.walls.push([placementSurvey.wallStart,key]);placementSurvey.wallStart=null;
+  const existing=placementSurvey.walls.findIndex(([start,end])=>(start===placementSurvey.wallStart&&end===key)||(start===key&&end===placementSurvey.wallStart));
+  if(existing>=0)placementSurvey.walls.splice(existing,1);else placementSurvey.walls.push([placementSurvey.wallStart,key]);
+  placementSurvey.wallStart=null;
 }
 function placementSurveyPayload(){
   const cells=[...placementSurvey.cells].map(key=>{const [row,col]=key.split(',').map(Number);return {row,col,label:placementSurveyCellLabel(row,col)};});
@@ -4308,8 +4310,9 @@ function renderBgGrid(){
   const cs = computeCellSize();
   const bg = $('#bgGrid'); bg.innerHTML='';
   const surveySvg=$('#placementSurveySvg');
+  const surveyPoints=$('#placementSurveyPoints');
   const surveying=placementSurveyAllowed()&&placementSurvey.active;
-  surveySvg.innerHTML='';surveySvg.setAttribute('viewBox',`0 0 ${COLS} ${activeRows()}`);surveySvg.hidden=!surveying;
+  surveySvg.innerHTML='';surveyPoints.innerHTML='';surveySvg.setAttribute('viewBox',`0 0 ${COLS} ${activeRows()}`);surveySvg.hidden=!surveying;surveyPoints.hidden=!surveying;
   boardEl.style.width = (cs*COLS)+'px';
   boardEl.style.height = (cs*activeRows())+'px';
   boardEl.classList.toggle('earth-sky-board',isEarthSky());
@@ -4349,9 +4352,9 @@ function renderBgGrid(){
       const wall=document.createElementNS(SVGNS,'line');wall.setAttribute('x1',a.x);wall.setAttribute('y1',a.y);wall.setAttribute('x2',b.x);wall.setAttribute('y2',b.y);wall.setAttribute('class','placement-survey-wall');surveySvg.appendChild(wall);
     });
     for(let y=0;y<=activeRows();y++)for(let x=0;x<=COLS;x++){
-      const key=placementSurveyVertexKey(x,y),vertex=document.createElementNS(SVGNS,'circle');
-      vertex.setAttribute('cx',x);vertex.setAttribute('cy',y);vertex.setAttribute('r','.075');vertex.setAttribute('class',`placement-survey-vertex${placementSurvey.wallStart===key?' selected':''}`);vertex.setAttribute('aria-label',`Sommet ${x}, ${y}`);
-      vertex.addEventListener('click',event=>{event.preventDefault();event.stopPropagation();togglePlacementSurveyVertex(x,y);renderBgGrid();updatePlacementSurveyTools();});surveySvg.appendChild(vertex);
+      const key=placementSurveyVertexKey(x,y),vertex=document.createElement('button');
+      vertex.type='button';vertex.className=`placement-survey-vertex${placementSurvey.wallStart===key?' selected':''}`;vertex.style.left=(x*cs)+'px';vertex.style.top=(y*cs)+'px';vertex.title=`Sommet ${x}, ${y}`;
+      vertex.addEventListener('click',event=>{event.preventDefault();event.stopPropagation();togglePlacementSurveyVertex(x,y);renderBgGrid();updatePlacementSurveyTools();});surveyPoints.appendChild(vertex);
     }
   }
 }
