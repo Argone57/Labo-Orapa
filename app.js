@@ -3626,6 +3626,7 @@ function openVictoryModal(){
   $('#btnVictoryCopyId').style.display=state.isDaily?'none':'';
   $('#btnVictoryCopyId').textContent='📋 Copier ID';
   $('#victoryActions').dataset.orapaMyludoResult=resultAlreadyRecorded?'false':'true';
+  document.dispatchEvent(new Event('orapa:myludo-buttons-refresh'));
   $('#victoryModal').classList.add('open');
 }
 async function proposeSolution(){

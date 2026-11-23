@@ -172,10 +172,14 @@
   function applyPieceMirror(piece){
     const official=STREET_PIECES.some(item=>item.id===piece.id);
     if((official&&!STREET_V2_MIRROR_IDS.has(piece.id))||(!official&&MIRROR_DISABLED.has(piece.id)))return false;
+    const previousAnchor=piece.anchor?.q===undefined&&piece.anchor?{...piece.anchor}:null;
     const turningOn=!piece.flipped;
     const rotationCompensation=piece.id==='redWall'?1:(piece.id==='blueLarge'||piece.id==='yellowLarge'?2:0);
     piece.rotation=(piece.rotation+(turningOn?rotationCompensation:6-rotationCompensation))%6;
     piece.flipped=turningOn;
+    // Les pièces v2 sont ancrées en coordonnées écran : après le miroir,
+    // on recale leur sommet de référence sur la grille.
+    if(official&&previousAnchor)piece.anchor=snapPieceAnchor(piece,previousAnchor);
     return true;
   }
   function pieceGeometry(piece){
@@ -1410,6 +1414,7 @@
     render();
     ensureStreetModal();
     byId('streetResultActions').dataset.orapaMyludoResult=state.gridRanked===false||submitted?.accepted===false?'false':'true';
+    document.dispatchEvent(new Event('orapa:myludo-buttons-refresh'));
     openStreetResultModal();
   }
   async function proposeStreetSolution(){
