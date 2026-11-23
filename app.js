@@ -212,14 +212,24 @@ let state = {
 };
 // Outil volontairement discret : cinq clics sur « Placement des … » l'ouvrent
 // pendant la création d'une grille. Il ne fait partie d'aucune partie jouable.
-const placementSurvey={unlocked:false,active:false,cells:new Set(),clicks:0};
+const placementSurvey={unlocked:false,active:false,cells:new Set(),clicks:0,wallStart:null,walls:[]};
 function placementSurveyAllowed(){return state.mode==='gm'&&!state.started&&!state.isDaily;}
 function placementSurveyCellLabel(row,col){return `${String.fromCharCode(65+row)}${col+1}`;}
+function placementSurveyVertexKey(x,y){return `${x},${y}`;}
+function placementSurveyVertexFromKey(key){const [x,y]=key.split(',').map(Number);return {x,y};}
+function togglePlacementSurveyVertex(x,y){
+  const key=placementSurveyVertexKey(x,y);
+  if(!placementSurvey.wallStart){placementSurvey.wallStart=key;return;}
+  if(placementSurvey.wallStart===key){placementSurvey.wallStart=null;return;}
+  placementSurvey.walls.push([placementSurvey.wallStart,key]);placementSurvey.wallStart=null;
+}
 function placementSurveyPayload(){
   const cells=[...placementSurvey.cells].map(key=>{const [row,col]=key.split(',').map(Number);return {row,col,label:placementSurveyCellLabel(row,col)};});
   return {
+    name:$('#placementSurveyName')?.value.trim()||'Pièce',
     variant:state.gameVariant||'classic',
     cells,
+    walls:placementSurvey.walls.map(([start,end])=>[placementSurveyVertexFromKey(start),placementSurveyVertexFromKey(end)]),
     pieces:state.pieces.filter(piece=>piece.center).map(piece=>({
       type:piece.type,center:{x:Number(piece.center.x.toFixed(3)),y:Number(piece.center.y.toFixed(3))},
       rotation:Number(piece.rotation)||0,flipped:!!piece.flipped
@@ -232,7 +242,7 @@ function updatePlacementSurveyTools(){
   tools.hidden=!available;
   if(!available)return;
   $('#placementSurveyStatus').textContent=placementSurvey.active
-    ?`Relevé temporaire actif : ${placementSurvey.cells.size} cellule${placementSurvey.cells.size>1?'s':''} sélectionnée${placementSurvey.cells.size>1?'s':''}.`
+    ?(placementSurvey.wallStart?`Sommet de départ choisi : sélectionne le sommet d’arrivée. (${placementSurvey.cells.size} cellules, ${placementSurvey.walls.length} mur${placementSurvey.walls.length>1?'s':''})`:`${placementSurvey.cells.size} cellule${placementSurvey.cells.size>1?'s':''} · ${placementSurvey.walls.length} mur${placementSurvey.walls.length>1?'s':''}. Clique les cellules, puis deux sommets pour ajouter un mur.`)
     :'Relevé temporaire prêt : clique les cellules à relever.';
 }
 let paletteScale = 1;
@@ -2247,7 +2257,7 @@ function loadState(){
   }catch(e){ return false; }
 }
 function resetAll(){
-  placementSurvey.unlocked=false;placementSurvey.active=false;placementSurvey.cells.clear();placementSurvey.clicks=0;
+  placementSurvey.unlocked=false;placementSurvey.active=false;placementSurvey.cells.clear();placementSurvey.wallStart=null;placementSurvey.walls=[];placementSurvey.clicks=0;
   if(state.isDaily && state.soloOver) saveDailyFinalSnapshot();
   const g = state.includeGray, o = state.includeOnyx, s2 = state.includeSapphire;
   state = { mode:'gm', gameVariant:'classic',missingType:null,selectedMissingType:null,placementBonus:false,started:false, includeGray:g, includeOnyx:o, includeSapphire:s2, includeBlackHole:false,includeWormhole:false,earthSkyMineOnTop:true, pieces:[], secretPieces:[],
@@ -4331,6 +4341,20 @@ function renderBgGrid(){
     }
   }
   bg.appendChild(frag);
+  if(placementSurveyAllowed()&&placementSurvey.active){
+    placementSurvey.walls.forEach(([start,end])=>{
+      const a=placementSurveyVertexFromKey(start),b=placementSurveyVertexFromKey(end);
+      const dx=(b.x-a.x)*cs,dy=(b.y-a.y)*cs,length=Math.hypot(dx,dy);
+      const wall=document.createElement('div');wall.className='placement-survey-wall';
+      wall.style.left=(a.x*cs)+'px';wall.style.top=(a.y*cs)+'px';wall.style.width=length+'px';wall.style.transform=`rotate(${Math.atan2(dy,dx)}rad)`;bg.appendChild(wall);
+    });
+    for(let y=0;y<=activeRows();y++)for(let x=0;x<=COLS;x++){
+      const key=placementSurveyVertexKey(x,y),vertex=document.createElement('button');
+      vertex.type='button';vertex.className=`placement-survey-vertex${placementSurvey.wallStart===key?' selected':''}`;
+      vertex.style.left=(x*cs)+'px';vertex.style.top=(y*cs)+'px';vertex.title=`Sommet ${x}, ${y}`;
+      vertex.addEventListener('click',event=>{event.preventDefault();event.stopPropagation();togglePlacementSurveyVertex(x,y);renderBgGrid();updatePlacementSurveyTools();});bg.appendChild(vertex);
+    }
+  }
 }
 
 function polyPointsAttr(verts){ return verts.map(v=> v.x+','+v.y).join(' '); }
@@ -7136,11 +7160,18 @@ $('#modePill').addEventListener('click',()=>{
   updatePlacementSurveyTools();renderBgGrid();showToast('Outil de relevé temporaire activé.');
 });
 $('#placementSurveyClear').addEventListener('click',()=>{
-  placementSurvey.cells.clear();renderBgGrid();updatePlacementSurveyTools();
+  placementSurvey.cells.clear();placementSurvey.walls=[];placementSurvey.wallStart=null;renderBgGrid();updatePlacementSurveyTools();
 });
 $('#placementSurveyCopy').addEventListener('click',async()=>{
   if(!placementSurveyAllowed())return;
-  try{await navigator.clipboard?.writeText(JSON.stringify(placementSurveyPayload(),null,2));showToast('Placements copiés.');}
+  const payload=placementSurveyPayload();delete payload.pieces;
+  try{await navigator.clipboard?.writeText(JSON.stringify(payload,null,2));showToast('Relevé copié.');}
+  catch(_error){showErrorToast('Copie impossible.');}
+});
+$('#placementSurveyCopyPlacements').addEventListener('click',async()=>{
+  if(!placementSurveyAllowed())return;
+  const payload=placementSurveyPayload();delete payload.cells;delete payload.walls;
+  try{await navigator.clipboard?.writeText(JSON.stringify(payload,null,2));showToast('Placements copiés.');}
   catch(_error){showErrorToast('Copie impossible.');}
 });
 
