@@ -4310,9 +4310,10 @@ function renderBgGrid(){
   const cs = computeCellSize();
   const bg = $('#bgGrid'); bg.innerHTML='';
   const surveySvg=$('#placementSurveySvg');
+  const surveyWalls=$('#placementSurveyWalls');
   const surveyPoints=$('#placementSurveyPoints');
   const surveying=placementSurveyAllowed()&&placementSurvey.active;
-  surveySvg.innerHTML='';surveyPoints.innerHTML='';surveySvg.setAttribute('viewBox',`0 0 ${COLS} ${activeRows()}`);surveySvg.hidden=!surveying;surveyPoints.hidden=!surveying;
+  surveySvg.innerHTML='';surveyWalls.innerHTML='';surveyPoints.innerHTML='';surveySvg.hidden=true;surveyWalls.hidden=!surveying;surveyPoints.hidden=!surveying;
   boardEl.style.width = (cs*COLS)+'px';
   boardEl.style.height = (cs*activeRows())+'px';
   boardEl.classList.toggle('earth-sky-board',isEarthSky());
@@ -4349,7 +4350,8 @@ function renderBgGrid(){
   if(surveying){
     placementSurvey.walls.forEach(([start,end])=>{
       const a=placementSurveyVertexFromKey(start),b=placementSurveyVertexFromKey(end);
-      const wall=document.createElementNS(SVGNS,'line');wall.setAttribute('x1',a.x);wall.setAttribute('y1',a.y);wall.setAttribute('x2',b.x);wall.setAttribute('y2',b.y);wall.setAttribute('class','placement-survey-wall');surveySvg.appendChild(wall);
+      const dx=(b.x-a.x)*cs,dy=(b.y-a.y)*cs,length=Math.hypot(dx,dy),wall=document.createElement('div');
+      wall.className='placement-survey-wall';wall.style.left=(a.x*cs)+'px';wall.style.top=(a.y*cs)+'px';wall.style.width=length+'px';wall.style.transform=`rotate(${Math.atan2(dy,dx)}rad)`;surveyWalls.appendChild(wall);
     });
     for(let y=0;y<=activeRows();y++)for(let x=0;x<=COLS;x++){
       const key=placementSurveyVertexKey(x,y),vertex=document.createElement('button');
