@@ -210,6 +210,31 @@ let state = {
   coordDots:[],
   draftEmptyCells:{}
 };
+// Outil volontairement discret : cinq clics sur « Placement des … » l'ouvrent
+// pendant la création d'une grille. Il ne fait partie d'aucune partie jouable.
+const placementSurvey={unlocked:false,active:false,cells:new Set(),clicks:0};
+function placementSurveyAllowed(){return state.mode==='gm'&&!state.started&&!state.isDaily;}
+function placementSurveyCellLabel(row,col){return `${String.fromCharCode(65+row)}${col+1}`;}
+function placementSurveyPayload(){
+  const cells=[...placementSurvey.cells].map(key=>{const [row,col]=key.split(',').map(Number);return {row,col,label:placementSurveyCellLabel(row,col)};});
+  return {
+    variant:state.gameVariant||'classic',
+    cells,
+    pieces:state.pieces.filter(piece=>piece.center).map(piece=>({
+      type:piece.type,center:{x:Number(piece.center.x.toFixed(3)),y:Number(piece.center.y.toFixed(3))},
+      rotation:Number(piece.rotation)||0,flipped:!!piece.flipped
+    }))
+  };
+}
+function updatePlacementSurveyTools(){
+  const tools=$('#placementSurveyTools');if(!tools)return;
+  const available=placementSurveyAllowed()&&placementSurvey.unlocked;
+  tools.hidden=!available;
+  if(!available)return;
+  $('#placementSurveyStatus').textContent=placementSurvey.active
+    ?`Relevé temporaire actif : ${placementSurvey.cells.size} cellule${placementSurvey.cells.size>1?'s':''} sélectionnée${placementSurvey.cells.size>1?'s':''}.`
+    :'Relevé temporaire prêt : clique les cellules à relever.';
+}
 let paletteScale = 1;
 let showFirstWaveHelp = false;
 function normalizePaletteScale(value){
@@ -619,7 +644,7 @@ function updatesListHtml(updates,emptyText){
   if(!updates.length)return `<div class="updates-empty">${emptyText}</div>`;
   const groups=[];
   updates.forEach(update=>{let group=groups.find(item=>item.date===update.date);if(!group){group={date:update.date,items:[]};groups.push(group);}group.items.push(update);});
-  return `<div class="	">${groups.map(group=>`<section class="updates-date-group"><time datetime="${group.date.split('/').reverse().join('-')}">${group.date}</time><ul>${group.items.map(update=>`<li>${escapeHtml(update.title)}</li>`).join('')}</ul></section>`).join('')}</div>`;
+  return `<div class="updates-list">${groups.map(group=>`<section class="updates-date-group"><time datetime="${group.date.split('/').reverse().join('-')}">${group.date}</time><ul>${group.items.map(update=>`<li>${escapeHtml(update.title)}</li>`).join('')}</ul></section>`).join('')}</div>`;
 }
 function openUpdatesModal(history=false){
   const unread=unreadGameUpdates();
@@ -790,7 +815,7 @@ let currentPlayerAccount = loadPlayerAccount();
 let scoreIdentityResolver = null;
 const DEFAULT_MYLUDO_PREFERENCES=Object.freeze({
   player_mode:'default',custom_player_name:'',challenge_game_id:96014,lost_game_id:96014,
-  daily_game_id:96014,daily_remix_game_id:96014,earth_sky_game_id:96014,fill_score:false,
+  daily_game_id:96014,daily_remix_game_id:96014,earth_sky_game_id:96014,street_game_id:101482,fill_score:false,
   location_mode:'default',custom_location:'',exclude_from_statistics:false,auto_submit:false,
   duplicate_detection:true
 });
@@ -803,7 +828,7 @@ function normalizeMyludoPreferences(value={}){
     player_mode:value.player_mode==='custom'?'custom':'default',
     custom_player_name:String(value.custom_player_name||'').trim().slice(0,80),
     challenge_game_id:mineGameId(value.challenge_game_id),lost_game_id:mineGameId(value.lost_game_id),
-    daily_game_id:mineGameId(value.daily_game_id),daily_remix_game_id:earthSkyGameId(value.daily_remix_game_id),earth_sky_game_id:earthSkyGameId(value.earth_sky_game_id),
+    daily_game_id:mineGameId(value.daily_game_id),daily_remix_game_id:earthSkyGameId(value.daily_remix_game_id),earth_sky_game_id:earthSkyGameId(value.earth_sky_game_id),street_game_id:101482,
     fill_score:!!value.fill_score,location_mode:value.location_mode==='custom'?'custom':'default',
     custom_location:String(value.custom_location||'').trim().slice(0,80),
     exclude_from_statistics:!!value.exclude_from_statistics,auto_submit:!!value.auto_submit,
@@ -1160,6 +1185,7 @@ async function openMyludoOptions(){
       <section class="myludo-settings-section"><h3>Choix de la fiche Myludo</h3>
         <div class="myludo-setting-row"><label for="myludoChallengeGame">Orapa Mine</label><select id="myludoChallengeGame" class="ranking-select">${myludoMineGameOptions(pref.challenge_game_id)}</select></div>
         <div class="myludo-setting-row"><label for="myludoSpaceGame">Orapa Space</label><select id="myludoSpaceGame" class="ranking-select"><option value="89980">Orapa Space 🇬🇧 (89980)</option></select></div>
+        <div class="myludo-setting-row"><label for="myludoStreetGame">Orapa Street</label><select id="myludoStreetGame" class="ranking-select"><option value="101482">Orapa Street 🇬🇧 (101482)</option></select></div>
         <div class="myludo-setting-row"><label for="myludoDailyGame">Défi du jour classique</label><select id="myludoDailyGame" class="ranking-select">${myludoMineGameOptions(pref.daily_game_id)}</select></div>
         <div class="myludo-setting-row"><label for="myludoDailyRemixGame">Défi du jour remix</label><select id="myludoDailyRemixGame" class="ranking-select">${myludoEarthSkyGameOptions(pref.daily_remix_game_id)}</select></div>
         <div class="myludo-setting-row"><label for="myludoLostGame">Gemme perdue</label><select id="myludoLostGame" class="ranking-select">${myludoMineGameOptions(pref.lost_game_id)}</select></div>
@@ -1180,7 +1206,7 @@ async function openMyludoOptions(){
     $('#myludoPlayerMode').onchange=updateCustomFields;$('#myludoLocationMode').onchange=updateCustomFields;updateCustomFields();
     $('#cancelMyludoOptions').onclick=closeMyludoOptions;
     $('#saveMyludoOptions').onclick=async()=>{
-      const next=normalizeMyludoPreferences({player_mode:$('#myludoPlayerMode').value,custom_player_name:$('#myludoPlayerName').value,challenge_game_id:$('#myludoChallengeGame').value,lost_game_id:$('#myludoLostGame').value,daily_game_id:$('#myludoDailyGame').value,daily_remix_game_id:$('#myludoDailyRemixGame').value,earth_sky_game_id:$('#myludoEarthSkyGame').value,fill_score:$('#myludoScoreMode').value==='fill',location_mode:$('#myludoLocationMode').value,custom_location:$('#myludoLocation').value,exclude_from_statistics:$('#myludoExcludeStats').value==='yes',auto_submit:$('#myludoSubmitMode').value==='automatic',duplicate_detection:$('#myludoDuplicateDetection').value==='yes'});
+      const next=normalizeMyludoPreferences({player_mode:$('#myludoPlayerMode').value,custom_player_name:$('#myludoPlayerName').value,challenge_game_id:$('#myludoChallengeGame').value,lost_game_id:$('#myludoLostGame').value,daily_game_id:$('#myludoDailyGame').value,daily_remix_game_id:$('#myludoDailyRemixGame').value,earth_sky_game_id:$('#myludoEarthSkyGame').value,street_game_id:$('#myludoStreetGame').value,fill_score:$('#myludoScoreMode').value==='fill',location_mode:$('#myludoLocationMode').value,custom_location:$('#myludoLocation').value,exclude_from_statistics:$('#myludoExcludeStats').value==='yes',auto_submit:$('#myludoSubmitMode').value==='automatic',duplicate_detection:$('#myludoDuplicateDetection').value==='yes'});
       if(next.player_mode==='custom'&&!next.custom_player_name){accountError('#myludoOptionsError','Saisis le nom personnalisé à utiliser sur Myludo.');return;}
       if(next.location_mode==='custom'&&!next.custom_location){accountError('#myludoOptionsError','Saisis le lieu personnalisé à utiliser sur Myludo.');return;}
       const button=$('#saveMyludoOptions');button.disabled=true;
@@ -2221,6 +2247,7 @@ function loadState(){
   }catch(e){ return false; }
 }
 function resetAll(){
+  placementSurvey.unlocked=false;placementSurvey.active=false;placementSurvey.cells.clear();placementSurvey.clicks=0;
   if(state.isDaily && state.soloOver) saveDailyFinalSnapshot();
   const g = state.includeGray, o = state.includeOnyx, s2 = state.includeSapphire;
   state = { mode:'gm', gameVariant:'classic',missingType:null,selectedMissingType:null,placementBonus:false,started:false, includeGray:g, includeOnyx:o, includeSapphire:s2, includeBlackHole:false,includeWormhole:false,earthSkyMineOnTop:true, pieces:[], secretPieces:[],
@@ -3541,7 +3568,7 @@ function localDateKey(value){
   return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
 }
 function myludoGameIdForEntry(entry,preferences){
-  if(entry.gameVariant==='street')return 101482;
+  if(entry.gameVariant==='street')return preferences.street_game_id;
   if(entry.gameVariant==='space')return 89980;
   if(entry.isDaily)return entry.dailyKind==='remix'?preferences.daily_remix_game_id:preferences.daily_game_id;
   if(entry.gameVariant==='lost')return preferences.lost_game_id;
@@ -4285,8 +4312,16 @@ function renderBgGrid(){
       cell.style.border='1px solid rgba(0,0,0,.18)';
       cell.dataset.row=r; cell.dataset.col=c;
       const key=r+','+c;
+      const surveying=placementSurveyAllowed()&&placementSurvey.active;
+      cell.classList.toggle('placement-survey-selected',surveying&&placementSurvey.cells.has(key));
+      if(surveying){
+        const label=document.createElement('span');label.className='placement-survey-cell-label';label.textContent=placementSurveyCellLabel(r,c);cell.appendChild(label);
+      }
       cell.classList.toggle('draft-empty',state.mode==='solo'&&!state.soloOver&&!!state.draftEmptyCells?.[key]);
-      if(raysEnabled()) cell.addEventListener('click', ()=> onCellClick(r,c,cell));
+      if(surveying)cell.addEventListener('click',event=>{
+        event.stopPropagation();placementSurvey.cells.has(key)?placementSurvey.cells.delete(key):placementSurvey.cells.add(key);renderBgGrid();updatePlacementSurveyTools();
+      });
+      else if(raysEnabled()) cell.addEventListener('click', ()=> onCellClick(r,c,cell));
       cell.addEventListener('contextmenu',event=>{
         if(state.mode!=='solo'||state.soloOver||tutorialActive)return;
         event.preventDefault();
@@ -4775,6 +4810,7 @@ function renderControls(){
   }
   $('#btnReplayVictory').style.display = (state.mode==='solo' && state.soloOver) ? '' : 'none';
   $('#btnReset').style.display = state.isDaily ? 'none' : '';
+  updatePlacementSurveyTools();
   const proposeButton=$('#btnPropose');
   const showAttemptCounter=state.mode==='solo'&&!state.soloOver&&!state.isDaily&&!lab&&state.gameVariant!=='lost'&&!tutorialActive;
   proposeButton.classList.toggle('has-attempt-counter',showAttemptCounter);
@@ -7092,6 +7128,21 @@ document.addEventListener('dblclick',event=>{
   if(event.target.closest('#board,.street-board,.palette,.street-palette'))event.preventDefault();
 },{passive:false});
 $('#historyToggle').addEventListener('click',toggleHistoryDisclosure);
+$('#modePill').addEventListener('click',()=>{
+  if(!placementSurveyAllowed())return;
+  placementSurvey.clicks++;
+  if(placementSurvey.clicks<5)return;
+  placementSurvey.clicks=0;placementSurvey.unlocked=true;placementSurvey.active=true;
+  updatePlacementSurveyTools();renderBgGrid();showToast('Outil de relevé temporaire activé.');
+});
+$('#placementSurveyClear').addEventListener('click',()=>{
+  placementSurvey.cells.clear();renderBgGrid();updatePlacementSurveyTools();
+});
+$('#placementSurveyCopy').addEventListener('click',async()=>{
+  if(!placementSurveyAllowed())return;
+  try{await navigator.clipboard?.writeText(JSON.stringify(placementSurveyPayload(),null,2));showToast('Placements copiés.');}
+  catch(_error){showErrorToast('Copie impossible.');}
+});
 
 // ---------------------------------------------------------------------
 // INIT

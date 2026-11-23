@@ -508,6 +508,7 @@
   let selectedWaveEdge=null;
   let directionChoicesHideTimer=null;
   let streetPieceSurvey={active:false,triangles:new Set(),wallStart:null,walls:[]};
+  let streetSurveyUnlocked=false,streetSurveyClicks=0;
   const officialStreetCreationActive=()=>state.mode==='gm'&&!state.started&&!!streetProfileConfig(state.profile);
   function resetV2Creation(profile=state.profile||'normal',centralZone=profile==='free'?state.centralZone!==false:true){
     const config=streetProfileConfig(profile)||STREET_V2_PROFILES.normal;
@@ -534,6 +535,14 @@
       name,
       triangles:[...streetPieceSurvey.triangles].sort((a,b)=>a-b),
       walls:streetPieceSurvey.walls.map(([start,end])=>[surveyVertexFromKey(start),surveyVertexFromKey(end)])
+    };
+  }
+  function surveyPlacementsPayload(){
+    return {
+      profile:state.profile||'prototype',centralZone:!!state.centralZone,
+      pieces:state.pieces.filter(piece=>piece.anchor).map(piece=>({
+        id:piece.id,anchor:{x:Number(piece.anchor.x.toFixed(3)),y:Number(piece.anchor.y.toFixed(3))},rotation:Number(piece.rotation)||0,flipped:!!piece.flipped
+      }))
     };
   }
   const STREET_TUTORIAL_REFERENCE='EMG5264J-W-R';
@@ -1472,10 +1481,10 @@
     const pieceSetToggle=byId('streetPieceSetToggle');
     pieceSetToggle.hidden=true;
     const surveyToggle=byId('streetSurveyToggle'),surveyTools=byId('streetSurveyTools');
-    surveyToggle.hidden=true;
+    surveyToggle.hidden=!(v2Creation&&streetSurveyUnlocked);
     surveyToggle.setAttribute('aria-pressed',String(streetPieceSurvey.active&&v2Creation));
     surveyToggle.textContent=streetPieceSurvey.active?'Fin du relevé':'Relever';
-    surveyTools.hidden=true;
+    surveyTools.hidden=!(v2Creation&&streetSurveyUnlocked&&streetPieceSurvey.active);
     if(v2Creation&&streetPieceSurvey.active){
       const count=streetPieceSurvey.triangles.size,walls=streetPieceSurvey.walls.length;
       byId('streetSurveyStatus').textContent=streetPieceSurvey.wallStart?`Sommet de départ choisi : sélectionne le sommet d’arrivée. (${count} triangles, ${walls} mur${walls>1?'s':''})`:`${count} triangle${count>1?'s':''} · ${walls} mur${walls>1?'s':''}. Clique deux sommets pour ajouter un mur.`;
@@ -1638,6 +1647,13 @@
   function bind(){
     const create=byId('createStreetMode');
     if(!create)return;
+    byId('streetPrototype').querySelector('.mode-pill').addEventListener('click',()=>{
+      if(!officialStreetCreationActive())return;
+      streetSurveyClicks++;
+      if(streetSurveyClicks<5)return;
+      streetSurveyClicks=0;streetSurveyUnlocked=true;streetPieceSurvey.active=true;
+      showToast('Outil de relevé temporaire activé.');render();
+    });
     create.addEventListener('click',()=>openCreation());
     byId('streetClose').addEventListener('click',()=>streetTutorial.active?requestStreetTutorialExit():close());
     byId('streetPieceSetToggle').addEventListener('click',()=>{
@@ -1671,6 +1687,11 @@
       if(!officialStreetCreationActive())return;
       const payload=JSON.stringify(surveyPayload(),null,2);
       try{await navigator.clipboard?.writeText(payload);showToast('Relevé copié.');}
+      catch(_error){showErrorToast('Copie impossible.');}
+    });
+    byId('streetSurveyCopyPlacements').addEventListener('click',async()=>{
+      if(!officialStreetCreationActive())return;
+      try{await navigator.clipboard?.writeText(JSON.stringify(surveyPlacementsPayload(),null,2));showToast('Placements copiés.');}
       catch(_error){showErrorToast('Copie impossible.');}
     });
     byId('streetRandom').addEventListener('click',()=>{if(state.started)return;if(!randomizePieces())setMessage('Impossible de trouver un placement valide. Réessaie.',true);render();});
@@ -1749,7 +1770,7 @@
     await loadStreetPreference();
     try{localStorage.removeItem('orapa_street_creation_v3');}catch(_error){}
     streetTutorial={active:false,stage:0,puzzle:false,secretPieces:[],draftIndex:0};byId('streetTutorialCoach')?.remove();
-    resetStreetPieceSurvey();savedPrototypeCreationPieces=null;state={mode:'gm',pieceSet:'official',profile:'normal',centralZone:true,pieces:freshPieces(STREET_PIECES),secretPieces:[],selected:'red1',tool:'pieces',waveModeActive:false,previewWave:null,started:false,traces:[],coords:[],draftCells:{},gridId:null,gridAlias:null,attempts:0,over:false,result:null,showGuess:true,showSecret:true,startedAt:null,finalTimeMs:null,rank:null};
+    resetStreetPieceSurvey();streetSurveyUnlocked=false;streetSurveyClicks=0;savedPrototypeCreationPieces=null;state={mode:'gm',pieceSet:'official',profile:'normal',centralZone:true,pieces:freshPieces(STREET_PIECES),secretPieces:[],selected:'red1',tool:'pieces',waveModeActive:false,previewWave:null,started:false,traces:[],coords:[],draftCells:{},gridId:null,gridAlias:null,attempts:0,over:false,result:null,showGuess:true,showSecret:true,startedAt:null,finalTimeMs:null,rank:null};
     byId('streetPrototype').querySelector('.subtitle').textContent='Console du maître du jeu · v2';
     byId('streetPrototype').querySelector('h1').textContent='🏠 Orapa Street v2';
     byId('streetPrototype').hidden=false;document.body.classList.add('street-open');document.body.classList.remove('home-view');toggleHistory(false);render();
