@@ -4307,6 +4307,9 @@ function showLabelBubble(el, text){
 function renderBgGrid(){
   const cs = computeCellSize();
   const bg = $('#bgGrid'); bg.innerHTML='';
+  const surveySvg=$('#placementSurveySvg');
+  const surveying=placementSurveyAllowed()&&placementSurvey.active;
+  surveySvg.innerHTML='';surveySvg.setAttribute('viewBox',`0 0 ${COLS} ${activeRows()}`);surveySvg.hidden=!surveying;
   boardEl.style.width = (cs*COLS)+'px';
   boardEl.style.height = (cs*activeRows())+'px';
   boardEl.classList.toggle('earth-sky-board',isEarthSky());
@@ -4322,7 +4325,6 @@ function renderBgGrid(){
       cell.style.border='1px solid rgba(0,0,0,.18)';
       cell.dataset.row=r; cell.dataset.col=c;
       const key=r+','+c;
-      const surveying=placementSurveyAllowed()&&placementSurvey.active;
       cell.classList.toggle('placement-survey-selected',surveying&&placementSurvey.cells.has(key));
       if(surveying){
         const label=document.createElement('span');label.className='placement-survey-cell-label';label.textContent=placementSurveyCellLabel(r,c);cell.appendChild(label);
@@ -4341,18 +4343,15 @@ function renderBgGrid(){
     }
   }
   bg.appendChild(frag);
-  if(placementSurveyAllowed()&&placementSurvey.active){
+  if(surveying){
     placementSurvey.walls.forEach(([start,end])=>{
       const a=placementSurveyVertexFromKey(start),b=placementSurveyVertexFromKey(end);
-      const dx=(b.x-a.x)*cs,dy=(b.y-a.y)*cs,length=Math.hypot(dx,dy);
-      const wall=document.createElement('div');wall.className='placement-survey-wall';
-      wall.style.left=(a.x*cs)+'px';wall.style.top=(a.y*cs)+'px';wall.style.width=length+'px';wall.style.transform=`rotate(${Math.atan2(dy,dx)}rad)`;bg.appendChild(wall);
+      const wall=document.createElementNS(SVGNS,'line');wall.setAttribute('x1',a.x);wall.setAttribute('y1',a.y);wall.setAttribute('x2',b.x);wall.setAttribute('y2',b.y);wall.setAttribute('class','placement-survey-wall');surveySvg.appendChild(wall);
     });
     for(let y=0;y<=activeRows();y++)for(let x=0;x<=COLS;x++){
-      const key=placementSurveyVertexKey(x,y),vertex=document.createElement('button');
-      vertex.type='button';vertex.className=`placement-survey-vertex${placementSurvey.wallStart===key?' selected':''}`;
-      vertex.style.left=(x*cs)+'px';vertex.style.top=(y*cs)+'px';vertex.title=`Sommet ${x}, ${y}`;
-      vertex.addEventListener('click',event=>{event.preventDefault();event.stopPropagation();togglePlacementSurveyVertex(x,y);renderBgGrid();updatePlacementSurveyTools();});bg.appendChild(vertex);
+      const key=placementSurveyVertexKey(x,y),vertex=document.createElementNS(SVGNS,'circle');
+      vertex.setAttribute('cx',x);vertex.setAttribute('cy',y);vertex.setAttribute('r','.075');vertex.setAttribute('class',`placement-survey-vertex${placementSurvey.wallStart===key?' selected':''}`);vertex.setAttribute('aria-label',`Sommet ${x}, ${y}`);
+      vertex.addEventListener('click',event=>{event.preventDefault();event.stopPropagation();togglePlacementSurveyVertex(x,y);renderBgGrid();updatePlacementSurveyTools();});surveySvg.appendChild(vertex);
     }
   }
 }
