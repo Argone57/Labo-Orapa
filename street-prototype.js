@@ -482,10 +482,10 @@
   function streetProfileIssues(pieces,profile=state.profile){
     const config=streetProfileConfig(profile);if(!config)return [];
     const placed=streetPlacedPieces(pieces),issues=[];
-    if(!config.allowPrototype&&placed.some(piece=>PIECES.some(definition=>definition.id===piece.id)))issues.push('Ce profil utilise uniquement les pièces Street v2.');
+    if(!config.allowPrototype&&placed.some(piece=>PIECES.some(definition=>definition.id===piece.id)))issues.push('Cette option utilise uniquement les pièces Street v2.');
     if(new Set(placed.map(piece=>piece.id)).size!==placed.length)issues.push('Une même pièce ne peut être utilisée qu’une seule fois.');
     if(profile==='free'){if(placed.length<config.count)issues.push(`Place au moins ${config.count} pièces avant de démarrer.`);return issues;}
-    if(placed.length!==config.count)issues.push(`Ce profil demande exactement ${config.count} pièces.`);
+    if(placed.length!==config.count)issues.push(`Cette option demande exactement ${config.count} pièces.`);
     if(config.allColors){
       const colors=new Set(placed.map(piece=>pieceDefinition(piece)?.color));
       const missing=['blue','white','yellow','red'].filter(color=>!colors.has(color));
@@ -684,7 +684,10 @@
     const config=streetProfileConfig(profile);
     if(!config)return PIECES;
     const allowed=streetAllowedDefinitions(profile);
-    if(profile==='free')return shuffled(allowed).slice(0,config.count);
+    if(profile==='free'){
+      const count=config.count+Math.floor(Math.random()*(allowed.length-config.count+1));
+      return shuffled(allowed).slice(0,count);
+    }
     const mandatory=['blue','white','yellow','red'].map(color=>shuffled(allowed.filter(definition=>definition.color===color))[0]);
     return [...mandatory,...shuffled(allowed.filter(definition=>!mandatory.includes(definition))).slice(0,config.count-mandatory.length)];
   }
@@ -1749,7 +1752,7 @@
   function openStreetProfilePicker(){
     let modal=byId('streetProfileModal');
     if(!modal){modal=document.createElement('div');modal.id='streetProfileModal';modal.className='modal-backdrop';document.body.appendChild(modal);}
-    modal.innerHTML=`<div class="modal"><button class="close-x" id="streetProfileClose">×</button><h2>🏠 Orapa Street v2</h2><p>Choisis le profil de la grille aléatoire.</p><div class="street-profile-picker"><label>Profil <select id="streetSoloProfileSelect">${STREET_V2_PROFILE_KEYS.map(key=>`<option value="${key}">${STREET_V2_PROFILES[key].label}</option>`).join('')}</select></label><p id="streetSoloProfileDescription"></p><label id="streetSoloCentralZoneLabel" class="street-v2-profile-controls" style="justify-content:flex-start"><input id="streetSoloCentralZone" type="checkbox" checked> Zone centrale</label></div><div class="controls" style="justify-content:flex-end;margin-top:14px"><button class="ghost" id="streetProfileCancel">Annuler</button><button class="primary" id="streetProfileStart">Lancer</button></div></div>`;
+    modal.innerHTML=`<div class="modal"><button class="close-x" id="streetProfileClose">×</button><h2>🏠 Orapa Street v2</h2><p>Choisis l’option de la grille aléatoire.</p><div class="street-profile-picker"><label>Options <select id="streetSoloProfileSelect">${STREET_V2_PROFILE_KEYS.map(key=>`<option value="${key}">${STREET_V2_PROFILES[key].label}</option>`).join('')}</select></label><p id="streetSoloProfileDescription"></p><label id="streetSoloCentralZoneLabel" class="street-v2-profile-controls" style="justify-content:flex-start"><input id="streetSoloCentralZone" type="checkbox" checked> Zone centrale</label></div><div class="controls" style="justify-content:flex-end;margin-top:14px"><button class="ghost" id="streetProfileCancel">Annuler</button><button class="primary" id="streetProfileStart">Lancer</button></div></div>`;
     const close=()=>{modal.classList.remove('open');byId('soloChoiceModal')?.classList.add('open');document.body.classList.add('solo-menu-open');};
     byId('streetProfileClose').onclick=close;byId('streetProfileCancel').onclick=close;
     modal.onclick=event=>{if(event.target===modal)close();};
