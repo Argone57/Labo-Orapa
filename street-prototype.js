@@ -1713,6 +1713,8 @@
       if(!confirm(state.mode==='solo'?'Abandonner cette partie et recommencer ?':'Effacer tous les placements et l’historique Street ?'))return;
       if(state.mode==='solo'&&streetAttempt?.attempt_id)try{const abandonedAttempt=streetAttempt;await supabaseRpc('orapa_abandon_street_attempt',{p_session_token:currentPlayerAccount.session_token,p_attempt_id:abandonedAttempt.attempt_id});if(activeAttempt?.attempt_id===abandonedAttempt.attempt_id)activeAttempt=null;streetAttempt=null;}catch(error){showErrorToast('Abandon impossible : '+error.message);return;}
       if(state.mode==='solo'){await openSolo();return;}
+      Object.assign(state,{started:false,startedAt:null,finalTimeMs:null,over:false,result:null,attempts:0,secretPieces:[],waveModeActive:false,previewWave:null,showGuess:true,showSecret:true});
+      toggleHistory(false);
       if(state.profile){
         resetV2Creation(state.profile,state.centralZone);render();return;
       }
