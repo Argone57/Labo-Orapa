@@ -582,6 +582,8 @@ function streetHistoryOption(decoded){
   const profiles={normal:'Normal',sherlock7:'Sherlock 7',sherlockExtreme:'Sherlock Extrême',absurd:'Absurde',free:'Libre'};
   return decoded.profile==='free'?`Libre · ${decoded.pieces?.length||0} 🧩 · ⬢${decoded.centralZone?'✅':'❌'}`:(profiles[decoded.profile]||'Normal');
 }
+function streetHistoryFilterKey(id){const decoded=decodeGridId(id);return decoded?.version===2?(decoded.profile||'normal'):'v1';}
+function streetHistoryFilterOptions(){return '<option value="all">Toutes les parties</option><option value="v1">V1</option><option value="normal">Normal</option><option value="sherlock7">Sherlock 7</option><option value="sherlockExtreme">Sherlock Extrême</option><option value="absurd">Absurde</option><option value="free">Libre</option>';}
 function formatShareText(e){
   const d = e.isDaily && e.dailyDate
     ? formatDailyDate(e.dailyDate)
@@ -1488,6 +1490,7 @@ async function openMyStreetGridHistory(){
   const viewRevision=++accountHistoryViewRevision;
   openGridDataShell('🕘 Historique des grilles',`<div class="achievement-subtabs"><button id="accountHistoryClassic" class="ghost">Mine</button><button id="accountHistorySpace" class="ghost">Space</button><button id="accountHistoryStreet" class="ghost active">Street</button><button id="accountHistoryLost" class="ghost">Gemme perdue</button><button id="accountHistoryEarthSky" class="ghost">Terre et Ciel</button></div><div class="shared-grid-toolbar"><select id="accountHistoryStreetSort" class="ranking-select"><option value="date">Date</option><option value="points">Points</option><option value="time">Temps</option></select><button id="accountHistoryStreetReverse" class="ghost shared-sort-reverse" aria-label="Inverser le tri">↓</button></div>`,true);
   const list={rows:[],hasMore:true,loading:false,reverse:false};
+  const streetFilter=document.createElement('select');streetFilter.className='ranking-select';streetFilter.setAttribute('aria-label','Type de partie');streetFilter.innerHTML=streetHistoryFilterOptions();$('#accountHistoryStreetSort').before(streetFilter);
   const loadPage=async()=>{
     if(list.loading||!list.hasMore)return;
     list.loading=true;
@@ -1500,7 +1503,7 @@ async function openMyStreetGridHistory(){
   const render=()=>{
     if(viewRevision!==accountHistoryViewRevision)return;
     const sort=$('#accountHistoryStreetSort')?.value||'date';
-    const rows=list.rows.slice().sort((a,b)=>{
+    const rows=list.rows.filter(row=>streetFilter.value==='all'||streetHistoryFilterKey(row.grid_id)===streetFilter.value).sort((a,b)=>{
       let value=sort==='points'?Number(a.cost)-Number(b.cost):sort==='time'?Number(a.time_ms)-Number(b.time_ms):new Date(b.played_at)-new Date(a.played_at);
       if(value===0)value=String(a.grid_id).localeCompare(String(b.grid_id));
       return list.reverse?-value:value;
@@ -1522,6 +1525,7 @@ async function openMyStreetGridHistory(){
   $('#accountHistoryEarthSky').onclick=openMyEarthSkyGridHistory;
   $('#accountHistoryStreet').onclick=openMyStreetGridHistory;
   $('#accountHistoryStreetSort').onchange=render;
+  streetFilter.onchange=async()=>{streetFilter.disabled=true;try{if(streetFilter.value!=='all')while(list.hasMore)await loadPage();render();}catch(error){showErrorToast('Chargement impossible : '+error.message);}finally{streetFilter.disabled=false;}};
   $('#accountHistoryStreetReverse').onclick=()=>{list.reverse=!list.reverse;$('#accountHistoryStreetReverse').textContent=list.reverse?'↑':'↓';render();};
   try{await loadPage();render();}catch(error){$('#gridDataContent').innerHTML=`<div class="account-error" style="display:block">${escapeHtml(error.message)}</div>`;}
 }
@@ -6994,6 +6998,7 @@ async function renderEarthSkyHistoryRanking(optionFilters=globalHistoryOptionFil
     const more=$('#earthSkyHistoryMore');if(more)more.onclick=async()=>{more.disabled=true;more.textContent='Chargement…';try{await renderEarthSkyHistoryRanking(optionFilters,true);}catch(error){showErrorToast(`Chargement impossible : ${error.message}`);more.disabled=false;more.textContent='Afficher les résultats suivants';}};
   }catch(error){el.innerHTML=`<div class="account-error" style="display:block">${escapeHtml(error.message)}</div>`;}
 }
+let streetGlobalHistoryFilter='all';
 async function renderStreetHistoryRanking(addPage=false){
   const el=$('#rankingList');
   const revision=++globalFilteredHistoryRenderRevision.street;
@@ -7003,13 +7008,15 @@ async function renderStreetHistoryRanking(addPage=false){
   }
   const pager=globalFilteredHistoryPagers.street;
   try{
-    const pageResult=await pager.result({},addPage);
+    let pageResult=await pager.result({},addPage);
+    if(streetGlobalHistoryFilter!=='all')while(pageResult.hasMore){pageResult=await pager.result({},true);if(revision!==globalFilteredHistoryRenderRevision.street)return;}
     if(revision!==globalFilteredHistoryRenderRevision.street||rankingView!=='solo'||historyDisplayMode!=='street')return;
-    const rows=pageResult.rows;
-    el.innerHTML=(rows.length?rows.map((row,index)=>{
+    const rows=pageResult.rows.filter(row=>streetGlobalHistoryFilter==='all'||streetHistoryFilterKey(row.grid_id)===streetGlobalHistoryFilter);
+    el.innerHTML=`<div class="shared-grid-toolbar"><select id="streetGlobalHistoryFilter" class="ranking-select" aria-label="Type de partie">${streetHistoryFilterOptions()}</select></div>`+(rows.length?rows.map((row,index)=>{
       const key=`global-street-history:${row.id}`,expanded=expandedScores.has(key),date=new Date(row.played_at).toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'2-digit'}),moves=`${row.ray_count} 🔦 + ${row.coord_count} 📍`,configuration=streetHistoryOption(decodeGridId(row.grid_id));
       return `<div class="ranking-row solo-global-row${expanded?' expanded':''}" data-index="${index}"><div class="ranking-row-top"><span class="solo-ranking-player"><span class="ranking-rank solo-result-mark ${row.success?'win':'fail'}">${row.success?'✓':'✕'}</span><span class="ranking-name${row.is_mine?' mine':''}">${escapeHtml(row.player_name||'Anonyme')}</span></span><span class="solo-ranking-config street-history-option">${escapeHtml(configuration)}</span><span class="solo-ranking-score"><span class="ranking-points">${row.cost} pts</span><span class="ranking-date">${date}</span></span></div>${expanded?`<div class="ranking-row-detail">ID <b>${escapeHtml(publicGridId(row.grid_id))}</b> · ${moves} · ${formatDuration(row.time_ms)}</div><div class="controls ranking-compact-actions three"><button class="street-history-summary ghost" data-index="${index}">📋 Résumé</button><button class="street-history-id ghost" data-index="${index}">📋 ID</button><button class="street-history-ranking primary" data-index="${index}">🏆 Grille</button></div>`:''}</div>`;
     }).join(''):'<div class="history-empty">Aucune partie Orapa Street enregistrée.</div>')+(pageResult.hasMore?'<button id="streetHistoryLoadMore" class="ghost solo-load-more">Afficher les résultats suivants</button>':'');
+    const filter=el.querySelector('#streetGlobalHistoryFilter');filter.value=streetGlobalHistoryFilter;filter.onchange=()=>{streetGlobalHistoryFilter=filter.value;void renderStreetHistoryRanking();};
     el.querySelectorAll('.solo-global-row').forEach(node=>node.onclick=event=>{if(event.target.closest('button'))return;const row=rows[Number(node.dataset.index)],key=`global-street-history:${row.id}`;expandedScores.has(key)?expandedScores.delete(key):expandedScores.add(key);renderStreetHistoryRanking();});
     el.querySelectorAll('.street-history-ranking').forEach(button=>button.onclick=()=>openGridRanking(rows[Number(button.dataset.index)].grid_id));
     el.querySelectorAll('.street-history-id').forEach(button=>button.onclick=()=>{const id=publicGridId(rows[Number(button.dataset.index)].grid_id);navigator.clipboard?.writeText(id).then(()=>showToast('Identifiant copié : '+id));});

@@ -481,7 +481,7 @@
 
   const freshPieces=(definitions=PIECES)=>definitions.map(def=>({id:def.id,anchor:null,rotation:0,flipped:false}));
   const streetProfileConfig=profile=>STREET_V2_PROFILES[profile]||null;
-  const streetAllowedDefinitions=profile=>streetProfileConfig(profile)?.allowPrototype?[...STREET_PIECES,...PIECES]:STREET_PIECES;
+  const streetAllowedDefinitions=profile=>streetProfileConfig(profile)?.allowPrototype?[...STREET_PIECES,...PIECES.filter(piece=>piece.id!=='blueLarge')]:STREET_PIECES;
   const streetPlacedPieces=pieces=>pieces.filter(piece=>piece.anchor);
   function streetProfileIssues(pieces,profile=state.profile){
     const config=streetProfileConfig(profile);if(!config)return [];
