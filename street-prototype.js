@@ -1653,8 +1653,8 @@
       if(!officialStreetCreationActive())return;
       streetSurveyClicks++;
       if(streetSurveyClicks<5)return;
-      streetSurveyClicks=0;streetSurveyUnlocked=true;streetPieceSurvey.active=true;
-      showToast('Outil de relevé temporaire activé.');render();
+      streetSurveyClicks=0;streetSurveyUnlocked=!streetSurveyUnlocked;streetPieceSurvey.active=streetSurveyUnlocked;streetPieceSurvey.wallStart=null;
+      showToast(streetSurveyUnlocked?'Outil de relevé temporaire activé.':'Outil de relevé masqué.');render();
     });
     create.addEventListener('click',()=>openCreation());
     byId('streetClose').addEventListener('click',()=>streetTutorial.active?requestStreetTutorialExit():close());

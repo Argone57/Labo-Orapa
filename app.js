@@ -7167,8 +7167,8 @@ $('#modePill').addEventListener('click',()=>{
   if(!placementSurveyAllowed())return;
   placementSurvey.clicks++;
   if(placementSurvey.clicks<5)return;
-  placementSurvey.clicks=0;placementSurvey.unlocked=true;placementSurvey.active=true;
-  updatePlacementSurveyTools();renderBgGrid();showToast('Outil de relevé temporaire activé.');
+  placementSurvey.clicks=0;placementSurvey.unlocked=!placementSurvey.unlocked;placementSurvey.active=placementSurvey.unlocked;placementSurvey.wallStart=null;
+  updatePlacementSurveyTools();renderBgGrid();showToast(placementSurvey.active?'Outil de relevé temporaire activé.':'Outil de relevé masqué.');
 });
 $('#placementSurveyClear').addEventListener('click',()=>{
   placementSurvey.cells.clear();placementSurvey.walls=[];placementSurvey.wallStart=null;renderBgGrid();updatePlacementSurveyTools();
