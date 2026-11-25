@@ -6075,9 +6075,9 @@ function openStreetTutorialPrerequisiteModal(checkError=false){
   prerequisiteModalContext='street_irregular';
   $('#triforcePrerequisiteTitle').textContent=checkError?'⚠️ Vérification impossible':'🔒 Orapa Street verrouillé';
   $('#triforcePrerequisiteText').innerHTML=checkError
-    ? 'Impossible de vérifier le succès <b>Irrégulier de Baker Street</b>. Vérifie ta connexion puis réessaie.'
-    : 'Pour accéder aux grilles aléatoires <b>Orapa Street</b>, termine d’abord le tutoriel correspondant afin de débloquer le succès <b>Irrégulier de Baker Street</b>.';
-  $('#triforcePrerequisiteAchievement').style.display=checkError?'none':'';
+    ? 'Impossible de vérifier le tutoriel <b>Orapa Street v2</b>. Vérifie ta connexion puis réessaie.'
+    : 'Pour accéder aux grilles aléatoires <b>Orapa Street v2</b>, termine d’abord son tutoriel.';
+  $('#triforcePrerequisiteAchievement').style.display='none';
   $('#triforcePrerequisiteRetry').style.display=checkError?'':'none';
   $('#triforcePrerequisiteModal').classList.add('open');
 }
@@ -6152,8 +6152,8 @@ async function verifyStreetTutorialPrerequisite(showModal=false){
     return false;
   }
   try{
-    const catalog=await getAchievementCatalog(true);
-    const unlocked=catalog.some(row=>row.achievement_key==='street_irregular'&&row.unlocked);
+    const result=await supabaseRpc('orapa_street_v2_tutorial_status',{p_session_token:currentPlayerAccount.session_token});
+    const unlocked=result?.completed===true;
     if(showModal&&!unlocked)openStreetTutorialPrerequisiteModal(false);
     return unlocked;
   }catch(error){
@@ -6248,7 +6248,7 @@ $('#triforcePrerequisiteRetry').addEventListener('click',async()=>{
   }else if(prerequisiteModalContext==='space_student'){
     if(await verifySpaceStudentPrerequisite(true))showToast('Succès Aspirant astronaute vérifié.');
   }else if(prerequisiteModalContext==='street_irregular'){
-    if(await verifyStreetTutorialPrerequisite(true))showToast('Succès Irrégulier de Baker Street vérifié.');
+    if(await verifyStreetTutorialPrerequisite(true))showToast('Tutoriel Street v2 vérifié.');
   }else if(prerequisiteModalContext==='daily_remix'){
     if(await verifyDailyRemixPrerequisites(true))showToast('Prérequis du défi remix vérifiés.');
   }else if(await verifyTriforcePrerequisite(true))showToast('Succès Triforce vérifié.');

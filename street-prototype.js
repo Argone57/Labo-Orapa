@@ -1638,12 +1638,13 @@
     byId('streetPrototype').hidden=true;document.body.classList.remove('street-open');document.body.classList.add('home-view');
   }
   async function completeStreetTutorial(){
-    endStreetTutorial(true);
-    if(!currentPlayerAccount?.session_token)return;
+    if(!currentPlayerAccount?.session_token){showErrorToast('Connecte-toi pour enregistrer la fin du tutoriel.');return;}
     try{
-      const result=await supabaseRpc('orapa_award_street_event',{p_session_token:currentPlayerAccount.session_token,p_event:'tutorial'});
+      const result=await supabaseRpc('orapa_complete_street_v2_tutorial',{p_session_token:currentPlayerAccount.session_token});
+      if(!result?.completed)throw new Error('Enregistrement non confirmé');
+      endStreetTutorial(true);
       if(result?.newly_unlocked){achievementCatalogCache=null;queueAchievementNotifications?.(['street_irregular']);}
-    }catch(error){console.warn('Attribution du succès Street impossible',error);}
+    }catch(error){console.warn('Enregistrement du tutoriel Street impossible',error);showErrorToast('Enregistrement impossible : vérifie ta connexion puis réessaie.');}
   }
   function bind(){
     const create=byId('createStreetMode');
