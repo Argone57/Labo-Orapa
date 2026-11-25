@@ -1552,7 +1552,8 @@
               :streetTutorial.phase===4
                 ?'<p>Vous pouvez également combiner le mode pour masquer les cases tout en laissant le mode onde activé.</p><p>Activez le mode <strong>Masquer les cases</strong>.</p>'
                 :'<p>Cliquez sur les 3 premières cases surlignées de la ligne <strong>4</strong> vers <strong>G</strong>.</p>',action:''},
-      7:{title:'Aperçu terminé',text:'<p>Voilà, vous avez un aperçu d’Orapa Street, enfin en espérant que ça sera bien comme ça quand on en saura plus sur le jeu 🙂</p><p>N’hésitez pas à utiliser le mode création de grille en faisant « Démarrer la partie » après avoir placé toutes les pièces, cela vous permettra de mieux voir les interactions.</p><p>Et bon courage !</p>',action:'Terminer'}
+      7:{title:'Bonus sur PC',text:'<p>Vous pouvez lancer l’onde de test sans activer le mode en faisant un clic droit sur les cases ou les flèches.</p><p>Vous pouvez activer le mode <strong>Masquer les cases</strong> en appuyant sur la touche <strong>Tab</strong>.</p><p>Vous pouvez directement masquer ou réafficher les cases en faisant un clic droit sur les cases de la grille.</p>',action:'Suivant'},
+      8:{title:'Aperçu terminé',text:'<p>Voilà, vous avez un aperçu d’Orapa Street, enfin en espérant que ça sera bien comme ça quand on en saura plus sur le jeu 🙂</p><p>N’hésitez pas à utiliser le mode création de grille en faisant « Démarrer la partie » après avoir placé toutes les pièces, cela vous permettra de mieux voir les interactions.</p><p>Et bon courage !</p>',action:'Terminer'}
     };
     return content[stage]||content[1];
   }
@@ -1586,7 +1587,8 @@
     if(streetTutorial.stage===1){streetTutorialDemoState();streetTutorial.stage=2;}
     else if(streetTutorial.stage===2)streetTutorial.stage=3;
     else if(streetTutorial.stage===5&&streetTutorial.waveIndex>=2){streetTutorialPuzzleState();streetTutorial.stage=6;}
-    else if(streetTutorial.stage===7){void completeStreetTutorial();return;}
+    else if(streetTutorial.stage===7)streetTutorial.stage=8;
+    else if(streetTutorial.stage===8){void completeStreetTutorial();return;}
     streetTutorialShow();render();
   }
   function streetTutorialLoadProgress(){
