@@ -629,7 +629,7 @@ const DAILY_REMIX_FINAL_SNAPSHOTS_KEY = `${LOCAL_STORAGE_PREFIX}DailyRemixFinalS
 // indépendant du compte : chaque navigateur garde sa propre dernière visite.
 const UPDATES_READ_KEY = `${LOCAL_STORAGE_PREFIX}UpdatesReadV2`;
 const GAME_UPDATES = [
-  {id:'streetv2-20261125',date:'25/11/2026',title:'Orapa Street v2 vient d\'arriver ! Les règles officielles ainsi que les nouvelles pièces remplacent les anciennes.\nBientôt, un nouveau défi ;)'},
+  {id:'streetv2-20261125',date:'25/11/2026',title:'Orapa Street v2 vient d\'arriver !\nLes règles officielles (avec une exception) ainsi que les nouvelles pièces remplacent les anciennes.\n\nBientôt, un nouveau défi ;)'},
   {id:'pc-shortcuts-20261120',date:'20/11/2026',title:'2 nouveautés sur PC\n Clic droit sur une case de la grille permet de la masquer/réafficher.\n Le mode peut également être activé/désactivé avec la touche Tab.\n Pour Orapa Street, clic droit sur une flèche/case permet d\'afficher directement l\'onde de test (y compris sur les moitiés des cases autour de la grille)'},
   {id:'street-20261001',date:'01/10/2026',title:'Nouveau mode de jeu : Orapa Street. A noter que tout est basé sur la seule image existante à ce jour donc il est possible que toutes les règles ne soient pas respectées.'},
   {id:'aides-20260914',date:'14/09/2026',title:'Légère correction du mode indice et ajout d\'un mode pour marquer les cases vides'},
