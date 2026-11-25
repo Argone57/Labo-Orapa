@@ -978,7 +978,8 @@
   }
   function renderPalette(){
     const host=byId('streetPalette');host.innerHTML='';
-    const pieces=state.pieces.filter(piece=>!piece.anchor);
+    const allowed=state.mode==='gm'&&state.profile?new Set(streetAllowedDefinitions(state.profile).map(definition=>definition.id)):null;
+    const pieces=state.pieces.filter(piece=>!piece.anchor&&(!allowed||allowed.has(piece.id)));
     pieces.forEach(piece=>{
       const def=pieceDefinition(piece),tile=document.createElement('div');
       const tutorialTarget=streetTutorial.active&&streetTutorial.puzzle&&streetTutorial.stage===6&&streetTutorial.phase===2&&streetTutorialPlacementOrder[streetTutorial.draftIndex]===piece.id;
@@ -1697,7 +1698,16 @@
       catch(_error){showErrorToast('Copie impossible.');}
     });
     byId('streetRandom').addEventListener('click',()=>{if(state.started)return;if(!randomizePieces())setMessage('Impossible de trouver un placement valide. Réessaie.',true);render();});
-    byId('streetProfileSelect').addEventListener('change',event=>{if(state.mode!=='gm'||state.started)return;resetV2Creation(event.target.value,event.target.value==='free'?byId('streetCentralZone').checked:true);render();});
+    byId('streetProfileSelect').addEventListener('change',event=>{
+      if(state.mode!=='gm'||state.started)return;
+      const profile=event.target.value,existing=new Map(state.pieces.map(piece=>[piece.id,piece]));
+      const definitions=streetAllowedDefinitions(profile);
+      const available=new Set(definitions.map(definition=>definition.id));
+      state.pieces=[...definitions.map(definition=>existing.get(definition.id)||freshPieces([definition])[0]),...state.pieces.filter(piece=>piece.anchor&&!available.has(piece.id))];
+      state.profile=profile;state.centralZone=profile==='free'?byId('streetCentralZone').checked:true;
+      if(!state.pieces.some(piece=>piece.id===state.selected))state.selected=state.pieces[0]?.id||'red1';
+      state.gridId=null;state.gridAlias=null;render();
+    });
     byId('streetCentralZone').addEventListener('change',event=>{if(state.mode!=='gm'||state.started||state.profile!=='free')return;state.centralZone=event.target.checked;render();});
     byId('streetStart').addEventListener('click',()=>{if(state.started||byId('streetStart').disabled)return;state.started=true;state.startedAt=Date.now();state.tool='pieces';state.traces=[];state.coords=[];clearDirectionChoicesTimer();selectedWaveEdge=null;toggleHistory(false);render();});
     byId('streetEnd').addEventListener('click',async()=>{
