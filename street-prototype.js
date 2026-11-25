@@ -547,18 +547,15 @@
       }))
     };
   }
-  const STREET_TUTORIAL_REFERENCE='EMG5264J-W-R';
-  const STREET_TUTORIAL_PROGRESS_KEY='orapa_street_tutorial_progress_v1';
-  // Pièce jaune horizontale, directement sur le rayon B → L (de BD à BF).
-  // Son état-cible est en miroir : la vignette commence donc volontairement dans
-  // l'autre sens afin de faire pratiquer le retournement miroir.
-  const STREET_TUTORIAL_YELLOW_TARGET={id:'yellowLarge',anchor:screenPoint({q:5,r:5}),rotation:2,flipped:true};
+  const STREET_TUTORIAL_REFERENCE='';
+  const STREET_TUTORIAL_PROGRESS_KEY='orapa_street_tutorial_progress_v2';
+  const STREET_TUTORIAL_DEMO=[{id:'red1',anchor:{x:370.5,y:115.181},rotation:2,flipped:false},{id:'red2',anchor:{x:266,y:197.454},rotation:3,flipped:false},{id:'red3',anchor:{x:125.4,y:59.236},rotation:1,flipped:false},{id:'white1',anchor:{x:228,y:131.636},rotation:2,flipped:false},{id:'blue1',anchor:{x:59.375,y:127.522},rotation:5,flipped:false},{id:'blue3',anchor:{x:228,y:21.917},rotation:1,flipped:false},{id:'yellow2',anchor:{x:114,y:197.454},rotation:5,flipped:false}];
+  const STREET_TUTORIAL_TARGETS=[{id:'red1',anchor:{x:85.5,y:180.999},rotation:1,flipped:true},{id:'yellow2',anchor:{x:133,y:98.727},rotation:2,flipped:false},{id:'blue1',anchor:{x:296.875,y:152.204},rotation:1,flipped:false},{id:'white1',anchor:{x:209,y:32.909},rotation:2,flipped:false}];
   let streetTutorial={active:false,stage:0,puzzle:false,secretPieces:[],draftIndex:0,preference:null,waveIndex:0,phase:0};
   const streetPlayerMode=()=>state.mode==='solo'||state.mode==='tutorial';
-  const streetTutorialPlacementOrder=['yellowLarge','blueLarge','redWall','blueSmall'];
+  const streetTutorialPlacementOrder=['red1','yellow2','blue1','white1'];
   function streetTutorialTargetPiece(id){
-    if(id==='yellowLarge')return {...STREET_TUTORIAL_YELLOW_TARGET,anchor:{...STREET_TUTORIAL_YELLOW_TARGET.anchor}};
-    const piece=streetTutorial.secretPieces.find(item=>item.id===id);
+    const piece=STREET_TUTORIAL_TARGETS.find(item=>item.id===id);
     return piece?{...piece,anchor:piece.anchor?{...piece.anchor}:null}:null;
   }
   const EXIT_SIDE_KEYS=['top','upperRight','lowerRight','bottom','lowerLeft','upperLeft'];
@@ -624,7 +621,7 @@
   function streetTutorialExpectedWave(){
     if(!streetTutorial.active)return null;
     if(streetTutorial.stage===3)return {entry:'J',exit:'14'};
-    if(streetTutorial.stage===5)return streetTutorial.waveIndex===0?{entry:'11',exit:'G'}:{entry:'8',exit:'D'};
+    if(streetTutorial.stage===5)return streetTutorial.waveIndex===0?{entry:'11',exit:'G'}:{entry:'C',exit:'8'};
     if(streetTutorial.stage===6&&streetTutorial.phase===1)return {entry:'8',exit:'D'};
     if(streetTutorial.stage===6&&streetTutorial.phase===3)return streetTutorial.waveIndex===0?{entry:'13',exit:'3'}:{entry:'H',exit:'5'};
     return null;
@@ -1532,21 +1529,21 @@
   }
   function streetTutorialContent(stage){
     const content={
-      1:{title:'Bienvenue dans Orapa Street',text:'<p>Veuillez noter que ce mode a été développé à partir de la seule image connue du jeu à ce jour.<br>Il est donc possible qu’il y ait des différences avec le jeu réel à venir.</p><p>Le principe est toujours le même, reconstituer la grille avec les différentes pièces.</p><p>Les règles de placement sont également identiques.</p><p>Les 2 actions habituelles constituent toujours le cœur du jeu ; toutefois, compte tenu de la forme de la grille, la gestion des ondes est un peu différente.</p>',action:'Suivant'},
+      1:{title:'Bienvenue dans Orapa Street v2',text:'<p>Le principe est toujours le même, reconstituer la grille avec les différentes pièces.</p><p>Les 2 actions habituelles constituent toujours le cœur du jeu ; toutefois, compte tenu de la forme de la grille, la gestion des ondes est un peu différente.</p><br><p><strong>Il y a toutefois 2 nouvelles contraintes de placement :<br>– aucune pièce ne peut être placée dans la zone centrale, mais les ondes passent bien à travers ;<br>– il n’y a plus aucun contact possible entre 2 pièces, y compris par les angles.</strong></p><p><strong>– Contrairement à la règle officielle et pour simplifier, les nouvelles pièces v2 peuvent être retournées en miroir.</strong></p>',action:'Suivant'},
       2:{title:'Voilà à quoi ressemble une grille',text:'',action:'Suivant'},
       3:{title:'Deux directions possibles',text:'<p>La particularité de cette grille est qu’il peut y avoir 2 ondes qui partent depuis un même point de départ.<br>Pour gérer les 2 directions, il y a 2 options d’affichage : <strong>Cases</strong> et <strong>Flèches</strong>.</p><p>Vous pouvez changer à tout moment depuis les options de votre compte.<br>En auto, le mode d’affichage s’adaptera à la taille de l’écran (cases pour les petits écrans).</p><p>Ici, c’est la présentation en mode case, essayez :<br>Cliquer en <strong>J</strong> et choisir la direction vers <strong>14</strong>.</p>'},
       4:{title:'Les informations de sortie',text:'<p>Plusieurs informations s’affichent.<br>Les informations de sortie sont affichées directement dans les cases et celles-ci se colorent à moitié.<br>Si vous recliquez sur une case où vous avez déjà lancé une onde, vous verrez que la direction a également été remplacée par sa sortie.</p><p>Recliquez sur <strong>J</strong>.</p>'},
-      5:{title:'Les rebonds',text:'<p>Comme vous pouvez le constater, il y a beaucoup plus de rebonds que dans les autres modes.</p><p>Cliquez sur <strong>11</strong> vers <strong>G</strong>.<br>Puis cliquez en <strong>8</strong> vers <strong>D</strong>.</p>',action:streetTutorial.waveIndex>=2?'Suivant':''},
+      5:{title:'Les rebonds',text:'<p>Comme vous pouvez le constater, il y a beaucoup plus de rebonds que dans les autres modes.</p><p>Cliquez sur <strong>11</strong> vers <strong>G</strong>.<br>Puis cliquez en <strong>C</strong> vers <strong>8</strong>.</p>',action:streetTutorial.waveIndex>=2?'Suivant':''},
       6:{title:'Afficher une onde',text:streetTutorial.phase===0
         ?'<p>Afin de vous aider, le mode <strong>Afficher une onde</strong> a été ajouté dans ce mode.</p><p>Activez le mode.</p>'
         :streetTutorial.phase===1
           ?'<p>Cliquez en <strong>8</strong> vers <strong>D</strong>.</p>'
           :streetTutorial.phase===2
             ?`<p>Cette onde n’est pas prise en compte pour la résolution de la grille mais vous aide à placer les pièces.<br>Elle réagit en temps réel aux pièces que vous placez sur son chemin.</p><p>${[
-              'Placez la petite pièce jaune à l’emplacement indiqué. Retournez-la en miroir pour l’orienter correctement.',
-              'Placez la grande bleue à l’emplacement indiqué.',
-              'Placez la rouge à l’emplacement indiqué.',
-              'Placez la petite bleue à l’emplacement indiqué.'
+              'Placez la pièce en surbrillance à l’emplacement indiqué. Retournez-la en miroir pour l’orienter correctement.',
+              'Placez cette pièce jaune à l’emplacement indiqué.',
+              'Placez cette pièce bleue à l’emplacement indiqué.',
+              'Placez cette pièce blanche à l’emplacement indiqué.'
             ][streetTutorial.draftIndex]||'Placez la pièce à l’emplacement indiqué.'}</p>`
             :streetTutorial.phase===3
               ?streetTutorial.waveIndex===0
@@ -1572,14 +1569,16 @@
   }
   function streetTutorialDemoState(){
     state={mode:'tutorial',pieces:streetTutorial.secretPieces.map(piece=>({...piece,anchor:piece.anchor?{...piece.anchor}:null})),secretPieces:streetTutorial.secretPieces.map(piece=>({...piece,anchor:piece.anchor?{...piece.anchor}:null})),selected:'blueSmall',tool:'pieces',waveModeActive:false,previewWave:null,started:true,traces:[],coords:[],draftCells:{},gridId:STREET_TUTORIAL_REFERENCE,gridAlias:STREET_TUTORIAL_REFERENCE,attempts:0,over:false,result:null,showGuess:true,showSecret:true,startedAt:null,finalTimeMs:null,rank:null};
+    Object.assign(state,{profile:'sherlock7',centralZone:true,pieceSet:'official'});
     streetTutorial.puzzle=false;clearDirectionChoicesTimer();selectedWaveEdge=null;toggleHistory(false);
   }
   function streetTutorialIntroState(){
     state={mode:'tutorial',pieces:freshPieces(),secretPieces:streetTutorial.secretPieces.map(piece=>({...piece,anchor:piece.anchor?{...piece.anchor}:null})),selected:'blueSmall',tool:'pieces',waveModeActive:false,previewWave:null,started:true,traces:[],coords:[],draftCells:{},gridId:STREET_TUTORIAL_REFERENCE,gridAlias:STREET_TUTORIAL_REFERENCE,attempts:0,over:false,result:null,showGuess:true,showSecret:true,startedAt:null,finalTimeMs:null,rank:null};
+    Object.assign(state,{profile:'sherlock7',centralZone:true,pieceSet:'official',pieces:freshPieces(STREET_PIECES)});
     streetTutorial.puzzle=false;clearDirectionChoicesTimer();selectedWaveEdge=null;toggleHistory(false);
   }
   function streetTutorialPuzzleState(){
-    state={mode:'tutorial',pieces:PIECES.map(definition=>{const target=streetTutorialTargetPiece(definition.id);return {...target,anchor:null,flipped:definition.id==='yellowLarge'?!target.flipped:target.flipped};}),secretPieces:streetTutorial.secretPieces.map(piece=>({...piece,anchor:piece.anchor?{...piece.anchor}:null})),selected:'yellowLarge',tool:'pieces',waveModeActive:false,previewWave:null,started:true,traces:[],coords:[],draftCells:{},gridId:STREET_TUTORIAL_REFERENCE,gridAlias:STREET_TUTORIAL_REFERENCE,attempts:0,over:false,result:null,showGuess:true,showSecret:true,startedAt:null,finalTimeMs:null,rank:null};
+    state={mode:'tutorial',profile:'normal',centralZone:true,pieceSet:'official',pieces:STREET_PIECES.map(definition=>{const target=streetTutorialTargetPiece(definition.id);return target?{...target,anchor:null,flipped:definition.id==='red1'?false:target.flipped}:{id:definition.id,anchor:null,rotation:0,flipped:false};}),secretPieces:streetTutorial.secretPieces.map(piece=>({...piece,anchor:piece.anchor?{...piece.anchor}:null})),selected:'red1',tool:'pieces',waveModeActive:false,previewWave:null,started:true,traces:[],coords:[],draftCells:{},gridId:null,gridAlias:null,attempts:0,over:false,result:null,showGuess:true,showSecret:true,startedAt:null,finalTimeMs:null,rank:null};
     streetTutorial.puzzle=true;streetTutorial.draftIndex=0;streetTutorial.phase=0;clearDirectionChoicesTimer();selectedWaveEdge=null;toggleHistory(false);
   }
   function advanceStreetTutorial(){
@@ -1604,15 +1603,12 @@
     streetTutorialSaveProgress();byId('streetTutorialExitModal')?.classList.add('open');
   }
   async function beginStreetTutorial(){
-    let decoded=decodeStreetGrid(STREET_TUTORIAL_REFERENCE);
-    try{if(!decoded&&typeof resolveGridReference==='function')decoded=await resolveGridReference(STREET_TUTORIAL_REFERENCE);}catch(_error){}
-    if(decoded?.variant!=='street'||!Array.isArray(decoded.pieces)){showErrorToast('La grille du tutoriel Street est indisponible pour le moment.');return false;}
     const previousPreference=wavePreference;
     applyWavePreference('choices',false);
-    streetTutorial={active:true,stage:1,puzzle:false,secretPieces:decoded.pieces.map(piece=>({...piece,anchor:piece.anchor?{...piece.anchor}:null})),draftIndex:0,preference:previousPreference,waveIndex:0,phase:0};
+    streetTutorial={active:true,stage:1,puzzle:false,secretPieces:STREET_TUTORIAL_DEMO.map(piece=>({...piece,anchor:{...piece.anchor}})),draftIndex:0,preference:previousPreference,waveIndex:0,phase:0};
     streetTutorialIntroState();
     byId('streetPrototype').querySelector('.subtitle').textContent='Parcours interactif';
-    byId('streetPrototype').querySelector('h1').textContent='🏠 Orapa Street';
+    byId('streetPrototype').querySelector('h1').textContent='🏠 Orapa Street v2';
     byId('streetPrototype').hidden=false;document.body.classList.add('street-open');document.body.classList.remove('home-view');
     streetTutorialShow();render();return true;
   }
