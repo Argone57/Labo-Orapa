@@ -8,7 +8,7 @@
  */
 (function(){
   'use strict';
-  const FALLBACK_VERSION='20261125-0005';
+  const FALLBACK_VERSION='20261125-0006';
 
   function scriptUrl(file,version){
     return `${file}?v=${encodeURIComponent(version)}`;

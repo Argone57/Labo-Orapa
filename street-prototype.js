@@ -621,7 +621,7 @@
   function streetTutorialExpectedWave(){
     if(!streetTutorial.active)return null;
     if(streetTutorial.stage===3)return {entry:'J',exit:'14'};
-    if(streetTutorial.stage===5)return streetTutorial.waveIndex===0?{entry:'11',exit:'G'}:{entry:'C',exit:'8'};
+    if(streetTutorial.stage===5)return streetTutorial.waveIndex===0?{entry:'11',exit:'G'}:{entry:'C',exit:'7'};
     if(streetTutorial.stage===6&&streetTutorial.phase===1)return {entry:'8',exit:'D'};
     if(streetTutorial.stage===6&&streetTutorial.phase===3)return streetTutorial.waveIndex===0?{entry:'13',exit:'3'}:{entry:'H',exit:'5'};
     return null;
@@ -1533,7 +1533,7 @@
       2:{title:'Voilà à quoi ressemble une grille',text:'',action:'Suivant'},
       3:{title:'Deux directions possibles',text:'<p>La particularité de cette grille est qu’il peut y avoir 2 ondes qui partent depuis un même point de départ.<br>Pour gérer les 2 directions, il y a 2 options d’affichage : <strong>Cases</strong> et <strong>Flèches</strong>.</p><p>Vous pouvez changer à tout moment depuis les options de votre compte.<br>En auto, le mode d’affichage s’adaptera à la taille de l’écran (cases pour les petits écrans).</p><p>Ici, c’est la présentation en mode case, essayez :<br>Cliquer en <strong>J</strong> et choisir la direction vers <strong>14</strong>.</p>'},
       4:{title:'Les informations de sortie',text:'<p>Plusieurs informations s’affichent.<br>Les informations de sortie sont affichées directement dans les cases et celles-ci se colorent à moitié.<br>Si vous recliquez sur une case où vous avez déjà lancé une onde, vous verrez que la direction a également été remplacée par sa sortie.</p><p>Recliquez sur <strong>J</strong>.</p>'},
-      5:{title:'Les rebonds',text:'<p>Comme vous pouvez le constater, il y a beaucoup plus de rebonds que dans les autres modes.</p><p>Cliquez sur <strong>11</strong> vers <strong>G</strong>.<br>Puis cliquez en <strong>C</strong> vers <strong>8</strong>.</p>',action:streetTutorial.waveIndex>=2?'Suivant':''},
+      5:{title:'Les rebonds',text:'<p>Comme vous pouvez le constater, il y a beaucoup plus de rebonds que dans les autres modes.</p><p>Cliquez sur <strong>11</strong> vers <strong>G</strong>.<br>Puis cliquez en <strong>C</strong> vers <strong>7</strong>.</p>',action:streetTutorial.waveIndex>=2?'Suivant':''},
       6:{title:'Afficher une onde',text:streetTutorial.phase===0
         ?'<p>Afin de vous aider, le mode <strong>Afficher une onde</strong> a été ajouté dans ce mode.</p><p>Activez le mode.</p>'
         :streetTutorial.phase===1
